@@ -80,7 +80,20 @@ bool CMainFrameControls::ShowToolbars(UINT nCS)
 {
     bool bRecalcLayout = false;
     auto& st = m_controlsVisibilityState;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    // Only suppress presentation. Keep the user's selected controls unchanged,
+    // and keep native status/error messages available before a file is loaded.
+    const bool empty = m_pMainFrame->GetLoadState() != MLS::LOADED;
+    if (empty) nCS &= ~(CS_SEEKBAR | CS_TOOLBAR);
+    const auto visibleStyle = [](const CWnd& bar) {
+        return bar.GetSafeHwnd() && (bar.GetStyle() & WS_VISIBLE);
+    };
+    const bool emptyControlsVisible = empty && (visibleStyle(m_pMainFrame->m_wndSeekBar)
+        || visibleStyle(m_pMainFrame->m_wndToolBar));
+    if (nCS != st.nVisibleCS || emptyControlsVisible) {
+#else
     if (nCS != st.nVisibleCS) {
+#endif
         m_pMainFrame->m_pLastBar = nullptr;
         int i = 1;
         for (const auto& pair : m_toolbars) {
@@ -540,7 +553,18 @@ void CMainFrameControls::UpdateToolbarsVisibility()
                 }
                 return ret;
             };
-            if (!testCapture() && !testHovering() &&
+            const bool captured = testCapture();
+            const bool hovered = !captured && testHovering();
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+            CRect window;
+            m_pMainFrame->GetWindowRect(window);
+            if (!captured && !window.PtInRect(screenPoint) && m_pMainFrame->m_nTrackedMenuDepth == 0) {
+                // Reuse the native hider's existing checks/deadlines. Leaving
+                // the frame ends bottom-control visibility without a new timer.
+                mask.hide(DOCK_BOTTOM);
+            }
+#endif
+            if (!captured && !hovered &&
                     ePolicy == CAppSettings::HideFullscreenControlsPolicy::SHOW_WHEN_CURSOR_MOVED &&
                     bOnWindow && !CMouse::PointEqualsImprecise(screenPoint, st.lastShowPoint) &&
                     !m_pMainFrame->m_wndView.Dragging() && uTimeout > 0) {
