@@ -53,22 +53,17 @@ class CFluentOverlayProbe final : public CWnd
             graphics.FillRectangle(&backdrop, 0, height - 64, width, 64);
             Gdiplus::Font font(L"Segoe UI", 15.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
             Gdiplus::SolidBrush text(Gdiplus::Color(255, 235, 235, 235));
-            Gdiplus::SolidBrush shadow(Gdiplus::Color(210, 0, 0, 0));
             Gdiplus::StringFormat format;
             format.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap);
             format.SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
             const float textWidth = static_cast<float>(width - 86);
-            graphics.DrawString(m_title, -1, &font, Gdiplus::RectF(19, 19, textWidth, 28), &format, &shadow);
             graphics.DrawString(m_title, -1, &font, Gdiplus::RectF(18, 18, textWidth, 28), &format, &text);
             graphics.DrawString(L"Native alpha overlay - 25% black", -1, &font,
                 Gdiplus::RectF(18, static_cast<float>(height - 43), static_cast<float>(width - 36), 28), &format, &text);
             const CRect close = CloseRect();
             if (m_hot) graphics.FillRectangle(&backdrop, close.left, close.top, close.Width(), close.Height());
             Gdiplus::Pen cross(Gdiplus::Color(255, m_hot ? 255 : 235, m_hot ? 255 : 235, m_hot ? 255 : 235), 1.5f);
-            Gdiplus::Pen crossShadow(Gdiplus::Color(210, 0, 0, 0), 2.0f);
             const int x = close.left + 11, y = close.top + 11;
-            graphics.DrawLine(&crossShadow, x + 1, y + 1, x + 13, y + 13);
-            graphics.DrawLine(&crossShadow, x + 13, y + 1, x + 1, y + 13);
             graphics.DrawLine(&cross, x, y, x + 12, y + 12);
             graphics.DrawLine(&cross, x + 12, y, x, y + 12);
         }
@@ -128,6 +123,30 @@ public:
         if (GetSafeHwnd()) DestroyWindow();
         if (m_gdiplus) Gdiplus::GdiplusShutdown(m_gdiplus);
     }
+
+    // Layered child windows can pass input to the video HWND. Route this one
+    // hit region before the renderer or video mouse bindings consume the click.
+    bool RouteCloseMessage(const MSG& message)
+    {
+        if (!GetSafeHwnd() || !IsWindowVisible()) return false;
+        CPoint point(message.pt);
+        ScreenToClient(&point);
+        const bool inside = CloseRect().PtInRect(point) != FALSE;
+        if (message.message == WM_LBUTTONDOWN && inside) {
+            m_pressed = true;
+            ::SetCapture(m_view->GetSafeHwnd());
+            return true;
+        }
+        if (message.message == WM_LBUTTONUP && m_pressed) {
+            m_pressed = false;
+            if (::GetCapture() == m_view->GetSafeHwnd()) ::ReleaseCapture();
+            if (inside) ::PostMessage(::GetAncestor(m_view->GetSafeHwnd(), GA_ROOT), WM_CLOSE, 0, 0);
+            return true;
+        }
+        return false;
+    }
+
+    void CancelPress() { m_pressed = false; }
 
     void Hide() { if (GetSafeHwnd()) ShowWindow(SW_HIDE); }
 

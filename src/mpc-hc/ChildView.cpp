@@ -80,6 +80,7 @@ BOOL CChildView::PreCreateWindow(CREATESTRUCT& cs)
 BOOL CChildView::PreTranslateMessage(MSG* pMsg)
 {
 #ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    if (m_fluentProbe.RouteCloseMessage(*pMsg)) return TRUE;
     if (pMsg->message == WM_MOUSEMOVE) {
         m_fluentProbe.Refresh(this, pMsg->hwnd);
     } else if (pMsg->message == WM_MOUSELEAVE) {
@@ -117,6 +118,7 @@ BOOL CChildView::PreTranslateMessage(MSG* pMsg)
 #ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
 LRESULT CChildView::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
 {
+    if (message == WM_CAPTURECHANGED) m_fluentProbe.CancelPress();
     if (message == WM_MOUSELEAVE) {
         m_fluentProbe.Refresh(this);
     } else if (message == WM_SIZE || message == WM_DESTROY || message == WM_SHOWWINDOW) {
