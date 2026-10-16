@@ -24,7 +24,42 @@ private:
     ULONG_PTR m_gdiplus = 0;
     CWnd* m_view = nullptr;
     CMPCThemeToolTipCtrl m_tip;
-    CString m_title, m_time, m_positionText, m_durationText;
+    CString m_title, m_time, m_positionText, m_durationText, m_feedback;
+    bool m_fullscreen = false, m_idleHidden = false, m_panelsVisible = true;
+    ULONGLONG m_lastInput = GetTickCount64(), m_fadeStart = 0, m_feedbackUntil = 0;
+    CPoint m_lastCursor = CPoint(INT_MIN, INT_MIN);
+    BYTE m_opacity = 255;
+    static constexpr UINT_PTR DeadlineTimer = 1;
+    void ArmDeadline() {
+        if (!GetSafeHwnd()) return;
+        KillTimer(DeadlineTimer);
+        if (!IsWindowVisible()) return;
+        const ULONGLONG now = GetTickCount64();
+        ULONGLONG due = m_feedbackUntil > now ? m_feedbackUntil : 0;
+        if (m_fullscreen && m_panelsVisible && !m_idleHidden && !CapturedInput()) {
+            const ULONGLONG idleDue = m_fadeStart ? now + 40 : m_lastInput + 4000;
+            if (!due || idleDue < due) due = idleDue;
+        }
+        if (due) SetTimer(DeadlineTimer, static_cast<UINT>(std::max<ULONGLONG>(1, due > now ? due - now : 1)), nullptr);
+    }
+    void WakeControls() {
+        m_lastInput = GetTickCount64(); m_fadeStart = 0; m_idleHidden = false;
+        const bool faded = m_opacity != 255; m_opacity = 255;
+        if (faded && GetSafeHwnd() && IsWindowVisible()) DrawSurface();
+        ArmDeadline();
+    }
+    static CString DisplayTitle(CString title) {
+        // Only known media suffixes: a dot in a film/program title is meaningful.
+        title.Trim();
+        const int dot = title.ReverseFind(L'.');
+        if (dot >= 0) {
+            CString suffix = title.Mid(dot); suffix.MakeLower();
+            for (LPCWSTR extension : {L".mp4", L".mkv", L".avi", L".mov", L".wmv", L".webm", L".m4v", L".mpg", L".mpeg", L".ts", L".m2ts", L".mp3", L".flac", L".wav", L".aac", L".ogg", L".m4a"}) {
+                if (suffix == extension) { title.Truncate(dot); break; }
+            }
+        }
+        return title;
+    }
     CSize m_size = CSize(0, 0), m_layoutSize = CSize(0, 0);
     std::vector<Button> m_buttons;
     std::vector<CRect> m_buttonRects;
@@ -57,9 +92,9 @@ private:
         return m_volumeVisible && hit.PtInRect(point);
     }
     bool IsControlPoint(CPoint point) const {
-        return CloseRect().PtInRect(point) || (m_controlsVisible &&
+        return m_panelsVisible && (CloseRect().PtInRect(point) || (m_controlsVisible &&
             (HitButton(point) != -1 || HitTime(point) || (m_seekVisible && m_timeline.PtInRect(point))
-                || (HitVolume(point))));
+                || HitVolume(point))));
     }
     bool InsideView() const {
         CPoint point;
@@ -79,7 +114,7 @@ private:
         m_timeline.SetRectEmpty(); m_volumeRect.SetRectEmpty(); m_timeRect.SetRectEmpty(); m_durationRect.SetRectEmpty();
         const int margin = Compact() ? 12 : 16;
         const int left = margin, right = m_size.cx - margin, cell = Compact() ? 24 : 28;
-        const int volumeWidth = m_volumeVisible ? (Compact() ? 60 : 84) : 0;
+        const int volumeWidth = m_volumeVisible ? (Compact() ? 96 : 120) : 0;
         const int gap = m_volumeVisible ? 8 : 0;
         const int spaceForButtons = right - left - volumeWidth - gap;
         int capacity = std::max(0, spaceForButtons / cell);
@@ -117,7 +152,7 @@ private:
         }
         if (m_volumeVisible) {
             const int volumeLeft = m_alignment == 0 ? right - volumeWidth : groupLeft + groupWidth + gap;
-            m_volumeRect = CRect(volumeLeft + 7, y + 3, volumeLeft + volumeWidth - 3, y + cell - 3);
+            m_volumeRect = CRect(volumeLeft + 7, y + 3, volumeLeft + volumeWidth - 39, y + cell - 3);
         }
         if (m_tip.GetSafeHwnd()) {
             for (size_t i = 0; i < m_buttonRects.size(); ++i) {
@@ -194,15 +229,16 @@ private:
             graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
             graphics.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAliasGridFit);
             Gdiplus::SolidBrush backdrop(Gdiplus::Color(64, 0, 0, 0));
-            graphics.FillRectangle(&backdrop, 0, 0, width, HeaderHeight());
-            if (m_controlsVisible) graphics.FillRectangle(&backdrop, 0, height - m_bottomHeight, width, m_bottomHeight);
+            if (m_panelsVisible) graphics.FillRectangle(&backdrop, 0, 0, width, HeaderHeight());
+            if (m_panelsVisible && m_controlsVisible) graphics.FillRectangle(&backdrop, 0, height - m_bottomHeight, width, m_bottomHeight);
             Gdiplus::Font font(L"Segoe UI", Compact() ? 12.0f : 14.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
             Gdiplus::SolidBrush text(Gdiplus::Color(255, 235, 235, 235));
             Gdiplus::StringFormat format;
             format.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap);
             format.SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
-            graphics.DrawString(m_title, -1, &font, Gdiplus::RectF(14, static_cast<float>((HeaderHeight() - 22) / 2), static_cast<float>(width - 60), 22), &format, &text);
-            if (m_controlsVisible) {
+            Gdiplus::Font titleFont(L"Segoe UI", Compact() ? 15.0f : 17.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+            if (m_panelsVisible) graphics.DrawString(m_title, -1, &titleFont, Gdiplus::RectF(14, static_cast<float>((HeaderHeight() - 22) / 2), static_cast<float>(width - 60), 22), &format, &text);
+            if (m_panelsVisible && m_controlsVisible) {
                 if (m_seekVisible) {
                     DrawSlider(graphics, m_timeline, m_canSeek && m_stop > m_start
                         ? static_cast<double>(m_position - m_start) / static_cast<double>(m_stop - m_start) : 0, m_canSeek);
@@ -227,8 +263,8 @@ private:
                     // Distinguish a single frame from the next playlist item.
                     if (button.id == ID_PLAY_FRAMESTEP) {
                         const int cx = rect.CenterPoint().x, cy = rect.CenterPoint().y;
-                        const BYTE alpha = (button.state & TBSTATE_ENABLED) ? 255 : 90;
-                        Gdiplus::Pen pen(Gdiplus::Color(alpha, 238, 238, 238), 1.4f);
+                        const BYTE alpha = (button.state & TBSTATE_ENABLED) ? (m_hotButton == static_cast<int>(i) ? 255 : 199) : 71;
+                        Gdiplus::Pen pen(Gdiplus::Color(alpha, 255, 255, 255), 1.4f);
                         graphics.DrawRectangle(&pen, cx - 7, cy - 6, 14, 12);
                         Gdiplus::SolidBrush fill(Gdiplus::Color(alpha, 255, 255, 255));
                         Gdiplus::Point triangle[] = {Gdiplus::Point(cx - 3, cy - 4),
@@ -241,12 +277,11 @@ private:
                     if (icon) {
                         auto image = DecodeIcon(icon);
                         if (!image) { ::DestroyIcon(icon); continue; }
-                        Gdiplus::ColorMatrix matrix = {{{1,0,0,0,0},{0,1,0,0,0},{0,0,1,0,0},
-                            {0,0,0,(button.state & TBSTATE_ENABLED) ? 1.0f : 0.35f,0},{0,0,0,0,1}}};
-                        if ((button.state & TBSTATE_ENABLED) && m_hotButton == static_cast<int>(i)) {
-                            matrix.m[0][0] = matrix.m[1][1] = matrix.m[2][2] = 0;
-                            matrix.m[4][0] = matrix.m[4][1] = matrix.m[4][2] = 1;
-                        }
+                        const float opacity = (button.state & TBSTATE_ENABLED)
+                            ? (m_hotButton == static_cast<int>(i) ? 1.0f : 0.78f) : 0.28f;
+                        // One monochrome palette, independent of light/dark source resources.
+                        Gdiplus::ColorMatrix matrix = {{{0,0,0,0,0},{0,0,0,0,0},{0,0,0,0,0},
+                            {0,0,0,opacity,0},{1,1,1,0,1}}};
                         Gdiplus::ImageAttributes attrs;
                         attrs.SetColorMatrix(&matrix);
                         const int iconSize = Compact() ? 16 : 20;
@@ -261,9 +296,17 @@ private:
                     const auto center = m_overflowRect.CenterPoint();
                     for (int offset : {-5, 0, 5}) graphics.FillEllipse(&text, center.x + offset - 1, center.y - 1, 2, 2);
                 }
-                if (m_toolbarVisible && m_volumeVisible) DrawSlider(graphics, m_volumeRect,
-                    static_cast<double>(m_volume) / std::max(1, m_volumeMaximum), true);
+                if (m_toolbarVisible && m_volumeVisible) {
+                    DrawSlider(graphics, m_volumeRect, static_cast<double>(m_volume) / std::max(1, m_volumeMaximum), true);
+                    CString percent; percent.Format(L"%d%%", MulDiv(m_volume, 100, std::max(1, m_volumeMaximum)));
+                    format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+                    graphics.DrawString(percent, -1, &font,
+                        Gdiplus::RectF(static_cast<float>(m_volumeRect.right + 9), static_cast<float>(m_volumeRect.top - 3),
+                            36.0f, static_cast<float>(m_volumeRect.Height() + 6)), &format, &text);
+                    format.SetLineAlignment(Gdiplus::StringAlignmentNear);
+                }
             }
+            if (m_panelsVisible) {
             const CRect close = CloseRect();
             if (m_closeHot) {
                 Gdiplus::SolidBrush hover(Gdiplus::Color(48, 255, 255, 255));
@@ -274,9 +317,23 @@ private:
             const int x = close.left + 8, y = close.top + 8;
             graphics.DrawLine(&cross, x, y, x + 12, y + 12);
             graphics.DrawLine(&cross, x + 12, y, x, y + 12);
+            }
+            if (!m_feedback.IsEmpty() && m_feedbackUntil > GetTickCount64()) {
+                // Compact status is separate from, and below, the file title.
+                const int top = HeaderHeight() + 8;
+                Gdiplus::Font feedbackFont(L"Segoe UI", 14.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+                Gdiplus::RectF bounds;
+                graphics.MeasureString(m_feedback, -1, &feedbackFont, Gdiplus::PointF(0, 0), &bounds);
+                const float boxWidth = std::min(static_cast<float>(width - 28), bounds.Width + 20.0f);
+                Gdiplus::SolidBrush statusBG(Gdiplus::Color(155, 0, 0, 0));
+                graphics.FillRectangle(&statusBG, 14.0f, static_cast<float>(top), boxWidth, 30.0f);
+                format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+                graphics.DrawString(m_feedback, -1, &feedbackFont,
+                    Gdiplus::RectF(24.0f, static_cast<float>(top), boxWidth - 20.0f, 30.0f), &format, &text);
+            }
         }
         POINT origin = {0, 0}; SIZE size = {width, height};
-        BLENDFUNCTION blend = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+        BLENDFUNCTION blend = {AC_SRC_OVER, 0, m_opacity, AC_SRC_ALPHA};
         ::UpdateLayeredWindow(m_hWnd, nullptr, nullptr, &size, dc, &origin, 0, &blend, ULW_ALPHA);
         ::SelectObject(dc, previous); ::DeleteObject(bitmap); ::DeleteDC(dc);
     }
@@ -296,6 +353,20 @@ private:
     }
 protected:
     LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam) override {
+        if (message == WM_TIMER && wParam == DeadlineTimer) {
+            KillTimer(DeadlineTimer);
+            const ULONGLONG now = GetTickCount64();
+            if (m_feedbackUntil && now >= m_feedbackUntil) { m_feedback.Empty(); m_feedbackUntil = 0; }
+            if (m_fullscreen && m_panelsVisible && !CapturedInput() && now - m_lastInput >= 4000) {
+                if (!m_fadeStart) m_fadeStart = now;
+                const ULONGLONG elapsed = now - m_fadeStart;
+                m_opacity = static_cast<BYTE>(255 - std::min<ULONGLONG>(255, elapsed * 255 / 240));
+                if (elapsed >= 240) { m_idleHidden = true; m_fadeStart = 0; }
+            }
+            Refresh(m_view);
+            if (IsWindowVisible()) DrawSurface();
+            ArmDeadline(); return 0;
+        }
         if (message == WM_NCHITTEST) {
             CPoint point(lParam); ScreenToClient(&point);
             return IsControlPoint(point) ? HTCLIENT : HTTRANSPARENT;
@@ -318,6 +389,21 @@ public:
         if (GetSafeHwnd()) DestroyWindow();
         if (m_gdiplus) Gdiplus::GdiplusShutdown(m_gdiplus);
     }
+    void Activity(const MSG& message) {
+        if (message.message == WM_MOUSEMOVE) {
+            if (message.pt.x == m_lastCursor.x && message.pt.y == m_lastCursor.y) return;
+            m_lastCursor = message.pt;
+        }
+        WakeControls();
+    }
+    bool ShowFeedback(CWnd* view, LPCWSTR message, int duration) {
+        if (!view->GetSafeHwnd() || GetCurrentThreadId() != GetWindowThreadProcessId(view->GetSafeHwnd(), nullptr)) return false;
+        if (m_idleHidden) m_opacity = 255;
+        m_feedback = message; m_feedbackUntil = GetTickCount64() + std::clamp(duration, 500, 3000);
+        Refresh(view);
+        if (GetSafeHwnd() && IsWindowVisible()) DrawSurface();
+        ArmDeadline(); return true;
+    }
     void SetNativeLayout(std::vector<Button> buttons, HIMAGELIST images, bool toolbar, bool seek,
                          bool volume, int volumeValue, int volumeMaximum, int alignment) {
         if (buttons != m_buttons || images != m_images || toolbar != m_toolbarVisible
@@ -336,8 +422,9 @@ public:
         if (m_positionText.GetLength() != position.GetLength() || m_durationText.GetLength() != duration.GetLength()) m_dirty = true;
         m_positionText = position; m_durationText = duration;
     }
-    void SetControlState(bool, bool, bool canSeek, bool controlsVisible,
+    void SetControlState(bool fullscreen, bool, bool canSeek, bool controlsVisible,
                          LONGLONG start, LONGLONG stop, LONGLONG position, const CString& time) {
+        if (m_fullscreen != fullscreen) { m_fullscreen = fullscreen; WakeControls(); }
         const bool changed = m_dirty || m_canSeek != canSeek || m_controlsVisible != controlsVisible
             || m_start != start || m_stop != stop || m_position != position || m_time != time;
         m_canSeek = canSeek; m_controlsVisible = controlsVisible;
@@ -441,32 +528,37 @@ public:
         if (selected >= 1000 && selected - 1000 < buttons.size() && invokeButton)
             invokeButton(buttons[selected - 1000].id, anchor, false);
     }
-    void CancelPress() { m_closePressed = m_timePressed = m_blockedPress = false; m_pressedButton = -1; }
+    void CancelPress() { WakeControls(); m_closePressed = m_timePressed = m_blockedPress = false; m_pressedButton = -1; }
     void Hide() {
         if (m_tip.GetSafeHwnd()) m_tip.Pop();
-        if (GetSafeHwnd()) ShowWindow(SW_HIDE);
+        if (GetSafeHwnd()) { KillTimer(DeadlineTimer); ShowWindow(SW_HIDE); }
     }
     void Refresh(CWnd* view, HWND trackingWindow = nullptr) {
         if (!m_gdiplus) return;
         m_view = view;
         CRect rc; view->GetClientRect(rc);
-        if (rc.Width() < 180 || rc.Height() < 120 || !view->IsWindowVisible() || !InsideView()) { Hide(); return; }
+        if (rc.Width() < 180 || rc.Height() < 120 || !view->IsWindowVisible()) { Hide(); return; }
+        const bool panels = InsideView() && !m_idleHidden;
+        const bool feedback = m_feedbackUntil > GetTickCount64();
+        if (!panels && !feedback) { Hide(); return; }
+        const bool panelChanged = panels != m_panelsVisible; m_panelsVisible = panels;
         if (!GetSafeHwnd()) {
             if (!CreateEx(WS_EX_LAYERED | WS_EX_NOACTIVATE, AfxRegisterWndClass(0, ::LoadCursor(nullptr, IDC_ARROW)),
                     L"Fluent native overlay", WS_CHILD, rc, view, 0)) return;
             m_tip.Create(this, TTS_ALWAYSTIP | TTS_NOPREFIX); m_tip.Activate(TRUE);
         }
-        CString title; view->GetTopLevelParent()->GetWindowText(title);
+        CString title; view->GetTopLevelParent()->GetWindowText(title); title = DisplayTitle(title);
         CPoint cursor; ::GetCursorPos(&cursor); ScreenToClient(&cursor);
         const CSize oldSize = m_size; m_size = rc.Size(); EnsureGeometry();
         const bool hot = CloseRect().PtInRect(cursor) != FALSE;
         const int hotButton = HitButton(cursor);
-        const bool repaint = !IsWindowVisible() || oldSize != m_size || hot != m_closeHot || hotButton != m_hotButton || title != m_title;
+        const bool repaint = panelChanged || !IsWindowVisible() || oldSize != m_size || hot != m_closeHot || hotButton != m_hotButton || title != m_title;
         m_closeHot = hot; m_hotButton = hotButton; m_title = title;
         if (!IsWindowVisible() || oldSize != m_size || ::GetWindow(m_hWnd, GW_HWNDPREV))
             SetWindowPos(&wndTop, 0, 0, rc.Width(), rc.Height(), SWP_NOACTIVATE);
         if (repaint) DrawSurface();
         ShowWindow(SW_SHOWNOACTIVATE);
+        ArmDeadline();
         if (trackingWindow && trackingWindow != m_hWnd) {
             TRACKMOUSEEVENT track = {sizeof(track), TME_LEAVE, trackingWindow, 0}; ::TrackMouseEvent(&track);
         }

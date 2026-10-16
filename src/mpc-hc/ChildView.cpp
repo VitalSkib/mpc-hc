@@ -145,6 +145,11 @@ void CChildView::UpdateFluentControls()
             || !m_pMainFrame->m_wndSeekBar.GetSafeHwnd()) return;
     m_updatingFluent = true;
     struct ResetFlag { bool& flag; ~ResetFlag() { flag = false; } } reset{m_updatingFluent};
+    if (!m_pMainFrame->m_OSD.overlayMessage) {
+        m_pMainFrame->m_OSD.overlayMessage = [this](LPCWSTR message, int duration) {
+            return m_fluentProbe.ShowFeedback(this, message, duration);
+        };
+    }
     auto& nativeToolbar = m_pMainFrame->m_wndToolBar;
     auto& toolbar = nativeToolbar.GetToolBarCtrl();
     auto& seekbar = m_pMainFrame->m_wndSeekBar;
@@ -179,7 +184,7 @@ void CChildView::UpdateFluentControls()
     m_pMainFrame->m_wndStatusBar.GetOverlayTimeParts(positionText, durationText);
     m_fluentProbe.SetTimeParts(positionText, durationText);
     const CString time = positionText + L" / " + durationText;
-    m_fluentProbe.SetControlState(false, false, seekbar.CanOverlaySeek(), toolbarSelected || seekSelected,
+    m_fluentProbe.SetControlState(m_pMainFrame->IsFullScreenMode(), false, seekbar.CanOverlaySeek(), toolbarSelected || seekSelected,
         start, stop, seekbar.GetPos(), time);
     m_fluentProbe.Refresh(this);
 }
@@ -191,6 +196,11 @@ bool CChildView::RouteFluentInput(const MSG& message)
         UpdateFluentControls();
         return false;
     }
+    if (message.message == WM_KEYDOWN || message.message == WM_SYSKEYDOWN) {
+        m_fluentProbe.Activity(message);
+        UpdateFluentControls();
+        return false;
+    }
     if (message.message < WM_MOUSEFIRST || message.message > WM_MOUSELAST) return false;
     // Include movement over the original toolbar: leaving video is still a leave.
     UpdateFluentControls();
@@ -199,6 +209,8 @@ bool CChildView::RouteFluentInput(const MSG& message)
     if (message.hwnd != m_hWnd && !::IsChild(m_hWnd, message.hwnd)
             && !(message.hwnd == seekbar && m_pMainFrame->m_wndSeekBar.DraggingThumb())
             && !(message.hwnd == volume && m_pMainFrame->m_wndToolBar.m_volctrl.OverlayDragging())) return false;
+    m_fluentProbe.Activity(message);
+    UpdateFluentControls();
     return m_fluentProbe.RouteInput(message);
 }
 

@@ -1090,6 +1090,20 @@ void CPlayerToolBar::UpdateOverlayCommandState()
 {
     // The backend HWND is hidden; explicitly run its original command UI updates.
     CToolBar::OnUpdateCmdUI(m_pMainFrame, TRUE);
+    // Toolbar-only commands (repeat/fullscreen/etc.) are not owned by the frame.
+    class ToolbarUI final : public CCmdUI {
+        CToolBarCtrl& m_toolbar;
+    public:
+        explicit ToolbarUI(CToolBarCtrl& toolbar) : m_toolbar(toolbar) {}
+        void Enable(BOOL enabled) override { m_toolbar.EnableButton(m_nID, enabled); }
+        void SetCheck(int checked) override { m_toolbar.CheckButton(m_nID, checked != 0); }
+    } state(GetToolBarCtrl());
+    for (int index = 0; index < GetToolBarCtrl().GetButtonCount(); ++index) {
+        TBBUTTON button = {};
+        if (!GetToolBarCtrl().GetButton(index, &button) || (button.fsStyle & BTNS_SEP)) continue;
+        state.m_nID = button.idCommand; state.m_nIndex = index; state.m_pOther = this;
+        OnCmdMsg(button.idCommand, CN_UPDATE_COMMAND_UI, &state, nullptr);
+    }
 }
 
 void CPlayerToolBar::InvokeOverlayButton(UINT id, const CRect& anchor, bool rightButton)
@@ -1105,7 +1119,11 @@ void CPlayerToolBar::InvokeOverlayButton(UINT id, const CRect& anchor, bool righ
         leftButtonIndex = index;
         const UINT command = id >= ID_CUSTOM_ACTION1 && id <= ID_CUSTOM_ACTION4 ? CustomToCMD(id, VK_LBUTTON) : id;
         if (CmdIsMenu(command) || command == ID_AUDIOS || command == ID_SUBTITLES) DoCustomContextMenu(id, command, index, VK_LBUTTON);
-        else m_pMainFrame->PostMessage(WM_COMMAND, id);
+        else {
+            AFX_CMDHANDLERINFO handler = {};
+            if (OnCmdMsg(id, CN_COMMAND, nullptr, &handler)) OnCmdMsg(id, CN_COMMAND, nullptr, nullptr);
+            else m_pMainFrame->PostMessage(WM_COMMAND, id);
+        }
     }
     m_overlayAnchor.reset();
 }
