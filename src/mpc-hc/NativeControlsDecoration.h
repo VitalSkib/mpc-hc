@@ -2,6 +2,9 @@
 #pragma once
 #include <gdiplus.h>
 #include "CMPCThemeToolTipCtrl.h"
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+#include "../DSUtil/GeometryDiagnostics.h"
+#endif
 
 class CNativeControlsDecoration final : public CWnd
 {
@@ -10,6 +13,7 @@ class CNativeControlsDecoration final : public CWnd
     CString m_title;
     int m_scale = 96;
     CRect m_close;
+    HRESULT m_lastDraw = S_OK;
     CMPCThemeToolTipCtrl m_tip;
 
     int Scale(int value) const { return MulDiv(value, m_scale, 96); }
@@ -54,11 +58,18 @@ class CNativeControlsDecoration final : public CWnd
                 graphics.DrawLine(&pen, x + radius, y - radius, x - radius, y + radius);
             }
         }
-        POINT target = {bounds.left, bounds.top}, source = {};
+        POINT source = {};
         SIZE size = {width, height};
         BLENDFUNCTION blend = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
-        const bool success = !!::UpdateLayeredWindow(m_hWnd, nullptr, &target, &size,
+        // Layout alone owns placement. A surface repaint must not relocate
+        // this layered child, including when its parent is away from (0, 0).
+        const bool success = !!::UpdateLayeredWindow(m_hWnd, nullptr, nullptr, &size,
             memory, &source, 0, &blend, ULW_ALPHA);
+        m_lastDraw = success ? S_OK : HRESULT_FROM_WIN32(::GetLastError());
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+        GeometryDiagnostics::Record(m_header ? "decor.header-draw" : "decor.backdrop-draw",
+            m_hWnd, nullptr, nullptr, m_lastDraw);
+#endif
         ::SelectObject(memory, previous); ::DeleteDC(memory); ::DeleteObject(bitmap);
         return success;
     }
@@ -117,7 +128,12 @@ public:
         m_hot = m_pressed = false;
         if (::GetCapture() == GetSafeHwnd() && GetSafeHwnd()) ::ReleaseCapture();
         if (m_tip.GetSafeHwnd()) m_tip.Pop();
-        if (GetSafeHwnd() && (GetStyle() & WS_VISIBLE)) ShowWindow(SW_HIDE);
+        if (GetSafeHwnd() && (GetStyle() & WS_VISIBLE)) {
+            ShowWindow(SW_HIDE);
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+            GeometryDiagnostics::Record(m_header ? "decor.header-hide" : "decor.backdrop-hide", m_hWnd);
+#endif
+        }
     }
     void Refresh(CWnd* view, const CRect& rectangle, bool header, const CString& title, int dpi) {
         if (rectangle.IsRectEmpty()) { Hide(); return; }
@@ -139,5 +155,10 @@ public:
         SetWindowPos(&wndTop, rectangle.left, rectangle.top, rectangle.Width(), rectangle.Height(), SWP_NOACTIVATE);
         if (DrawSurface()) ShowWindow(SW_SHOWNOACTIVATE);
         else Hide(); // leave native controls usable if decoration cannot be rendered
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+        const RECT expected = rectangle;
+        GeometryDiagnostics::Record(m_header ? "decor.header-layout" : "decor.backdrop-layout",
+            m_hWnd, &expected, nullptr, m_lastDraw);
+#endif
     }
 };
