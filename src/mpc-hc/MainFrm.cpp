@@ -1744,6 +1744,9 @@ void CMainFrame::RecalcLayout(BOOL bNotify)
         MoveWindow(r);
     }
     OSDBarSetPos();
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    m_wndView.UpdateNativeDecoration();
+#endif
 }
 
 void CMainFrame::EnableDocking(DWORD dwDockStyle)

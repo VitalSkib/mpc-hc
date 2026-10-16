@@ -727,6 +727,11 @@ void CMainFrameControls::UpdateToolbarsVisibility()
     st.bLastCanAutoHideToolbars = bCanAutoHide;
     st.bLastCanAutoHidePanels = bCanAutoHide && bCanHideDockedPanels;
     st.bLastHaveExclusiveSeekbar = bExclSeekbar;
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    // Decoration follows the native visibility decision, including unchanged
+    // layouts. It has no cursor policy, hide deadline, timer or polling loop.
+    m_pMainFrame->m_wndView.UpdateNativeDecoration();
+#endif
 }
 
 unsigned CMainFrameControls::GetVisibleToolbarsHeight() const

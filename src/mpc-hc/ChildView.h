@@ -22,6 +22,9 @@
 #pragma once
 
 #include "MouseWndWithArtView.h"
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+#include "NativeControlsDecoration.h"
+#endif
 #ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
 #include "FluentOverlayProbe.h"
 #endif
@@ -32,6 +35,10 @@ class CChildView : public CMouseWndWithArtView
     CFluentOverlayProbe m_fluentProbe;
     bool m_updatingFluent = false;
     LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam) override;
+#endif
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    CNativeControlsDecoration m_nativeHeader, m_nativeBackdrop;
+    bool m_refreshingNativeDecoration = false;
 #endif
     bool m_bSwitchingFullscreen;
     bool m_bFirstMedia;
@@ -44,6 +51,9 @@ class CChildView : public CMouseWndWithArtView
 #endif
 
 public:
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    void UpdateNativeDecoration();
+#endif
 #ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
     void UpdateFluentControls();
     bool RouteFluentInput(const MSG& message);

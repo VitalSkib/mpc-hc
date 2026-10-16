@@ -98,6 +98,9 @@ void CChildView::EventCallback(MpcEvent ev)
         default:
             ASSERT(FALSE);
     }
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    UpdateNativeDecoration();
+#endif
 #ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
     char tag[64] = {};
     _snprintf_s(tag, sizeof(tag), _TRUNCATE, "ui.event.%u", static_cast<unsigned>(ev));
@@ -155,6 +158,38 @@ BOOL CChildView::PreTranslateMessage(MSG* pMsg)
     }
     return CWnd::PreTranslateMessage(pMsg);
 }
+
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+void CChildView::UpdateNativeDecoration()
+{
+    if (m_refreshingNativeDecoration || !GetSafeHwnd()) return;
+    m_refreshingNativeDecoration = true;
+    struct ResetFlag { bool& flag; ~ResetFlag() { flag = false; } } reset{m_refreshingNativeDecoration};
+    CRect view; GetClientRect(view);
+    const unsigned height = m_pMainFrame->m_controls.GetVisibleToolbarsHeight();
+    const bool visible = !m_bSwitchingFullscreen && IsWindowVisible()
+        && !m_pMainFrame->IsIconic() && m_pMainFrame->GetLoadState() == MLS::LOADED
+        && !m_pMainFrame->m_fAudioOnly && !m_pMainFrame->HasDedicatedFSVideoWindow()
+        && m_pMainFrame->m_controls.ToolbarsCoverVideo() && height > 0;
+    if (!visible || view.IsRectEmpty()) {
+        m_nativeHeader.Hide(); m_nativeBackdrop.Hide(); return;
+    }
+    CString title; m_pMainFrame->GetWindowText(title);
+    const int dot = title.ReverseFind(L'.');
+    if (dot >= 0) {
+        CString suffix = title.Mid(dot); suffix.MakeLower();
+        for (LPCWSTR extension : {L".mp4", L".mkv", L".avi", L".mov", L".wmv", L".webm", L".m4v",
+                L".mpg", L".mpeg", L".ts", L".m2ts", L".mp3", L".flac", L".wav", L".aac", L".ogg", L".m4a"}) {
+            if (suffix == extension) { title.Truncate(dot); break; }
+        }
+    }
+    const int dpi = m_pMainFrame->m_dpi.ScaleY(96);
+    CRect bottom(view); bottom.top = std::max(view.top, view.bottom - int(height));
+    m_nativeBackdrop.Refresh(this, bottom, false, CString(), dpi);
+    CRect top(view); top.bottom = std::min(bottom.top, view.top + m_pMainFrame->m_dpi.ScaleY(40));
+    m_nativeHeader.Refresh(this, top, true, title, dpi);
+}
+#endif
 
 #ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
 void CChildView::UpdateFluentControls()
@@ -320,6 +355,9 @@ void CChildView::OnSize(UINT nType, int cx, int cy)
         m_pMainFrame->m_OSD.OnSize(nType, cx, cy);
     }
     m_pMainFrame->UpdateThumbnailClip();
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    UpdateNativeDecoration();
+#endif
 #ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
     TraceGeometry("ui.after-size");
 #endif
