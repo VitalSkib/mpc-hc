@@ -35,7 +35,7 @@ jobs:
       - name: Build native-controls x64 probe
         shell: cmd
         env:
-          CL: /DMPC_EXPERIMENTAL_NATIVE_SEEKBAR /DMPC_EXPERIMENTAL_NO_BACKDROP /DMPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS /DMPC_EXPERIMENTAL_NATIVE_DECORATION
+          CL: /DMPC_EXPERIMENTAL_NATIVE_SEEKBAR /DMPC_EXPERIMENTAL_NO_BACKDROP /DMPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS /DMPC_EXPERIMENTAL_NATIVE_DECORATION /DMPC_EXPERIMENTAL_NATIVE_FONT_ICONS
         run: build.bat Build x64 Main Release Lite
       - name: Package isolated test settings
         shell: pwsh
@@ -56,7 +56,9 @@ jobs:
             'Open the same video, resize until the fault, hide/show controls, toggle fullscreen, close.',
             'Keep the log from that run. No frames or media filenames are logged.',
             'Transparent pixels may pass mouse input through: check button targeting too.',
-            'Native toolbar icons/commands remain; its background is removed by colour key.',
+            'Diagnostic: toolbar artwork uses the installed Segoe Fluent Icons font (MDL2 fallback).',
+            'Native toolbar state backgrounds, input, layout and commands remain unchanged.',
+            'The empty seekbar is already thin/transparent before opening media.',
             'Portable settings are included; native controls auto-hide after 4 seconds.',
             'Source: https://github.com/VitalSkib/mpc-hc/tree/fluent-hover-ui') |
             Set-Content -LiteralPath "$testDir/README.txt" -Encoding utf8

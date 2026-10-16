@@ -854,8 +854,9 @@ void CPlayerSeekBar::OnPaint()
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
     // This is the actual seekbar HWND: native input, capture, tooltip, chapter
     // and preview handlers are unchanged. No mirrored control or input proxy.
+    // The disabled/empty seekbar uses the same presentation as loaded media.
+    // Native duration/enabled state still decides whether a thumb is drawn.
     const bool alpha = !m_alphaPresentationFailed && AppIsThemeLoaded()
-        && m_pMainFrame->GetLoadState() == MLS::LOADED
         && m_pMainFrame->m_controls.ToolbarsCoverVideo()
         && !m_pMainFrame->HasDedicatedFSVideoWindow();
     if (alpha) {
