@@ -335,6 +335,41 @@ CRect CPlayerSeekBar::GetBaseRect() const
 }
 
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+bool CPlayerSeekBar::UpdateTimeFieldTooltip(CPoint point)
+{
+    int side = -1;
+    if (TimeSectionVisible() && !DraggingThumb()) {
+        if (m_timeText.Find(_T(" / ")) >= 0 && GetTimeHitRect(true).PtInRect(point)) side = 1;
+        else if (GetTimeHitRect(false).PtInRect(point)) side = 0;
+    }
+    if (side < 0) {
+        if (m_timeTipActive) {
+            m_tooltip.SendMessage(TTM_TRACKACTIVATE, FALSE, (LPARAM)&m_ti);
+            m_timeTipActive = false;
+        }
+        return false;
+    }
+    const bool entering = !m_timeTipActive;
+    if (entering) {
+        HideToolTip();
+        m_pMainFrame->PreviewWindowHide();
+    }
+    const CString text = side ? (m_rightRemaining ? L"Time remaining" : L"Total duration")
+        : (AfxGetAppSettings().fRemainingTime && m_bHasDuration ? L"Time remaining" : L"Time elapsed");
+    if (entering || text != m_tooltipText) {
+        m_tooltipText = text;
+        m_ti.lpszText = (LPTSTR)(LPCTSTR)m_tooltipText;
+        m_tooltip.SetToolInfo(&m_ti);
+    }
+    CRect field = GetTimeHitRect(side != 0);
+    CPoint anchor(field.CenterPoint().x, field.top - m_pMainFrame->m_dpi.ScaleY(24));
+    ClientToScreen(&anchor);
+    m_tooltip.SendMessage(TTM_TRACKPOSITION, 0, MAKELPARAM(anchor.x, anchor.y));
+    if (entering) m_tooltip.SendMessage(TTM_TRACKACTIVATE, TRUE, (LPARAM)&m_ti);
+    m_timeTipActive = true;
+    return true;
+}
+
 CString CPlayerSeekBar::PresentedTimeText() const
 {
     const int separator = m_timeText.Find(_T(" / "));
@@ -626,6 +661,9 @@ void CPlayerSeekBar::UpdateTime()
 
     m_timeText = newText;
     m_timeActualWidth = newActualWidth;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    if (newText.IsEmpty() && m_timeTipActive) UpdateTimeFieldTooltip(CPoint(-1, -1));
+#endif
 
     const int newEffWidth = TimeSectionEffectiveWidth();
     const bool geometryChanged = newEffWidth != oldEffWidth
@@ -1362,10 +1400,12 @@ void CPlayerSeekBar::OnLButtonDown(UINT nFlags, CPoint point)
             m_rightRemaining = !m_rightRemaining;
             AfxGetApp()->WriteProfileInt(L"Settings", L"SeekbarRightRemaining", m_rightRemaining);
             UpdateTime();
+            UpdateTimeFieldTooltip(point);
             return;
         }
         if (GetTimeHitRect(false).PtInRect(point)) {
             m_pMainFrame->m_wndStatusBar.ToggleTimerDisplay();
+            UpdateTimeFieldTooltip(point);
             return;
         }
     }
@@ -1477,6 +1517,7 @@ void CPlayerSeekBar::OnMouseMove(UINT nFlags, CPoint point)
     checkHover(point);
     TRACKMOUSEEVENT track = {sizeof(track), TME_LEAVE, m_hWnd, 0};
     ::TrackMouseEvent(&track);
+    if (UpdateTimeFieldTooltip(point)) return;
 #endif
 
     if (DraggingThumb() && (nFlags & MK_LBUTTON)) {
@@ -1554,6 +1595,9 @@ void CPlayerSeekBar::OnTimer(UINT_PTR nIDEvent)
 
 void CPlayerSeekBar::OnMouseLeave()
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    UpdateTimeFieldTooltip(CPoint(-1, -1));
+#endif
     HideToolTip();
     m_pMainFrame->PreviewWindowHide();
     m_bIgnoreLastTooltipPoint = true;

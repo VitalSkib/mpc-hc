@@ -91,6 +91,8 @@ private:
     CString BuildTimeTemplate() const;  // widest time string for the currently enabled time options
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
     bool m_rightRemaining = false;
+    bool m_timeTipActive = false;
+    bool UpdateTimeFieldTooltip(CPoint point);
     CString m_rightTimeText;
     int m_leftTimeWidth = 0, m_rightTimeWidth = 0;
     CString PresentedTimeText() const;
