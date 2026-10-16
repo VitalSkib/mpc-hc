@@ -65,3 +65,25 @@ Seek-hover timestamp and preview integration are deferred to the next stage.
 Runtime checks: alpha on light/dark video, native left/center/right alignment,
 zero/mute/unmute icon, elapsed/remaining toggle on either label, precision/frame
 time modes, narrow layout, and no video pause from label/disabled-control clicks.
+
+## Feedback and fullscreen inactivity
+
+Fullscreen controls fade over 240 ms after four seconds without input. Mouse
+movement and keyboard actions restore them; unchanged synthetic mouse moves do
+not restart the deadline, and captured slider gestures prevent hiding. Windowed
+hover behavior is retained.
+
+The title uses a 15/17px font and removes a terminal known media extension. Volume
+percentage stays visible to the right of its slider. Normal command messages are
+routed from COSD into a compact translucent status box below the title; debug
+messages retain the native OSD path. Cross-thread messages retain the native
+fallback. Initial filename feedback remains suppressed.
+
+Toolbar-owned command UI and click handlers are routed through the actual toolbar
+first, including Repeat and Fullscreen. All enabled icons use the same 78-percent
+white base and full white hover; disabled icons remain dim.
+
+Runtime checks: added Repeat/Fullscreen actions and hover; consistent Frame-step
+brightness; volume percentage; compact Play/Pause messages with the native OSD
+option on and off; title extension handling; fullscreen fade, wake, slider capture,
+pause and return to windowed mode.

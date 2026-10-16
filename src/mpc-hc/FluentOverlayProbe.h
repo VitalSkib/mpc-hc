@@ -397,7 +397,7 @@ public:
         WakeControls();
     }
     bool ShowFeedback(CWnd* view, LPCWSTR message, int duration) {
-        if (!view->GetSafeHwnd() || GetCurrentThreadId() != GetWindowThreadProcessId(view->GetSafeHwnd(), nullptr)) return false;
+        if (!view->GetSafeHwnd() || ::GetCurrentThreadId() != ::GetWindowThreadProcessId(view->GetSafeHwnd(), nullptr)) return false;
         if (m_idleHidden) m_opacity = 255;
         m_feedback = message; m_feedbackUntil = GetTickCount64() + std::clamp(duration, 500, 3000);
         Refresh(view);
@@ -538,6 +538,8 @@ public:
         m_view = view;
         CRect rc; view->GetClientRect(rc);
         if (rc.Width() < 180 || rc.Height() < 120 || !view->IsWindowVisible()) { Hide(); return; }
+        const bool feedbackExpired = m_feedbackUntil && GetTickCount64() >= m_feedbackUntil;
+        if (feedbackExpired) { m_feedback.Empty(); m_feedbackUntil = 0; }
         const bool panels = InsideView() && !m_idleHidden;
         const bool feedback = m_feedbackUntil > GetTickCount64();
         if (!panels && !feedback) { Hide(); return; }
@@ -552,7 +554,7 @@ public:
         const CSize oldSize = m_size; m_size = rc.Size(); EnsureGeometry();
         const bool hot = CloseRect().PtInRect(cursor) != FALSE;
         const int hotButton = HitButton(cursor);
-        const bool repaint = panelChanged || !IsWindowVisible() || oldSize != m_size || hot != m_closeHot || hotButton != m_hotButton || title != m_title;
+        const bool repaint = feedbackExpired || panelChanged || !IsWindowVisible() || oldSize != m_size || hot != m_closeHot || hotButton != m_hotButton || title != m_title;
         m_closeHot = hot; m_hotButton = hotButton; m_title = title;
         if (!IsWindowVisible() || oldSize != m_size || ::GetWindow(m_hWnd, GW_HWNDPREV))
             SetWindowPos(&wndTop, 0, 0, rc.Width(), rc.Height(), SWP_NOACTIVATE);
