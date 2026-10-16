@@ -1,3 +1,28 @@
+# Geometry diagnostic checkpoint
+
+MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS records geometry without adding rendering
+fixes. The baseline remains the no-backdrop test. The DX9 presenter logs actual
+Present/PresentEx source and destination rectangles, HRESULT, target HWND and
+its real client bounds. UI snapshots record the video target, toolbar and
+seekbar screen bounds/visibility after view resize/events and seekbar paint.
+This allows matching the present target to the video HWND and testing whether
+the requested destination exceeds that HWND or excludes the controls' area.
+
+MPC-HC-geometry.log is created beside the executable and overwritten on each
+process launch. Only changed snapshots are written (4 MiB cap). Tags include
+HWNDs to separate main playback from seek previews. The logger uses a try-lock,
+never waits for its own lock, and calls no renderer or layout APIs. It uses
+ordinary local file writes, so diagnostics are not zero overhead. No frame
+content, media filenames, new timer, forced paint or geometry change is added.
+
+Reproduce once: open video, resize while controls are visible until the fault,
+let controls hide and hover to show them again, enter/leave fullscreen, close
+and retain that one log. Runtime geometry, not the earlier static hypothesis,
+will determine the next code change. A Present destination outside its client
+is evidence of clipping, not alone proof of the entire visual defect.
+
+---
+
 # Native controls without a backdrop: current test
 
 CI additionally defines MPC_EXPERIMENTAL_NO_BACKDROP. The thin seekbar painter

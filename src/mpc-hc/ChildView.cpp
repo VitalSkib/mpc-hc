@@ -26,6 +26,9 @@
 #include "CMPCTheme.h"
 #include "CMPCThemeUtil.h"
 #include "ColorProfileUtil.h"
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+#include "../DSUtil/GeometryDiagnostics.h"
+#endif
 
 CChildView::CChildView(CMainFrame* pMainFrame)
     : CMouseWndWithArtView(pMainFrame)
@@ -68,6 +71,16 @@ CChildView::~CChildView()
 {
 }
 
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+void CChildView::TraceGeometry(const char* tag)
+{
+    GeometryDiagnostics::Record(tag, m_hWnd);
+    GeometryDiagnostics::Record("ui.video-target", m_pMainFrame->m_pVideoWnd ? m_pMainFrame->m_pVideoWnd->GetSafeHwnd() : nullptr);
+    GeometryDiagnostics::Record("ui.toolbar", m_pMainFrame->m_wndToolBar.GetSafeHwnd());
+    GeometryDiagnostics::Record("ui.seekbar", m_pMainFrame->m_wndSeekBar.GetSafeHwnd());
+}
+#endif
+
 void CChildView::EventCallback(MpcEvent ev)
 {
     switch (ev) {
@@ -85,6 +98,11 @@ void CChildView::EventCallback(MpcEvent ev)
         default:
             ASSERT(FALSE);
     }
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+    char tag[64] = {};
+    _snprintf_s(tag, sizeof(tag), _TRUNCATE, "ui.event.%u", static_cast<unsigned>(ev));
+    TraceGeometry(tag);
+#endif
 }
 
 BOOL CChildView::PreCreateWindow(CREATESTRUCT& cs)
@@ -274,6 +292,9 @@ void CChildView::OnSize(UINT nType, int cx, int cy)
         m_pMainFrame->m_OSD.OnSize(nType, cx, cy);
     }
     m_pMainFrame->UpdateThumbnailClip();
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+    TraceGeometry("ui.after-size");
+#endif
 }
 
 LRESULT CChildView::OnNcHitTest(CPoint point)

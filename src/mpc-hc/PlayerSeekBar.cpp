@@ -25,6 +25,9 @@
 #include "mplayerc.h"
 #include "CMPCTheme.h"
 #include "WinAPIUtils.h"
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+#include "../DSUtil/GeometryDiagnostics.h"
+#endif
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
 #include <gdiplus.h>
 #endif
@@ -845,6 +848,9 @@ END_MESSAGE_MAP()
 void CPlayerSeekBar::OnPaint()
 {
     CPaintDC dc(this);
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+    GeometryDiagnostics::Record("ui.seekbar-paint", m_hWnd);
+#endif
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
     // This is the actual seekbar HWND: native input, capture, tooltip, chapter
     // and preview handlers are unchanged. No mirrored control or input proxy.

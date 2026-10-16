@@ -39,6 +39,9 @@ class CChildView : public CMouseWndWithArtView
     EventClient m_eventc;
 
     void EventCallback(MpcEvent ev);
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+    void TraceGeometry(const char* tag);
+#endif
 
 public:
 #ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY

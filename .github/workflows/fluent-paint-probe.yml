@@ -35,7 +35,7 @@ jobs:
       - name: Build native-controls x64 probe
         shell: cmd
         env:
-          CL: /DMPC_EXPERIMENTAL_NATIVE_SEEKBAR /DMPC_EXPERIMENTAL_NO_BACKDROP
+          CL: /DMPC_EXPERIMENTAL_NATIVE_SEEKBAR /DMPC_EXPERIMENTAL_NO_BACKDROP /DMPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
         run: build.bat Build x64 Main Release Lite
       - name: Package isolated test settings
         shell: pwsh
@@ -50,6 +50,9 @@ jobs:
             'Thin blue/grey track and circular thumb; zero-alpha seekbar background.',
             'Moving video must show through ABOVE and BELOW the thin track.',
             'Check native seek, outside release, hover time and seek preview.',
+            'Diagnostics: MPC-HC-geometry.log is created beside the EXE and overwritten on each run.',
+            'Open the same video, resize until the fault, hide/show controls, toggle fullscreen, close.',
+            'Keep the log from that run. No frames or media filenames are logged.',
             'Transparent pixels may pass mouse input through: check button targeting too.',
             'Native toolbar icons/commands remain; its background is removed by colour key.',
             'Portable settings are included; native controls auto-hide after 4 seconds.',
@@ -59,7 +62,7 @@ jobs:
       - name: Upload standalone test build
         uses: actions/upload-artifact@v4
         with:
-          name: MPC-HC-x64-no-backdrop-${{ github.sha }}
+          name: MPC-HC-x64-geometry-diagnostics-${{ github.sha }}
           path: |
             bin/mpc-hc_x64 Lite/mpc-hc64.exe
             bin/mpc-hc_x64 Lite/mpc-hc64.ini
