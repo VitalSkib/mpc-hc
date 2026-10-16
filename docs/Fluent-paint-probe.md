@@ -38,10 +38,20 @@ existing mouse handlers. The native seekbar retains capture, pause/resume while
 dragging, seek throttling, and actual seek commands. Input routing also handles
 release outside the overlay and excludes unrelated menus and dialogs.
 The native position updates and command-update cycle refresh the overlay; no
-additional timer is created. Bottom visibility follows the existing toolbar/seekbar
-visibility. Original controls are deliberately retained for comparison at this stage;
+additional timer is created. Bottom availability follows the existing toolbar/seekbar selection,
+not the temporary visibility of their auto-hidden HWNDs. Original controls are deliberately retained for comparison at this stage;
 volume, menus and other buttons have not been replaced.
 
 Runtime acceptance still required: play/pause via both UI and keyboard; seek by
 click/drag including release outside the view; disabled seek for unseekable live
 streams; hover reveal/hide; no interference with native toolbar or context menus.
+
+## Hover reconciliation
+
+Hover checks now verify the window actually under the cursor, not only its
+coordinates. Player-wide mouse move/leave events and the existing position/UI
+update cycle reconcile visibility, including renderer HWNDs on another thread.
+No extra polling timer or global mouse hook is added. Missing renderer leave
+events can therefore be corrected on the next existing player update.
+The overlay is re-raised if a newly created renderer child is above it.
+Releasing a pressed control outside the view still completes capture cleanup.

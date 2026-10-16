@@ -32,7 +32,11 @@ class CFluentOverlayProbe final : public CWnd
         ::GetCursorPos(&point);
         CRect rc;
         m_view->GetWindowRect(rc);
-        return rc.PtInRect(point) != FALSE;
+        if (!rc.PtInRect(point)) return false;
+        const HWND underCursor = ::WindowFromPoint(point);
+        // A covered player, owned dialog, or another app is not a video hover.
+        return underCursor && (underCursor == m_view->GetSafeHwnd()
+            || ::IsChild(m_view->GetSafeHwnd(), underCursor));
     }
 
     void DrawSurface()
@@ -165,7 +169,7 @@ public:
     bool RouteInput(const MSG& message)
     {
         if (m_seeking && seekActive && !seekActive()) m_seeking = false;
-        if (!GetSafeHwnd() || (!IsWindowVisible() && !m_seeking)) return false;
+        if (!GetSafeHwnd() || (!IsWindowVisible() && !m_seeking && !m_pressed && !m_playPressed)) return false;
         CPoint point(message.pt);
         ScreenToClient(&point);
         const bool down = message.message == WM_LBUTTONDOWN || message.message == WM_LBUTTONDBLCLK;
@@ -231,7 +235,9 @@ public:
         m_hot = CloseRect().PtInRect(cursor) != FALSE;
         const bool repaint = !IsWindowVisible() || oldSize != m_size || oldHot != m_hot || title != m_title;
         m_title = title;
-        if (!IsWindowVisible() || oldSize != m_size) SetWindowPos(&wndTop, 0, 0, rc.Width(), rc.Height(), SWP_NOACTIVATE);
+        if (!IsWindowVisible() || oldSize != m_size || ::GetWindow(m_hWnd, GW_HWNDPREV)) {
+            SetWindowPos(&wndTop, 0, 0, rc.Width(), rc.Height(), SWP_NOACTIVATE);
+        }
         if (repaint) DrawSurface();
         ShowWindow(SW_SHOWNOACTIVATE);
         if (trackingWindow && trackingWindow != m_hWnd) {

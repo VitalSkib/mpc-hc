@@ -125,25 +125,36 @@ BOOL CChildView::PreTranslateMessage(MSG* pMsg)
 #ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
 void CChildView::UpdateFluentControls()
 {
-    if (!m_pMainFrame->m_wndToolBar.GetSafeHwnd() || !m_pMainFrame->m_wndSeekBar.GetSafeHwnd()) return;
+    if (!GetSafeHwnd() || !m_pMainFrame->m_wndToolBar.GetSafeHwnd() || !m_pMainFrame->m_wndSeekBar.GetSafeHwnd()) return;
     auto& toolbar = m_pMainFrame->m_wndToolBar.GetToolBarCtrl();
     const bool playing = m_pMainFrame->GetMediaState() == State_Running;
     const int state = toolbar.GetState(playing ? ID_PLAY_PAUSE : ID_PLAY_PLAY);
     REFERENCE_TIME start, stop;
     auto& seekbar = m_pMainFrame->m_wndSeekBar;
     seekbar.GetRange(start, stop);
-    const bool visible = m_pMainFrame->m_wndToolBar.IsWindowVisible() || seekbar.IsWindowVisible();
+    // Selection is stable while the native HWNDs are temporarily auto-hidden.
+    const bool visible = m_pMainFrame->m_controls.ControlChecked(CMainFrameControls::Toolbar::CONTROLS)
+        || m_pMainFrame->m_controls.ControlChecked(CMainFrameControls::Toolbar::SEEKBAR);
     m_fluentProbe.SetControlState(state != -1 && (state & TBSTATE_ENABLED), playing,
         seekbar.CanOverlaySeek(), visible, start, stop, seekbar.GetPos(), seekbar.OverlayTimeText());
+    // Also reconcile hover during the existing native position/UI update cycle.
+    // Renderer HWNDs may consume WM_MOUSELEAVE on a different thread.
+    m_fluentProbe.Refresh(this);
 }
 
 bool CChildView::RouteFluentInput(const MSG& message)
 {
+    if (message.message == WM_MOUSELEAVE || message.message == WM_NCMOUSELEAVE
+            || message.message == WM_NCMOUSEMOVE) {
+        UpdateFluentControls();
+        return false;
+    }
     if (message.message < WM_MOUSEFIRST || message.message > WM_MOUSELAST) return false;
+    // Include movement over the original toolbar: leaving video is still a leave.
+    UpdateFluentControls();
     const HWND seekbar = m_pMainFrame->m_wndSeekBar.GetSafeHwnd();
     if (message.hwnd != m_hWnd && !::IsChild(m_hWnd, message.hwnd)
             && !(message.hwnd == seekbar && m_pMainFrame->m_wndSeekBar.DraggingThumb())) return false;
-    UpdateFluentControls();
     return m_fluentProbe.RouteInput(message);
 }
 
