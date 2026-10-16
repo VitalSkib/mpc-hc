@@ -886,7 +886,9 @@ bool CPlayerSeekBar::PaintNativeAlpha()
         graphics.TranslateTransform(float(clientOrigin.x - bounds.left), float(clientOrigin.y - bounds.top));
         graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
         const CRect channel = GetChannelRect();
-        const float centreY = float(channel.CenterPoint().y);
+        CRect client;
+        GetClientRect(client);
+        const float centreY = float(client.top + client.bottom) / 2;
         const float stroke = float(std::max(1, m_pMainFrame->m_dpi.ScaleY(3)));
         const long position = channel.left + ChannelPointFromPosition(m_rtPosDraw);
         Gdiplus::Pen track(Gdiplus::Color(135, 235, 235, 235), stroke);
@@ -925,7 +927,8 @@ bool CPlayerSeekBar::PaintNativeAlpha()
                     }
                 }
             }
-            const float diameter = float(m_pMainFrame->m_dpi.ScaleY(13));
+            const float diameter = float(std::min(m_pMainFrame->m_dpi.ScaleY(13),
+                std::max(1, client.Height() - m_pMainFrame->m_dpi.ScaleY(2))));
             const float core = float(m_pMainFrame->m_dpi.ScaleY(m_bHoverThumb || m_bDraggingThumb ? 9 : 7));
             Gdiplus::SolidBrush ring(Gdiplus::Color(m_bEnabled ? 255 : 150, 240, 240, 240));
             Gdiplus::SolidBrush dot(accent);
