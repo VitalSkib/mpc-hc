@@ -21,6 +21,9 @@
 
 #pragma once
 #include "CMPCThemeToolTipCtrl.h"
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+#include "NativeThumbAnimation.h"
+#endif
 
 // CVolumeCtrl
 
@@ -30,6 +33,17 @@ class CVolumeCtrl : public CSliderCtrl
 
 private:
     bool m_fSelfDrawn;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    NativeThumbAnimation m_thumbAnimation;
+    ULONG_PTR m_graphicsToken = 0;
+    CMPCThemeToolTipCtrl m_volumeTip;
+    CString m_volumeTipText;
+    bool m_volumeTipVisible = false;
+    CRect FluentThumbRect();
+    void UpdateVolumeTip(bool visible);
+    afx_msg void OnTimer(UINT_PTR id);
+    afx_msg void OnCaptureChanged(CWnd* wnd);
+#endif
 
 public:
     CVolumeCtrl(bool fSelfDrawn = true);

@@ -1061,7 +1061,7 @@ bool CPlayerSeekBar::PaintNativeAlpha()
             }
             const float diameter = float(std::min(m_pMainFrame->m_dpi.ScaleY(13),
                 std::max(1, client.Height() - m_pMainFrame->m_dpi.ScaleY(2))));
-            const float core = float(m_pMainFrame->m_dpi.ScaleY(m_bHoverThumb || m_bDraggingThumb ? 9 : 7));
+            const float core = float(m_pMainFrame->m_dpi.ScaleY(1) * m_thumbAnimation.Value());
             Gdiplus::SolidBrush ring(Gdiplus::Color(m_bEnabled ? 255 : 150, 240, 240, 240));
             Gdiplus::SolidBrush dot(accent);
             graphics.FillEllipse(&ring, float(position) - diameter / 2, centreY - diameter / 2, diameter, diameter);
@@ -1322,6 +1322,9 @@ void CPlayerSeekBar::OnLButtonDown(UINT nFlags, CPoint point)
         pausedForScrolling = false;
         SetCapture();
         m_bDraggingThumb = true;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+        m_thumbAnimation.State(*this, m_bHoverThumb, true);
+#endif
         MoveThumb(point);
         CheckScrollDistance(point, 0ULL, 0LL);
         invalidateThumb();
@@ -1395,6 +1398,9 @@ void CPlayerSeekBar::checkHover(CPoint point)
     }
 
     if (m_bHoverThumb != oldHover) {
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+        m_thumbAnimation.State(*this, m_bHoverThumb, m_bDraggingThumb);
+#endif
         invalidateThumb();
     }
 }
@@ -1407,6 +1413,11 @@ void CPlayerSeekBar::invalidateThumb()
 
 void CPlayerSeekBar::OnMouseMove(UINT nFlags, CPoint point)
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    checkHover(point);
+    TRACKMOUSEEVENT track = {sizeof(track), TME_LEAVE, m_hWnd, 0};
+    ::TrackMouseEvent(&track);
+#endif
 
     if (DraggingThumb() && (nFlags & MK_LBUTTON)) {
         MoveThumb(point);
@@ -1450,6 +1461,9 @@ BOOL CPlayerSeekBar::OnSetCursor(CWnd* pWnd, UINT nHitTest, UINT message)
 
 void CPlayerSeekBar::OnTimer(UINT_PTR nIDEvent)
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    if (m_thumbAnimation.Tick(*this, nIDEvent)) return;
+#endif
     CPoint point;
     VERIFY(GetCursorPos(&point));
     ScreenToClient(&point);
@@ -1500,6 +1514,9 @@ void CPlayerSeekBar::OnCaptureChanged(CWnd* pWnd)
     // popup menu takes capture), so only run the drag-end cleanup when we were actually dragging.
     if (m_bDraggingThumb) {
         m_bDraggingThumb = false;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+        m_thumbAnimation.State(*this, m_bHoverThumb, false);
+#endif
         pauseAfterFirstScroll = false;
         if (pausedForScrolling) {
             pausedForScrolling = false;

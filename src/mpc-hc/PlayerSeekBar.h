@@ -20,6 +20,9 @@
  */
 
 #pragma once
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+#include "NativeThumbAnimation.h"
+#endif
 
 #include "EventDispatcher.h"
 #include "DSMPropertyBag.h"
@@ -148,6 +151,7 @@ private:
     // Keep the native paint pipeline separate from its presentation surface.
     void PaintNative(CDC& dc);
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    NativeThumbAnimation m_thumbAnimation;
     ULONG_PTR m_seekbarGraphicsToken = 0;
     bool m_alphaPresentationFailed = false;
     bool PaintNativeAlpha();

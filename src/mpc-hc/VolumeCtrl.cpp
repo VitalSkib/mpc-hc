@@ -26,6 +26,9 @@
 #include "CMPCTheme.h"
 #include "CMPCThemeUtil.h"
 #include "MainFrm.h"
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+#include <gdiplus.h>
+#endif
 #undef SubclassWindow
 
 
@@ -39,10 +42,18 @@ CVolumeCtrl::CVolumeCtrl(bool fSelfDrawn)
     , modernStyle(AppIsThemeLoaded())
     , showPercentage(AfxGetAppSettings().bShowVolumePercentage)
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    Gdiplus::GdiplusStartupInput startup;
+    Gdiplus::GdiplusStartup(&m_graphicsToken, &startup, nullptr);
+    showPercentage = false; // value is presented by the native tooltip window
+#endif
 }
 
 CVolumeCtrl::~CVolumeCtrl()
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    if (m_graphicsToken) Gdiplus::GdiplusShutdown(m_graphicsToken);
+#endif
 }
 
 LRESULT CVolumeCtrl::OnMPCThemeChanged(WPARAM wParam, LPARAM lParam)
@@ -61,12 +72,27 @@ LRESULT CVolumeCtrl::OnMPCThemeChanged(WPARAM wParam, LPARAM lParam)
 bool CVolumeCtrl::Create(CWnd* pParentWnd)
 {
     DWORD tooltipStyle = showPercentage && AppIsThemeLoaded() ? 0 : TBS_TOOLTIPS;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    tooltipStyle = 0; // one themed tooltip for both hover and capture
+#endif
     if (!CSliderCtrl::Create(WS_CHILD | WS_VISIBLE | TBS_NOTICKS | TBS_HORZ | tooltipStyle, CRect(0, 0, 0, 0), pParentWnd, IDC_SLIDER1)) {
         return false;
     }
 
     const CAppSettings& s = AfxGetAppSettings();
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    EnableToolTips(FALSE);
+    m_volumeTip.Create(this, TTS_ALWAYSTIP | TTS_NOPREFIX);
+    m_volumeTipText.Format(L"Volume %d%%", s.nVolume);
+    TOOLINFO ti = { sizeof(TOOLINFO) };
+    ti.uFlags = TTF_TRACK | TTF_IDISHWND | TTF_ABSOLUTE;
+    ti.hwnd = m_hWnd; ti.uId = (UINT_PTR)m_hWnd;
+    ti.lpszText = m_volumeTipText.GetBuffer();
+    m_volumeTip.SendMessage(TTM_ADDTOOL, 0, (LPARAM)&ti);
+    m_volumeTipText.ReleaseBuffer();
+#else
     EnableToolTips(TRUE);
+#endif
     SetRange(0, 100);
     SetPos(s.nVolume);
     SetPageSize(s.nVolumeStep);
@@ -115,6 +141,10 @@ void CVolumeCtrl::SetPosInternal(int pos)
     ::GetCursorPos(&p);
     ScreenToClient(&p);
     checkHover(p);
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    Invalidate(FALSE);
+    if (m_volumeTipVisible) UpdateVolumeTip(true);
+#endif
 }
 
 void CVolumeCtrl::IncreaseVolume()
@@ -143,6 +173,10 @@ BEGIN_MESSAGE_MAP(CVolumeCtrl, CSliderCtrl)
     ON_WM_MOUSEMOVE()
     ON_WM_LBUTTONUP()
     ON_WM_MOUSELEAVE()
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    ON_WM_TIMER()
+    ON_WM_CAPTURECHANGED()
+#endif
     ON_WM_PAINT()
     ON_WM_ERASEBKGND()
 END_MESSAGE_MAP()
@@ -154,7 +188,12 @@ void CVolumeCtrl::getCustomChannelRect(LPRECT rc)
     if (AppIsThemeLoaded()) {
         CRect channelRect;
         GetClientRect(channelRect);
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+        channelRect.DeflateRect(AfxGetMainFrame()->m_dpi.ScaleX(8), 0);
+        CopyRect(rc, channelRect);
+#else
         CopyRect(rc, CRect(channelRect.left, channelRect.top, channelRect.right - AfxGetMainFrame()->m_dpi.ScaleFloorX(2), channelRect.bottom));
+#endif
     } else {
         CRect channelRect;
         GetChannelRect(channelRect);
@@ -304,7 +343,12 @@ void CVolumeCtrl::OnNMCustomdraw(NMHDR* pNMHDR, LRESULT* pResult)
 void CVolumeCtrl::OnLButtonDown(UINT nFlags, CPoint point)
 {
     CRect r;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    if (AppIsThemeLoaded() && modernStyle) getCustomChannelRect(&r);
+    else GetChannelRect(&r);
+#else
     GetChannelRect(&r);
+#endif
 
     if (r.left >= r.right) {
         return;
@@ -324,6 +368,9 @@ void CVolumeCtrl::OnLButtonDown(UINT nFlags, CPoint point)
         SetPosInternal(stop);
     } else {
         int w = r.right - r.left;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+        if (AppIsThemeLoaded() && modernStyle) w = std::max(1, w - 1);
+#endif
         if (start < stop) {
             if (!(AppIsThemeLoaded() && modernStyle)) {
                 SetPosInternal(start + ((stop - start) * (point.x - r.left) + (w / 2)) / w);
@@ -333,6 +380,10 @@ void CVolumeCtrl::OnLButtonDown(UINT nFlags, CPoint point)
         }
     }
     m_bDrag = true;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    m_thumbAnimation.State(*this, m_bHover, true);
+    UpdateVolumeTip(true);
+#endif
     if (AppIsThemeLoaded() && modernStyle) {
         if (themedToolTip.m_hWnd
 #ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
@@ -417,6 +468,9 @@ BOOL CVolumeCtrl::OnMouseWheel(UINT nFlags, short zDelta, CPoint point)
 
 void CVolumeCtrl::invalidateThumb()
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    Invalidate(FALSE);
+#endif
     if (!(AppIsThemeLoaded() && modernStyle)) {
         SetRangeMax(100, TRUE);
     }
@@ -426,7 +480,12 @@ void CVolumeCtrl::invalidateThumb()
 void CVolumeCtrl::checkHover(CPoint point)
 {
     CRect thumbRect;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    if (AppIsThemeLoaded()) thumbRect = FluentThumbRect();
+    else GetThumbRect(thumbRect);
+#else
     GetThumbRect(thumbRect);
+#endif
     bool oldHover = m_bHover;
     m_bHover = false;
     if (thumbRect.PtInRect(point)) {
@@ -434,6 +493,9 @@ void CVolumeCtrl::checkHover(CPoint point)
     }
 
     if (m_bHover != oldHover) {
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+        m_thumbAnimation.State(*this, m_bHover, m_bDrag);
+#endif
         invalidateThumb();
     }
 }
@@ -444,7 +506,12 @@ void CVolumeCtrl::updateModernVolCtrl(CPoint point)
     //we must do all position calculation ourselves, and send correct position to tooltip
 
     CRect r;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    if (AppIsThemeLoaded() && modernStyle) getCustomChannelRect(&r);
+    else GetChannelRect(&r);
+#else
     GetChannelRect(&r);
+#endif
 
     int start, stop;
     GetRange(start, stop);
@@ -457,6 +524,9 @@ void CVolumeCtrl::updateModernVolCtrl(CPoint point)
         useX = r.right;
     } else {
         int w = r.right - r.left;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+        if (AppIsThemeLoaded() && modernStyle) w = std::max(1, w - 1);
+#endif
         if (start < stop) {
             SetPosInternal(start + lround((stop - start) * float(point.x - r.left) / w));
         }
@@ -486,6 +556,11 @@ void CVolumeCtrl::updateModernVolCtrl(CPoint point)
 void CVolumeCtrl::OnMouseMove(UINT nFlags, CPoint point)
 {
     checkHover(point);
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    TRACKMOUSEEVENT track = {sizeof(track), TME_LEAVE, m_hWnd, 0};
+    ::TrackMouseEvent(&track);
+    UpdateVolumeTip(true);
+#endif
 
     if (AppIsThemeLoaded() && modernStyle && m_bDrag) {
         updateModernVolCtrl(point);
@@ -502,6 +577,10 @@ void CVolumeCtrl::OnLButtonUp(UINT nFlags, CPoint point)
             ReleaseCapture();
         }
         m_bDrag = false;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+        checkHover(point);
+        m_thumbAnimation.State(*this, m_bHover, false);
+#endif
         if (themedToolTip.m_hWnd) {
             themedToolTip.SendMessage(TTM_TRACKACTIVATE, FALSE, 0);
         }
@@ -516,10 +595,59 @@ void CVolumeCtrl::OnLButtonUp(UINT nFlags, CPoint point)
 
 void CVolumeCtrl::OnMouseLeave()
 {
-    checkHover(CPoint(-1 - 1));
+    checkHover(CPoint(-1, -1));
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    if (!m_bDrag) UpdateVolumeTip(false);
+#endif
     CSliderCtrl::OnMouseLeave();
 }
 
+
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+CRect CVolumeCtrl::FluentThumbRect()
+{
+    CRect channel; getCustomChannelRect(channel);
+    const int x = channel.left + MulDiv(std::max(0, channel.Width() - 1), GetPos(), 100);
+    const int y = channel.CenterPoint().y;
+    const int radius = AfxGetMainFrame()->m_dpi.ScaleX(10);
+    return CRect(x - radius, y - radius, x + radius + 1, y + radius + 1);
+}
+
+void CVolumeCtrl::UpdateVolumeTip(bool visible)
+{
+    if (!m_volumeTip.GetSafeHwnd()) return;
+    TOOLINFO ti = {sizeof(ti)};
+    ti.uFlags = TTF_TRACK | TTF_IDISHWND | TTF_ABSOLUTE;
+    ti.hwnd = m_hWnd; ti.uId = (UINT_PTR)m_hWnd;
+    m_volumeTipText.Format(L"Volume %d%%", GetPos());
+    ti.lpszText = m_volumeTipText.GetBuffer();
+    m_volumeTip.SendMessage(TTM_UPDATETIPTEXT, 0, (LPARAM)&ti);
+    m_volumeTipText.ReleaseBuffer();
+    if (visible) {
+        CRect thumb = FluentThumbRect();
+        CPoint anchor(thumb.CenterPoint().x, thumb.top - AfxGetMainFrame()->m_dpi.ScaleY(24));
+        ClientToScreen(&anchor);
+        m_volumeTip.SendMessage(TTM_TRACKPOSITION, 0, MAKELPARAM(anchor.x, anchor.y));
+    }
+    if (m_volumeTipVisible != visible) {
+        m_volumeTip.SendMessage(TTM_TRACKACTIVATE, visible, (LPARAM)&ti);
+        m_volumeTipVisible = visible;
+    }
+}
+
+void CVolumeCtrl::OnTimer(UINT_PTR id)
+{
+    if (!m_thumbAnimation.Tick(*this, id)) CSliderCtrl::OnTimer(id);
+}
+
+void CVolumeCtrl::OnCaptureChanged(CWnd* wnd)
+{
+    m_bDrag = false;
+    m_thumbAnimation.State(*this, m_bHover, false);
+    UpdateVolumeTip(false);
+    CSliderCtrl::OnCaptureChanged(wnd);
+}
+#endif
 
 void CVolumeCtrl::OnPaint() {
     if (m_fSelfDrawn && AppIsThemeLoaded() && modernStyle) {
@@ -540,6 +668,27 @@ void CVolumeCtrl::OnPaint() {
         //r.DeflateRect(0, dpiWindow.ScaleFloorY(3), 0, dpiWindow.ScaleFloorY(2));
         r.OffsetRect(-cr.TopLeft());
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+        if (m_graphicsToken && r.Width() > 0) {
+            Gdiplus::Graphics graphics(dcMem.GetSafeHdc());
+            graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+            const float y = float(r.CenterPoint().y);
+            const float x = float(r.left) + float(std::max(0, r.Width() - 1)) * GetPos() / 100.0f;
+            const float stroke = float(dpiWindow.ScaleY(3));
+            Gdiplus::Pen track(Gdiplus::Color(255, 155, 155, 155), stroke);
+            Gdiplus::Pen played(Gdiplus::Color(255, 0, 120, 212), stroke);
+            track.SetStartCap(Gdiplus::LineCapRound); track.SetEndCap(Gdiplus::LineCapRound);
+            played.SetStartCap(Gdiplus::LineCapRound); played.SetEndCap(Gdiplus::LineCapRound);
+            graphics.DrawLine(&track, float(r.left), y, float(r.right - 1), y);
+            if (GetPos() > 0) graphics.DrawLine(&played, float(r.left), y, x, y);
+            const float outer = float(std::min(dpiWindow.ScaleY(13), std::max(1, cr.Height() - 2)));
+            const float core = float(dpiWindow.ScaleY(1)) * m_thumbAnimation.Value();
+            Gdiplus::SolidBrush ring(Gdiplus::Color(255, 240, 240, 240));
+            Gdiplus::SolidBrush dot(Gdiplus::Color(255, 0, 120, 212));
+            graphics.FillEllipse(&ring, x - outer / 2, y - outer / 2, outer, outer);
+            graphics.FillEllipse(&dot, x - core / 2, y - core / 2, core, core);
+        }
+#else
         CRect filledRect, unfilledRect;
         filledRect = r;
         filledRect.right = r.left + lround(r.Width() * float(GetPos()) / 100);
@@ -573,6 +722,7 @@ void CVolumeCtrl::OnPaint() {
             dcMem.SetBkMode(oldMode);
         }
 
+#endif
         CMPCThemeUtil::flushMemDC(&dc, dcMem, memRect);
     } else {
         __super::OnPaint(); //can trigger OnNMCustomdraw

@@ -42,7 +42,7 @@ jobs:
         run: |
           $testDir = 'bin/mpc-hc_x64 Lite'
           @('[Settings]', 'AllowMultipleInstances=1', 'ModernThemeMode=0',
-            'ModernThemeStyle=2', 'Win11NativeMenus=1', 'AlwaysUseShortMenu=1',
+            'ModernThemeStyle=2', 'Win11NativeMenus=1', 'AlwaysUseShortMenu=1', 'ShowOSD=1',
             'HideFullscreenControls=1',
             'HideFullscreenControlsPolicy=2', 'HideFullscreenControlsDelay=4000',
             'HideWindowedControls=1', 'UseTimeTooltip=1', 'UseSeekPreview=1') |
