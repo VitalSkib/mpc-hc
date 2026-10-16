@@ -1287,7 +1287,7 @@ void CPlayerSeekBar::OnLButtonDown(UINT nFlags, CPoint point)
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
     if (SplitTimeSections() && (GetSplitTimeRect(false).PtInRect(point)
             || GetSplitTimeRect(true).PtInRect(point))) {
-        m_pMainFrame->m_wndStatusBar.ToggleOverlayTime();
+        m_pMainFrame->m_wndStatusBar.ToggleTimerDisplay();
         return;
     }
 #endif
