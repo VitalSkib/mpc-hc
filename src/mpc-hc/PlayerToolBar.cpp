@@ -30,9 +30,6 @@
 #include "PathUtils.h"
 #include "SVGImage.h"
 #include "ImageGrayer.h"
-#ifdef MPC_EXPERIMENTAL_NATIVE_FONT_ICONS
-#include "NativeFontToolbarProbe.h"
-#endif
 #include "CMPCTheme.h"
 #include "stb/stb_image.h"
 #include "stb/stb_image_resize2.h"
@@ -893,18 +890,6 @@ void CPlayerToolBar::OnCustomDraw(NMHDR* pNMHDR, LRESULT* pResult)
                     }
                 }
             }
-#ifdef MPC_EXPERIMENTAL_NATIVE_FONT_ICONS
-            {
-                TBBUTTONINFOW info = {sizeof(info)};
-                info.dwMask = TBIF_IMAGE;
-                if (GetToolBarCtrl().GetButtonInfo(static_cast<int>(pTBCD->nmcd.dwItemSpec), &info) >= 0
-                        && NativeFontToolbarProbe::Draw(*pTBCD, info.iImage)) {
-                    // Only replace artwork for this diagnostic. Native state
-                    // backgrounds above, item layout, hit tests and input stay.
-                    lr |= CDRF_SKIPDEFAULT;
-                }
-            }
-#endif
             break;
         case CDDS_ITEMPOSTPAINT:
             if (kExperimentalNoToolbarFill) {
