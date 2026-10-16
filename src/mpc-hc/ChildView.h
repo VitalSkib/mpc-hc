@@ -40,6 +40,10 @@ class CChildView : public CMouseWndWithArtView
     void EventCallback(MpcEvent ev);
 
 public:
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    void UpdateFluentControls();
+    bool RouteFluentInput(const MSG& message);
+#endif
     CChildView(CMainFrame* pMainFrm);
     virtual ~CChildView();
 

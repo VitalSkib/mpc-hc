@@ -32,6 +32,13 @@ CChildView::CChildView(CMainFrame* pMainFrame)
     , m_bSwitchingFullscreen(false)
     , m_bFirstMedia(true)
 {
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    m_fluentProbe.playPause = [this]() { m_pMainFrame->PostMessage(WM_COMMAND, ID_PLAY_PLAYPAUSE); };
+    m_fluentProbe.seekActive = [this]() { return m_pMainFrame->m_wndSeekBar.DraggingThumb(); };
+    m_fluentProbe.seekMouse = [this](UINT message, WPARAM flags, double fraction) {
+        return m_pMainFrame->m_wndSeekBar.ForwardOverlayMouse(message, flags, fraction);
+    };
+#endif
     GetEventd().Connect(m_eventc, {
         MpcEvent::SWITCHING_TO_FULLSCREEN,
         MpcEvent::SWITCHED_TO_FULLSCREEN,
@@ -80,7 +87,7 @@ BOOL CChildView::PreCreateWindow(CREATESTRUCT& cs)
 BOOL CChildView::PreTranslateMessage(MSG* pMsg)
 {
 #ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
-    if (m_fluentProbe.RouteCloseMessage(*pMsg)) return TRUE;
+    UpdateFluentControls();
     if (pMsg->message == WM_MOUSEMOVE) {
         m_fluentProbe.Refresh(this, pMsg->hwnd);
     } else if (pMsg->message == WM_MOUSELEAVE) {
@@ -116,6 +123,30 @@ BOOL CChildView::PreTranslateMessage(MSG* pMsg)
 }
 
 #ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+void CChildView::UpdateFluentControls()
+{
+    if (!m_pMainFrame->m_wndToolBar.GetSafeHwnd() || !m_pMainFrame->m_wndSeekBar.GetSafeHwnd()) return;
+    auto& toolbar = m_pMainFrame->m_wndToolBar.GetToolBarCtrl();
+    const bool playing = m_pMainFrame->GetMediaState() == State_Running;
+    const int state = toolbar.GetState(playing ? ID_PLAY_PAUSE : ID_PLAY_PLAY);
+    REFERENCE_TIME start, stop;
+    auto& seekbar = m_pMainFrame->m_wndSeekBar;
+    seekbar.GetRange(start, stop);
+    const bool visible = m_pMainFrame->m_wndToolBar.IsWindowVisible() || seekbar.IsWindowVisible();
+    m_fluentProbe.SetControlState(state != -1 && (state & TBSTATE_ENABLED), playing,
+        seekbar.CanOverlaySeek(), visible, start, stop, seekbar.GetPos(), seekbar.OverlayTimeText());
+}
+
+bool CChildView::RouteFluentInput(const MSG& message)
+{
+    if (message.message < WM_MOUSEFIRST || message.message > WM_MOUSELAST) return false;
+    const HWND seekbar = m_pMainFrame->m_wndSeekBar.GetSafeHwnd();
+    if (message.hwnd != m_hWnd && !::IsChild(m_hWnd, message.hwnd)
+            && !(message.hwnd == seekbar && m_pMainFrame->m_wndSeekBar.DraggingThumb())) return false;
+    UpdateFluentControls();
+    return m_fluentProbe.RouteInput(message);
+}
+
 LRESULT CChildView::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
 {
     if (message == WM_CAPTURECHANGED) m_fluentProbe.CancelPress();

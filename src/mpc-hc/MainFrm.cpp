@@ -1655,6 +1655,9 @@ BOOL CMainFrame::PreCreateWindow(CREATESTRUCT& cs)
 
 BOOL CMainFrame::PreTranslateMessage(MSG* pMsg)
 {
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    if (m_wndView.RouteFluentInput(*pMsg)) return TRUE;
+#endif
     if (pMsg->message == WM_KEYDOWN) {
         if (pMsg->wParam == VK_ESCAPE) {
             bool fEscapeNotAssigned = !AssignedToCmd(VK_ESCAPE);
@@ -10302,6 +10305,9 @@ void CMainFrame::OnUpdatePlayPauseStop(CCmdUI* pCmdUI)
 
     pCmdUI->SetCheck(fCheck);
     pCmdUI->Enable(fEnable);
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    m_wndView.UpdateFluentControls();
+#endif
 }
 
 void CMainFrame::OnPlayFramestep(UINT nID)

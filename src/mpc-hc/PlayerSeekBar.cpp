@@ -679,6 +679,20 @@ void CPlayerSeekBar::UpdateToolTipTextPreview(REFERENCE_TIME rtPos)
     m_pMainFrame->m_wndPreView.SetWindowTextW(m_tooltipText);
 }
 
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+bool CPlayerSeekBar::ForwardOverlayMouse(UINT message, WPARAM flags, double fraction)
+{
+    if (!CanOverlaySeek()) return false;
+    const CRect channel = GetChannelRect(), hit = GetSeekableRect();
+    if (channel.Width() <= 1 || hit.IsRectEmpty()) return false;
+    const int x = std::clamp(channel.left + static_cast<int>(fraction * (channel.Width() - 1)), hit.left, hit.right - 1);
+    const CPoint point(x, hit.CenterPoint().y);
+    SendMessage(message, flags, MAKELPARAM(point.x, point.y));
+    m_pMainFrame->m_wndView.UpdateFluentControls();
+    return DraggingThumb();
+}
+#endif
+
 void CPlayerSeekBar::Enable(bool bEnable)
 {
     if (bEnable != m_bEnabled) {
@@ -745,6 +759,9 @@ void CPlayerSeekBar::SetPos(REFERENCE_TIME rtPos)
     }
 
     SyncThumbToVideo(rtPos, rtPos);
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    m_pMainFrame->m_wndView.UpdateFluentControls();
+#endif
 }
 
 bool CPlayerSeekBar::HasDuration() const

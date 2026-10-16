@@ -112,6 +112,11 @@ private:
     void GenerateToolTipText(REFERENCE_TIME rtPos);
 
 public:
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    bool CanOverlaySeek() const { return m_bEnabled && m_bHasDuration; }
+    CString OverlayTimeText() const { return m_timeText; }
+    bool ForwardOverlayMouse(UINT message, WPARAM flags, double fraction);
+#endif
     void Enable(bool bEnable);
     void HideToolTip();
     void UpdateToolTipPosition(CPoint point);

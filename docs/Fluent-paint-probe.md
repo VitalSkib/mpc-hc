@@ -28,3 +28,20 @@ Check whether moving video remains visible under the lower panel, while text and
 close stay opaque. Check hover exit, resize, minimize/restore, fullscreen transitions,
 normal playback clicks, and close cancel/confirmation behavior.
 Build success alone does not establish visual or renderer compatibility.
+
+## Native controls bridge
+
+The lower test label is replaced with Play/Pause, timeline, and the native time text.
+Button enabled state is read from the real toolbar; clicks use ID_PLAY_PLAYPAUSE.
+Seek input is translated into the native seekbar channel and dispatched to its
+existing mouse handlers. The native seekbar retains capture, pause/resume while
+dragging, seek throttling, and actual seek commands. Input routing also handles
+release outside the overlay and excludes unrelated menus and dialogs.
+The native position updates and command-update cycle refresh the overlay; no
+additional timer is created. Bottom visibility follows the existing toolbar/seekbar
+visibility. Original controls are deliberately retained for comparison at this stage;
+volume, menus and other buttons have not been replaced.
+
+Runtime acceptance still required: play/pause via both UI and keyboard; seek by
+click/drag including release outside the view; disabled seek for unseekable live
+streams; hover reveal/hide; no interference with native toolbar or context menus.
