@@ -86,6 +86,7 @@ public:
 #ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
     std::optional<CRect> m_overlayAnchor;
     void UpdateOverlayCommandState();
+    int OverlayVolumeImage() const;
     void InvokeOverlayButton(UINT id, const CRect& anchor, bool rightButton);
 #endif
     CPlayerToolBar(CMainFrame* pMainFrame);

@@ -79,6 +79,10 @@ public:
     REFERENCE_TIME GetTimerDuration();
 
     CString GetStatusTimer() const;
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    void GetOverlayTimeParts(CString& position, CString& duration) const;
+    void ToggleOverlayTime() { OnTimeDisplayClicked(); }
+#endif
     CString GetStatusMessage() const;
 
     CString PreparePathStatusMessage(CLongPath path);

@@ -372,6 +372,24 @@ CString CPlayerStatusBar::GetStatusTimer() const
     return strResult;
 }
 
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+void CPlayerStatusBar::GetOverlayTimeParts(CString& position, CString& duration) const
+{
+    // Reuse native formatting (remaining time, frames, precision and percentage).
+    CString text = GetStatusTimer();
+    const int separator = text.Find(L" / ");
+    if (separator < 0) { position = text; duration.Empty(); return; }
+    position = text.Left(separator);
+    duration = text.Mid(separator + 3);
+    const int percentage = duration.Find(L" (");
+    if (percentage >= 0) {
+        position += duration.Mid(percentage);
+        duration = duration.Left(percentage);
+    }
+    position.Trim(); duration.Trim();
+}
+#endif
+
 void CPlayerStatusBar::SetStatusTimer(CString str)
 {
     str.Trim();

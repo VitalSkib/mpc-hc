@@ -1081,6 +1081,11 @@ UINT CPlayerToolBar::CustomToCMD(UINT nID, int mouseButtonSource) {
 }
 
 #ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+int CPlayerToolBar::OverlayVolumeImage() const
+{
+    return VOLUMEBUTTON_SVG_INDEX + ((AfxGetAppSettings().fMute || m_volctrl.GetPos() <= 0) ? 1 : 0);
+}
+
 void CPlayerToolBar::UpdateOverlayCommandState()
 {
     // The backend HWND is hidden; explicitly run its original command UI updates.

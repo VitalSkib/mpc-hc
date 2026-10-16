@@ -33,10 +33,18 @@ CChildView::CChildView(CMainFrame* pMainFrame)
     , m_bFirstMedia(true)
 {
 #ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    m_fluentProbe.timeClick = [this](bool right, CPoint point) {
+        if (right) m_pMainFrame->m_wndStatusBar.ShowTimerOptionsMenu(this, point);
+        else m_pMainFrame->m_wndStatusBar.ToggleOverlayTime();
+        UpdateFluentControls();
+    };
     m_fluentProbe.invokeButton = [this](UINT id, const CRect& anchor, bool right) {
         m_pMainFrame->m_wndToolBar.InvokeOverlayButton(id, anchor, right);
     };
-    m_fluentProbe.volumeActive = [this]() { return m_pMainFrame->m_wndToolBar.m_volctrl.OverlayDragging(); };
+    m_fluentProbe.volumeActive = [this]() {
+        auto& volume = m_pMainFrame->m_wndToolBar.m_volctrl;
+        return volume.OverlayDragging() && ::GetCapture() == volume.GetSafeHwnd();
+    };
     m_fluentProbe.volumeMouse = [this](UINT message, WPARAM flags, double fraction) {
         const bool dragging = m_pMainFrame->m_wndToolBar.m_volctrl.ForwardOverlayMouse(message, flags, fraction);
         UpdateFluentControls();
@@ -155,6 +163,7 @@ void CChildView::UpdateFluentControls()
         for (int i = 0; i < toolbar.GetButtonCount(); ++i) {
             TBBUTTON button = {};
             if (!toolbar.GetButton(i, &button) || (button.fsState & TBSTATE_HIDDEN) || (button.fsStyle & BTNS_SEP)) continue;
+            if (button.idCommand == ID_VOLUME_MUTE) button.iBitmap = nativeToolbar.OverlayVolumeImage();
             const LPCWSTR tip = nativeToolbar.GetStringFromID(button.idCommand);
             buttons.push_back({static_cast<UINT>(button.idCommand), button.iBitmap, button.fsState, tip ? CString(tip) : CString()});
         }
@@ -164,10 +173,12 @@ void CChildView::UpdateFluentControls()
     CImageList* images = toolbar.GetImageList();
     const bool volumeSelected = toolbarSelected && volume.GetSafeHwnd() && (volume.GetStyle() & WS_VISIBLE);
     m_fluentProbe.SetNativeLayout(std::move(buttons), images ? images->GetSafeHandle() : nullptr,
-        toolbarSelected, seekSelected, volumeSelected, volume.GetPos() - minimum, maximum - minimum);
+        toolbarSelected, seekSelected, volumeSelected, volume.GetPos() - minimum, maximum - minimum, AfxGetAppSettings().nToolbarAlignment);
     REFERENCE_TIME start, stop; seekbar.GetRange(start, stop);
-    CString time = seekbar.OverlayTimeText();
-    if (time.IsEmpty()) time = m_pMainFrame->m_wndStatusBar.GetStatusTimer();
+    CString positionText, durationText;
+    m_pMainFrame->m_wndStatusBar.GetOverlayTimeParts(positionText, durationText);
+    m_fluentProbe.SetTimeParts(positionText, durationText);
+    const CString time = positionText + L" / " + durationText;
     m_fluentProbe.SetControlState(false, false, seekbar.CanOverlaySeek(), toolbarSelected || seekSelected,
         start, stop, seekbar.GetPos(), time);
     m_fluentProbe.Refresh(this);

@@ -12,8 +12,8 @@ is disabled. No installed player or Firefox handler is changed by this build.
   image-theme options remain the source of truth; no separate button allowlist.
 - Timeline selection follows the native seekbar selection. Volume uses the native
   volume control. Native time text is used, with status-bar time as fallback.
-- Small windows use 24px cells/16px icons and a 30px timeline section; larger
-  windows use 28px cells/20px icons and a 34px timeline section.
+- Small windows use 24px cells/16px icons and a 24px timeline section; larger
+  windows use 28px cells/20px icons and a 28px timeline section.
 - Controls stay on one row. Buttons that do not fit move to a native Windows
   overflow menu, retaining enabled/checked states and the configured commands.
 
@@ -46,3 +46,22 @@ audio/subtitle dropdowns, options/fullscreen/playlist/custom buttons when select
 Change native Toolbar Layout and confirm the overlay follows it; test removed
 buttons, narrow-window overflow, hover exit and resize during playback.
 Compilation alone does not establish real playback or visual correctness.
+
+## Native alignment, alpha and time controls
+
+The native nToolbarAlignment option drives left/center/right layout of the overlay
+button/volume group. Icon bitmaps now use the original BGRA alpha or AND mask
+instead of GDI+ Bitmap(HICON), avoiding black matte conversion. Header height is
+40/44 pixels and the seek row is 24/28 pixels, following a common four-pixel grid.
+
+Native status-bar formatting is split at its own separator: position/remaining
+time to the left of the timeline, total duration to its right. Clicking either
+label invokes the original remaining/elapsed toggle; right click opens the native
+time-options menu. Label input and disabled-control releases are consumed rather
+than falling through to video Play/Pause. A zero-volume slider selects the native
+silent icon without changing fMute, while the original mute action is retained.
+
+Seek-hover timestamp and preview integration are deferred to the next stage.
+Runtime checks: alpha on light/dark video, native left/center/right alignment,
+zero/mute/unmute icon, elapsed/remaining toggle on either label, precision/frame
+time modes, narrow layout, and no video pause from label/disabled-control clicks.
