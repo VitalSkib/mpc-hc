@@ -21,22 +21,7 @@ Alpha is attempted only for loaded media with the modern theme, when the
 native `ToolbarsCoverVideo()` policy already places toolbars over video, and
 there is no dedicated fullscreen video window. Other modes keep native opaque
 painting. Allocation/presentation failure falls back to opaque native painting
-until the next geometry refresh (with a TRACE in debug builds).
-
-## Geometry and fullscreen refresh
-
-Resize/move notifications set SWP_NOCOPYBITS while layered and coalesce one
-posted refresh after the current native layout. Completed fullscreen events
-and DPI changes request that same refresh. The refresh resets the old layered
-surface, updates the native video position, redraws the view, forces one renderer
-repaint and publishes fresh alpha pixels. It does not hide/show the bar, change
-capture or native visibility state, or add a timer. A rectangle comparison and
-refresh guard prevent UpdateLayeredWindow from scheduling a repaint loop.
-Transient presentation failure can be retried on the next geometry refresh.
-
-The stale-video/black-background report is runtime evidence; the proposed
-refresh path still needs resize/fullscreen testing on the affected renderer,
-including while paused and while dragging the native thumb.
+for the rest of that player instance and emits a debugger TRACE.
 
 ## Runtime acceptance
 

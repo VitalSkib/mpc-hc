@@ -27,7 +27,6 @@
 #include "WinAPIUtils.h"
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
 #include <gdiplus.h>
-static UINT WM_NATIVE_SEEKBAR_REFRESH = ::RegisterWindowMessage(L"MPC-HC.NativeSeekbar.RefreshAlphaSurface");
 #endif
 
 
@@ -66,10 +65,6 @@ CPlayerSeekBar::CPlayerSeekBar(CMainFrame* pMainFrame)
 #endif
     GetEventd().Connect(m_eventc, {
         MpcEvent::DPI_CHANGED,
-#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-        MpcEvent::SWITCHED_TO_FULLSCREEN,
-        MpcEvent::SWITCHED_FROM_FULLSCREEN,
-#endif
         MpcEvent::STREAM_POS_UPDATE_REQUEST,
     }, std::bind(&CPlayerSeekBar::EventCallback, this, std::placeholders::_1));
 }
@@ -122,13 +117,6 @@ void CPlayerSeekBar::EventCallback(MpcEvent ev)
             m_pDisabledThumb = nullptr;
             m_timeFont.DeleteObject(); // rebuilt on next use
             m_timeText.Empty();
-#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-            QueueAlphaRefresh();
-            break;
-        case MpcEvent::SWITCHED_TO_FULLSCREEN:
-        case MpcEvent::SWITCHED_FROM_FULLSCREEN:
-            QueueAlphaRefresh();
-#endif
             break;
 
         case MpcEvent::STREAM_POS_UPDATE_REQUEST:
@@ -821,11 +809,6 @@ bool CPlayerSeekBar::DraggingThumb()
 
 BEGIN_MESSAGE_MAP(CPlayerSeekBar, CDialogBar)
     ON_WM_PAINT()
-#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-    ON_WM_WINDOWPOSCHANGING()
-    ON_WM_WINDOWPOSCHANGED()
-    ON_REGISTERED_MESSAGE(WM_NATIVE_SEEKBAR_REFRESH, OnAlphaRefresh)
-#endif
     ON_WM_LBUTTONDOWN()
     ON_WM_LBUTTONDBLCLK()
     ON_WM_LBUTTONUP()
@@ -865,64 +848,6 @@ void CPlayerSeekBar::OnPaint()
 }
 
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-void CPlayerSeekBar::QueueAlphaRefresh()
-{
-    if (GetSafeHwnd() && !m_alphaRefreshPosted && !m_alphaRefreshing) {
-        // Coalesce layout notifications and run after the current layout/event
-        // dispatch, including the view's fullscreen renderer reassignment.
-        m_alphaRefreshPosted = !!PostMessage(WM_NATIVE_SEEKBAR_REFRESH);
-    }
-}
-
-void CPlayerSeekBar::OnWindowPosChanging(WINDOWPOS* position)
-{
-    if ((GetExStyle() & WS_EX_LAYERED)
-            && (position->flags & (SWP_NOMOVE | SWP_NOSIZE)) != (SWP_NOMOVE | SWP_NOSIZE)) {
-        // Saved client pixels are not valid backing content for video alpha.
-        position->flags |= SWP_NOCOPYBITS;
-    }
-    __super::OnWindowPosChanging(position);
-}
-
-void CPlayerSeekBar::OnWindowPosChanged(WINDOWPOS* position)
-{
-    __super::OnWindowPosChanged(position);
-    CRect bounds;
-    GetWindowRect(bounds);
-    if (bounds != m_alphaWindowRect) {
-        m_alphaWindowRect = bounds;
-        QueueAlphaRefresh();
-    }
-}
-
-LRESULT CPlayerSeekBar::OnAlphaRefresh(WPARAM, LPARAM)
-{
-    m_alphaRefreshPosted = false;
-    if (m_alphaRefreshing || !IsWindowVisible()
-            || m_pMainFrame->GetLoadState() != MLS::LOADED) return 0;
-    m_alphaRefreshing = true;
-
-    // Reset the compositor's old-sized surface without changing visibility,
-    // capture, selection or native auto-hide state. Update the underlying
-    // renderer before publishing fresh alpha pixels on this same HWND.
-    if (GetExStyle() & WS_EX_LAYERED) ModifyStyleEx(WS_EX_LAYERED, 0);
-    m_alphaPresentationFailed = false;
-    if (AppIsThemeLoaded() && m_pMainFrame->m_controls.ToolbarsCoverVideo()
-            && !m_pMainFrame->HasDedicatedFSVideoWindow()) {
-        // Keep the bar layered while repainting beneath it; an ordinary opaque
-        // child would exclude its rectangle from the renderer's repaint.
-        ModifyStyleEx(0, WS_EX_LAYERED);
-    }
-    m_pMainFrame->MoveVideoWindow();
-    m_pMainFrame->m_wndView.RedrawWindow(nullptr, nullptr,
-        RDW_INVALIDATE | RDW_NOERASE | RDW_UPDATENOW | RDW_ALLCHILDREN);
-    m_pMainFrame->RepaintVideo(true);
-    Invalidate(FALSE);
-    UpdateWindow();
-    m_alphaRefreshing = false;
-    return 0;
-}
-
 bool CPlayerSeekBar::PaintNativeAlpha()
 {
     CRect bounds;
