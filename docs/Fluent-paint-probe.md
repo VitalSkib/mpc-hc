@@ -1,40 +1,30 @@
-# Fluent toolbar paint probe
+# Native alpha overlay probe
 
-This branch starts with a deliberately small experiment, not a completed Fluent UI.
-The `MPC_EXPERIMENTAL_NO_TOOLBAR_FILL` compiler define suppresses the toolbar's
-client background, separator overpainting, and non-client fill. It preserves the
-native button image lists, commands, hit testing, tooltips, and button-state drawing.
-Without the define, the upstream paint path remains unchanged.
+This opt-in x64 Lite build defines `MPC_EXPERIMENTAL_ALPHA_OVERLAY`.
+The earlier toolbar-fill experiment is disabled; upstream toolbar drawing is restored.
 
-The experiment does not yet modify the seekbar, volume slider, video layout,
-top-right close button, or hover title. Skipping a GDI fill does not establish
-that the video renderer will compose behind that window. Inspect the actual build
-for opaque parent backgrounds, unpainted regions, and stale pixels during resize,
-pause, cover/uncover, Minimal/Compact mode, and hover show/hide.
+Hover over the main video view to display:
+- the current native player window title at top left;
+- a near-white close button at top right (standard WM_CLOSE);
+- a bottom test panel with 64/255 black alpha and opaque text.
 
-## Build and isolate
+The overlay uses a native layered child window and UpdateLayeredWindow with
+premultiplied per-pixel alpha, following the mechanism already used in this codebase.
+It does not add WinUI, a helper process, polling, or timers. Rendering happens on
+mouse entry, title/size changes observed during hover, or close-button hover changes.
+Other mouse input passes through; normal toolbar, seekbar and volume remain unchanged.
+This is a compositing probe, not a completed Fluent controls implementation.
 
-The GitHub Actions job produces an x64 **Lite** test build: internal codecs are not
-included. See `Compilation.md` for the full build prerequisites. Tests of local
-files may require separately installed external filters. This is not a release.
+## Separate test only
 
-Extract the artifact to a separate writable folder, never over the installed
-player. Before launching, create `mpc-hc64.ini` alongside `mpc-hc64.exe` with:
+Extract the artifact to a separate writable folder. Close the regular player.
+Create an adjacent mpc-hc64.ini containing `[Settings]` before launching mpc-hc64.exe.
+Do not replace the installed player or change the Firefox protocol handler.
+This is a Lite build: internal codecs are not included; use an available external
+DirectShow decoder. Test real video in windowed Minimal/Compact mode first.
+Exclusive fullscreen/alternate fullscreen video windows are outside this first probe.
 
-```ini
-[Settings]
-; Portable experiment; do not copy the installed player's settings.
-```
-
-Launch the extracted executable with `/new` so the request does not get forwarded
-to the installed player's process. Keep the test INI alongside the executable to
-avoid using the installed player's registry settings. Confirm portable settings
-before changing options. Do not use
-Firefox's existing `mpc://` registration for this probe. The installed player,
-MpcHover helper, and browser userscripts are not part of this change.
-
-## Expected next step
-
-First verify that the build compiles and the icons remain visible when backgrounds
-are omitted. Only then choose the required composition approach for translucent
-panels, and add the native hover title and top-right close action.
+Check whether moving video remains visible under the lower panel, while text and
+close stay opaque. Check hover exit, resize, minimize/restore, fullscreen transitions,
+normal playback clicks, and close cancel/confirmation behavior.
+Build success alone does not establish visual or renderer compatibility.

@@ -22,9 +22,16 @@
 #pragma once
 
 #include "MouseWndWithArtView.h"
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+#include "FluentOverlayProbe.h"
+#endif
 
 class CChildView : public CMouseWndWithArtView
 {
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    CFluentOverlayProbe m_fluentProbe;
+    LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam) override;
+#endif
     bool m_bSwitchingFullscreen;
     bool m_bFirstMedia;
 

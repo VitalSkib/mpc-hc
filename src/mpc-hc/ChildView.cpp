@@ -79,6 +79,11 @@ BOOL CChildView::PreCreateWindow(CREATESTRUCT& cs)
 
 BOOL CChildView::PreTranslateMessage(MSG* pMsg)
 {
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    if (pMsg->message == WM_MOUSEMOVE) {
+        m_fluentProbe.Refresh(this);
+    }
+#endif
     // filter interactive video controls mouse messages
     if (pMsg->hwnd != m_hWnd &&
             pMsg->message >= WM_MOUSEFIRST && pMsg->message <= WM_MOUSELAST &&
@@ -106,6 +111,18 @@ BOOL CChildView::PreTranslateMessage(MSG* pMsg)
     }
     return CWnd::PreTranslateMessage(pMsg);
 }
+
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+LRESULT CChildView::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
+{
+    if (message == WM_MOUSELEAVE) {
+        m_fluentProbe.Refresh(this);
+    } else if (message == WM_SIZE || message == WM_DESTROY || message == WM_SHOWWINDOW) {
+        m_fluentProbe.Hide();
+    }
+    return __super::WindowProc(message, wParam, lParam);
+}
+#endif
 
 IMPLEMENT_DYNAMIC(CChildView, CMouseWndWithArtView)
 
