@@ -925,7 +925,11 @@ bool CPlayerSeekBar::PaintNativeAlpha()
         Gdiplus::Bitmap surface(width, height, width * 4, PixelFormat32bppPARGB,
             static_cast<BYTE*>(bits));
         Gdiplus::Graphics graphics(&surface);
+#ifdef MPC_EXPERIMENTAL_NO_BACKDROP
+        graphics.Clear(Gdiplus::Color(0, 0, 0, 0));
+#else
         graphics.Clear(Gdiplus::Color(64, 0, 0, 0));
+#endif
         graphics.TranslateTransform(float(clientOrigin.x - bounds.left), float(clientOrigin.y - bounds.top));
         graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
         const CRect channel = GetChannelRect();

@@ -35,7 +35,7 @@ jobs:
       - name: Build native-controls x64 probe
         shell: cmd
         env:
-          CL: /DMPC_EXPERIMENTAL_NATIVE_SEEKBAR
+          CL: /DMPC_EXPERIMENTAL_NATIVE_SEEKBAR /DMPC_EXPERIMENTAL_NO_BACKDROP
         run: build.bat Build x64 Main Release Lite
       - name: Package isolated test settings
         shell: pwsh
@@ -47,10 +47,11 @@ jobs:
             'HideWindowedControls=1', 'UseTimeTooltip=1', 'UseSeekPreview=1') |
             Set-Content -LiteralPath "$testDir/mpc-hc64.ini" -Encoding unicode
           @('Native seekbar alpha test. Extract separately and run mpc-hc64.exe.',
-            'Thin blue/grey track, circular thumb, 25% black surrounding background.',
+            'Thin blue/grey track and circular thumb; zero-alpha seekbar background.',
             'Moving video must show through ABOVE and BELOW the thin track.',
             'Check native seek, outside release, hover time and seek preview.',
-            'Original toolbar/title/OSD are expected. The previous overlay is disabled.',
+            'Transparent pixels may pass mouse input through: check button targeting too.',
+            'Native toolbar icons/commands remain; its background is removed by colour key.',
             'Portable settings are included; native controls auto-hide after 4 seconds.',
             'Source: https://github.com/VitalSkib/mpc-hc/tree/fluent-hover-ui') |
             Set-Content -LiteralPath "$testDir/README.txt" -Encoding utf8
@@ -58,7 +59,7 @@ jobs:
       - name: Upload standalone test build
         uses: actions/upload-artifact@v4
         with:
-          name: MPC-HC-x64-native-seekbar-${{ github.sha }}
+          name: MPC-HC-x64-no-backdrop-${{ github.sha }}
           path: |
             bin/mpc-hc_x64 Lite/mpc-hc64.exe
             bin/mpc-hc_x64 Lite/mpc-hc64.ini

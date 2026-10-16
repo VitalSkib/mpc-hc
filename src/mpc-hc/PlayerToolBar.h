@@ -157,6 +157,9 @@ protected:
     afx_msg void OnSize(UINT nType, int cx, int cy);
     afx_msg LRESULT OnMPCThemeChanged(WPARAM wParam, LPARAM lParam);
     void RegisterThemedToolTipTools();
+#ifdef MPC_EXPERIMENTAL_NO_BACKDROP
+    void UpdateBackdropTransparency();
+#endif
     afx_msg void OnInitialUpdate();
     afx_msg BOOL OnVolumeMute(UINT nID);
     afx_msg void OnUpdateVolumeMute(CCmdUI* pCmdUI);

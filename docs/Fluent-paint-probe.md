@@ -1,3 +1,21 @@
+# Native controls without a backdrop: current test
+
+CI additionally defines MPC_EXPERIMENTAL_NO_BACKDROP. The thin seekbar painter
+clears to alpha zero. The actual native toolbar retains its original icons,
+command/state handling and GDI paint functions; SetLayeredWindowAttributes with
+LWA_COLORKEY removes its normal background colour. The toolbar does not use
+UpdateLayeredWindow. Theme changes update the key. There is no extra decorative
+layer and no forced renderer update. Other native controls may keep their own
+nonmatching background colours; this is not a full player skin.
+
+This tests fully transparent backgrounds rather than a translucent black panel.
+Windows may pass mouse input through zero-alpha/colour-key pixels, so native
+button/seekbar targeting and hover must be checked along with resize/fullscreen
+and paused playback. That limitation must not be mistaken for preservation of
+the full rectangular native hit areas. Runtime stability remains unverified.
+
+---
+
 # Native seekbar transparency checkpoint
 
 The current CI artifact uses `MPC_EXPERIMENTAL_NATIVE_SEEKBAR`, not

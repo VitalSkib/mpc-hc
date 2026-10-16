@@ -376,6 +376,21 @@ void CPlayerToolBar::RegisterThemedToolTipTools()
     }
 }
 
+#ifdef MPC_EXPERIMENTAL_NO_BACKDROP
+void CPlayerToolBar::UpdateBackdropTransparency()
+{
+    // Preserve native drawing and commands. Let Windows remove only the
+    // background colour; do not mix UpdateLayeredWindow with this HWND.
+    if (!GetSafeHwnd()) return;
+    const COLORREF background = AppIsThemeLoaded() ? CMPCTheme::PlayerBGColor : ::GetSysColor(COLOR_BTNFACE);
+    ModifyStyleEx(0, WS_EX_LAYERED);
+    if (!::SetLayeredWindowAttributes(m_hWnd, background, 255, LWA_COLORKEY)) {
+        ModifyStyleEx(WS_EX_LAYERED, 0); // retain the native opaque toolbar on failure
+    }
+    Invalidate(FALSE);
+}
+#endif
+
 LRESULT CPlayerToolBar::OnMPCThemeChanged(WPARAM wParam, LPARAM lParam)
 {
     CToolBarCtrl& tb = GetToolBarCtrl();
@@ -393,6 +408,9 @@ LRESULT CPlayerToolBar::OnMPCThemeChanged(WPARAM wParam, LPARAM lParam)
     }
     LoadToolbarImage(true);
     ArrangeControls();
+#ifdef MPC_EXPERIMENTAL_NO_BACKDROP
+    UpdateBackdropTransparency();
+#endif
     return 0;
 }
 
@@ -460,6 +478,9 @@ BOOL CPlayerToolBar::Create(CWnd* pParentWnd)
         tb.EnableToolTips();
     }
 
+#ifdef MPC_EXPERIMENTAL_NO_BACKDROP
+    UpdateBackdropTransparency();
+#endif
     return TRUE;
 }
 
