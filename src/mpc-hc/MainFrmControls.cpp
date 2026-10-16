@@ -82,7 +82,12 @@ bool CMainFrameControls::ShowToolbars(UINT nCS)
         for (const auto& pair : m_toolbars) {
             auto& pCB = pair.second;
             if (pCB->m_hWnd) {
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+                const bool migrated = pair.first == Toolbar::CONTROLS || pair.first == Toolbar::SEEKBAR;
+                if ((nCS & i) && !migrated) {
+#else
                 if (nCS & i) {
+#endif
                     m_pMainFrame->ShowControlBar(pCB, TRUE, TRUE);
                     m_pMainFrame->m_pLastBar = pCB;
                 } else {
@@ -105,7 +110,12 @@ unsigned CMainFrameControls::GetToolbarsHeight(UINT nCS) const
     int i = 1;
     for (const auto& pair : m_toolbars) {
         auto& pCB = pair.second;
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+        const bool migrated = pair.first == Toolbar::CONTROLS || pair.first == Toolbar::SEEKBAR;
+        if ((nCS & i) && !migrated && IsWindow(pCB->m_hWnd)) {
+#else
         if ((nCS & i) && IsWindow(pCB->m_hWnd)) {
+#endif
             ret += pCB->CalcFixedLayout(TRUE, TRUE).cy;
         }
         i <<= 1;

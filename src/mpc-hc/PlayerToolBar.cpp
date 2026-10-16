@@ -1080,6 +1080,32 @@ UINT CPlayerToolBar::CustomToCMD(UINT nID, int mouseButtonSource) {
     return cmd;
 }
 
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+void CPlayerToolBar::UpdateOverlayCommandState()
+{
+    // The backend HWND is hidden; explicitly run its original command UI updates.
+    CToolBar::OnUpdateCmdUI(m_pMainFrame, TRUE);
+}
+
+void CPlayerToolBar::InvokeOverlayButton(UINT id, const CRect& anchor, bool rightButton)
+{
+    const int index = GetToolBarCtrl().CommandToIndex(id);
+    if (index < 0 || !(GetToolBarCtrl().GetState(id) & TBSTATE_ENABLED)) return;
+    m_overlayAnchor = anchor;
+    if (rightButton) {
+        rightButtonIndex = index;
+        CRect rect; GetItemRect(index, rect);
+        OnRButtonUp(0, rect.CenterPoint());
+    } else {
+        leftButtonIndex = index;
+        const UINT command = id >= ID_CUSTOM_ACTION1 && id <= ID_CUSTOM_ACTION4 ? CustomToCMD(id, VK_LBUTTON) : id;
+        if (CmdIsMenu(command) || command == ID_AUDIOS || command == ID_SUBTITLES) DoCustomContextMenu(id, command, index, VK_LBUTTON);
+        else m_pMainFrame->PostMessage(WM_COMMAND, id);
+    }
+    m_overlayAnchor.reset();
+}
+#endif
+
 BOOL CPlayerToolBar::OnMenuButton(UINT nID) {
     DoCustomContextMenu(nID, nID, leftButtonIndex, VK_LBUTTON);
     return TRUE;
@@ -1295,6 +1321,9 @@ void CPlayerToolBar::DoCustomContextMenu(int itemId, int cmd, int buttonId, int 
     CRect r;
     GetItemRect(buttonId, r);
     ClientToScreen(r);
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    if (m_overlayAnchor) r = *m_overlayAnchor;
+#endif
 
     tb.PressButton(itemId, TRUE);
     m_pMainFrame->ToolbarContextMenu(cmd, buttonId, r);

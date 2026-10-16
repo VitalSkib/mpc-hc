@@ -82,6 +82,23 @@ bool CVolumeCtrl::Create(CWnd* pParentWnd)
     return true;
 }
 
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+bool CVolumeCtrl::ForwardOverlayMouse(UINT message, WPARAM flags, double fraction)
+{
+    if (!IsWindowEnabled()) return false;
+    CRect rect;
+    GetChannelRect(rect);
+    if (rect.Width() <= 1) return false;
+    const CPoint point(rect.left + static_cast<int>(fraction * (rect.Width() - 1)), rect.CenterPoint().y);
+    // Existing handlers preserve volume step, notifications and capture behavior.
+    if (message == WM_MOUSEWHEEL) {
+        CPoint screen = point; ClientToScreen(&screen);
+        SendMessage(message, flags, MAKELPARAM(screen.x, screen.y));
+    } else SendMessage(message, flags, MAKELPARAM(point.x, point.y));
+    return m_bDrag;
+}
+#endif
+
 void CVolumeCtrl::SetPosInternal(int pos)
 {
     SetPos(pos);

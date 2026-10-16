@@ -1,53 +1,117 @@
 /* Experimental native alpha overlay. Distributed under MPC-HC's GPLv3+ license. */
 #pragma once
-
 #include <gdiplus.h>
 
-// Header-only so the opt-in probe does not alter the upstream project files.
 class CFluentOverlayProbe final : public CWnd
 {
+public:
+    struct Button {
+        UINT id;
+        int image;
+        BYTE state;
+        CString tip;
+        bool operator==(const Button& other) const {
+            return id == other.id && image == other.image && state == other.state && tip == other.tip;
+        }
+    };
+    std::function<void(UINT, const CRect&, bool)> invokeButton;
+    std::function<bool(UINT, WPARAM, double)> seekMouse, volumeMouse;
+    std::function<bool()> seekActive, volumeActive;
+
+private:
     ULONG_PTR m_gdiplus = 0;
     CWnd* m_view = nullptr;
-    CString m_title;
-    CSize m_size = CSize(0, 0);
-    bool m_hot = false;
-    bool m_pressed = false;
-    bool m_playPressed = false;
-    bool m_seeking = false;
-    bool m_canPlay = false, m_playing = false, m_canSeek = false, m_controlsVisible = false;
+    CToolTipCtrl m_tip;
+    CString m_title, m_time;
+    CSize m_size = CSize(0, 0), m_layoutSize = CSize(0, 0);
+    std::vector<Button> m_buttons;
+    std::vector<CRect> m_buttonRects;
+    HIMAGELIST m_images = nullptr;
+    bool m_toolbarVisible = false, m_seekVisible = false, m_volumeVisible = false;
+    bool m_controlsVisible = false, m_canSeek = false, m_dirty = true;
+    bool m_seeking = false, m_volumeDragging = false;
+    int m_volume = 0, m_volumeMaximum = 100;
+    int m_hotButton = -1, m_pressedButton = -1;
+    bool m_closeHot = false, m_closePressed = false, m_rightPressed = false;
     LONGLONG m_start = 0, m_stop = 0, m_position = 0;
-    CString m_time;
-    CRect PlayRect() const { return CRect(m_size.cx / 2 - 18, m_size.cy - 43, m_size.cx / 2 + 18, m_size.cy - 7); }
-    CRect TimelineRect() const { return CRect(22, m_size.cy - 70, m_size.cx - 22, m_size.cy - 46); }
-    bool IsControlPoint(CPoint point) const
-    {
-        return CloseRect().PtInRect(point) || (m_controlsVisible && (PlayRect().PtInRect(point) || TimelineRect().PtInRect(point)));
+    int m_bottomHeight = 0, m_overflowStart = -1;
+    CRect m_overflowRect;
+    UINT m_pressedId = 0;
+    bool Compact() const { return m_size.cx < 480 || m_size.cy < 300; }
+    CRect m_timeline, m_volumeRect, m_timeRect;
+
+    CRect CloseRect() const { return CRect(m_size.cx - 34, 3, m_size.cx - 6, 31); }
+    bool CapturedInput() const { return m_seeking || m_volumeDragging || m_closePressed || m_pressedButton != -1; }
+    int HitButton(CPoint point) const {
+        for (size_t i = 0; i < m_buttonRects.size(); ++i) if (m_buttonRects[i].PtInRect(point)) return static_cast<int>(i);
+        return m_overflowRect.PtInRect(point) ? -2 : -1;
     }
-
-    CRect CloseRect() const { return CRect(m_size.cx - 46, 12, m_size.cx - 12, 46); }
-
-    bool InsideView() const
-    {
+    bool IsControlPoint(CPoint point) const {
+        return CloseRect().PtInRect(point) || (m_controlsVisible &&
+            (HitButton(point) != -1 || (m_seekVisible && m_timeline.PtInRect(point))
+                || (m_volumeVisible && m_volumeRect.PtInRect(point))));
+    }
+    bool InsideView() const {
         CPoint point;
         ::GetCursorPos(&point);
         CRect rc;
         m_view->GetWindowRect(rc);
         if (!rc.PtInRect(point)) return false;
-        const HWND underCursor = ::WindowFromPoint(point);
-        // A covered player, owned dialog, or another app is not a video hover.
-        return underCursor && (underCursor == m_view->GetSafeHwnd()
-            || ::IsChild(m_view->GetSafeHwnd(), underCursor));
+        const HWND window = ::WindowFromPoint(point);
+        return window && (window == m_view->GetSafeHwnd() || ::IsChild(m_view->GetSafeHwnd(), window));
     }
-
-    void DrawSurface()
-    {
+    void EnsureGeometry() {
+        if (!m_dirty && m_layoutSize == m_size) return;
+        if (m_tip.GetSafeHwnd()) {
+            for (size_t i = 0; i < m_buttonRects.size(); ++i) m_tip.DelTool(this, static_cast<UINT_PTR>(i + 1));
+        }
+        m_buttonRects.clear();
+        m_timeline.SetRectEmpty(); m_volumeRect.SetRectEmpty(); m_timeRect.SetRectEmpty();
+        const int margin = Compact() ? 12 : 16;
+        const int left = margin, right = m_size.cx - margin, cell = Compact() ? 24 : 28;
+        const int volumeWidth = m_volumeVisible ? (Compact() ? 60 : 84) : 0;
+        const int spaceForButtons = right - left - volumeWidth;
+        int capacity = std::max(0, spaceForButtons / cell);
+        const bool overflow = m_toolbarVisible && static_cast<int>(m_buttons.size()) > capacity;
+        if (overflow) capacity = std::max(0, capacity - 1);
+        const int visibleCount = m_toolbarVisible ? std::min(static_cast<int>(m_buttons.size()), capacity) : 0;
+        const int rows = m_toolbarVisible && (!m_buttons.empty() || m_volumeVisible) ? 1 : 0;
+        const int seekHeight = m_seekVisible ? (Compact() ? 30 : 34) : 0;
+        m_bottomHeight = rows * cell + seekHeight + 8;
+        const int top = m_size.cy - m_bottomHeight;
+        if (m_seekVisible) {
+            m_timeRect = CRect(left, top + 1, right, top + 19);
+            m_timeline = CRect(left + 3, top + seekHeight - 15, right - 3, top + seekHeight - 1);
+        }
+        m_buttonRects.resize(m_buttons.size());
+        int x = left;
+        const int y = top + seekHeight + 2;
+        for (int i = 0; i < visibleCount; ++i) {
+            m_buttonRects[i] = CRect(x, y, x + cell, y + cell);
+            x += cell;
+        }
+        m_overflowRect.SetRectEmpty(); m_overflowStart = -1;
+        if (overflow) {
+            m_overflowStart = visibleCount;
+            m_overflowRect = CRect(x, y, x + cell, y + cell);
+        }
+        if (m_volumeVisible) m_volumeRect = CRect(right - volumeWidth + 7, y + 3, right - 3, y + cell - 3);
+        if (m_tip.GetSafeHwnd()) {
+            for (size_t i = 0; i < m_buttonRects.size(); ++i) {
+                if (!m_buttonRects[i].IsRectEmpty()) m_tip.AddTool(this, m_buttons[i].tip, m_buttonRects[i], static_cast<UINT_PTR>(i + 1));
+            }
+        }
+        m_layoutSize = m_size;
+        m_dirty = false;
+    }
+    void DrawSurface() {
+        EnsureGeometry();
         const int width = m_size.cx, height = m_size.cy;
+        if (width <= 0 || height <= 0) return;
         BITMAPINFO info = {};
         info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-        info.bmiHeader.biWidth = width;
-        info.bmiHeader.biHeight = -height;
-        info.bmiHeader.biPlanes = 1;
-        info.bmiHeader.biBitCount = 32;
+        info.bmiHeader.biWidth = width; info.bmiHeader.biHeight = -height;
+        info.bmiHeader.biPlanes = 1; info.bmiHeader.biBitCount = 32;
         void* bits = nullptr;
         HDC dc = ::CreateCompatibleDC(nullptr);
         HBITMAP bitmap = ::CreateDIBSection(dc, &info, DIB_RGB_COLORS, &bits, nullptr, 0);
@@ -63,186 +127,231 @@ class CFluentOverlayProbe final : public CWnd
             graphics.Clear(Gdiplus::Color(0, 0, 0, 0));
             graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
             graphics.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAliasGridFit);
-            // Straight video remains visible behind this per-pixel-alpha panel.
             Gdiplus::SolidBrush backdrop(Gdiplus::Color(64, 0, 0, 0));
-            if (m_controlsVisible) graphics.FillRectangle(&backdrop, 0, height - 82, width, 82);
-            graphics.FillRectangle(&backdrop, 0, 0, width, 58);
-            Gdiplus::Font font(L"Segoe UI", 15.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+            graphics.FillRectangle(&backdrop, 0, 0, width, Compact() ? 32 : 36);
+            if (m_controlsVisible) graphics.FillRectangle(&backdrop, 0, height - m_bottomHeight, width, m_bottomHeight);
+            Gdiplus::Font font(L"Segoe UI", Compact() ? 12.0f : 14.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
             Gdiplus::SolidBrush text(Gdiplus::Color(255, 235, 235, 235));
             Gdiplus::StringFormat format;
             format.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap);
             format.SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
-            const float textWidth = static_cast<float>(width - 86);
-            graphics.DrawString(m_title, -1, &font, Gdiplus::RectF(18, 18, textWidth, 28), &format, &text);
+            graphics.DrawString(m_title, -1, &font, Gdiplus::RectF(14, Compact() ? 7.0f : 8.0f, static_cast<float>(width - 60), 22), &format, &text);
             if (m_controlsVisible) {
-                const CRect timeline = TimelineRect(), play = PlayRect();
-                const float left = static_cast<float>(timeline.left), right = static_cast<float>(timeline.right - 1);
-                const float y = static_cast<float>(timeline.CenterPoint().y);
-                Gdiplus::Pen track(Gdiplus::Color(m_canSeek ? 140 : 60, 235, 235, 235), 3.0f);
-                track.SetStartCap(Gdiplus::LineCapRound);
-                track.SetEndCap(Gdiplus::LineCapRound);
-                graphics.DrawLine(&track, left, y, right, y);
-                if (m_canSeek && m_stop > m_start) {
-                    const double progress = std::clamp(static_cast<double>(m_position - m_start) / static_cast<double>(m_stop - m_start), 0.0, 1.0);
-                    const float x = left + static_cast<float>(progress) * (right - left);
-                    Gdiplus::Pen elapsed(Gdiplus::Color(255, 235, 235, 235), 3.0f);
-                    graphics.DrawLine(&elapsed, left, y, x, y);
-                    Gdiplus::SolidBrush accent(Gdiplus::Color(255, 0, 120, 212));
-                    graphics.FillEllipse(&accent, x - 5, y - 5, 10.0f, 10.0f);
+                if (m_seekVisible) {
+                    DrawSlider(graphics, m_timeline, m_canSeek && m_stop > m_start
+                        ? static_cast<double>(m_position - m_start) / static_cast<double>(m_stop - m_start) : 0, m_canSeek);
+                    graphics.DrawString(m_time, -1, &font,
+                        Gdiplus::RectF(static_cast<float>(m_timeRect.left), static_cast<float>(m_timeRect.top),
+                            static_cast<float>(m_timeRect.Width()), 22), &format, &text);
                 }
-                Gdiplus::SolidBrush icon(Gdiplus::Color(m_canPlay ? 255 : 80, 235, 235, 235));
-                const int x = play.left + 12, py = play.top + 10;
-                if (m_playing) {
-                    graphics.FillRectangle(&icon, x, py, 4, 16);
-                    graphics.FillRectangle(&icon, x + 8, py, 4, 16);
-                } else {
-                    Gdiplus::Point triangle[] = {{x, py}, {x + 13, py + 8}, {x, py + 16}};
-                    graphics.FillPolygon(&icon, triangle, 3);
+                Gdiplus::SolidBrush highlight(Gdiplus::Color(40, 255, 255, 255));
+                for (size_t i = 0; i < m_buttonRects.size(); ++i) {
+                    const auto& button = m_buttons[i];
+                    const auto& rect = m_buttonRects[i];
+                    if (rect.IsRectEmpty()) continue;
+                    if ((button.state & TBSTATE_CHECKED) || m_hotButton == static_cast<int>(i))
+                        graphics.FillRectangle(&highlight, rect.left, rect.top, rect.Width(), rect.Height());
+                    HICON icon = m_images ? ::ImageList_GetIcon(m_images, button.image, ILD_TRANSPARENT) : nullptr;
+                    if (icon) {
+                        Gdiplus::Bitmap image(icon);
+                        Gdiplus::ColorMatrix matrix = {{{1,0,0,0,0},{0,1,0,0,0},{0,0,1,0,0},
+                            {0,0,0,(button.state & TBSTATE_ENABLED) ? 1.0f : 0.35f,0},{0,0,0,0,1}}};
+                        Gdiplus::ImageAttributes attrs;
+                        attrs.SetColorMatrix(&matrix);
+                        const int iconSize = Compact() ? 16 : 20;
+                        const int inset = (rect.Width() - iconSize) / 2;
+                        graphics.DrawImage(&image, Gdiplus::Rect(rect.left + inset, rect.top + inset, iconSize, iconSize),
+                            0, 0, image.GetWidth(), image.GetHeight(), Gdiplus::UnitPixel, &attrs);
+                        ::DestroyIcon(icon);
+                    }
                 }
-                graphics.DrawString(m_time, -1, &font,
-                    Gdiplus::RectF(22, static_cast<float>(height - 34), static_cast<float>(width / 2 - 46), 24), &format, &text);
+                if (!m_overflowRect.IsRectEmpty()) {
+                    if (m_hotButton == -2) graphics.FillRectangle(&highlight, m_overflowRect.left, m_overflowRect.top, m_overflowRect.Width(), m_overflowRect.Height());
+                    const auto center = m_overflowRect.CenterPoint();
+                    for (int offset : {-5, 0, 5}) graphics.FillEllipse(&text, center.x + offset - 1, center.y - 1, 2, 2);
+                }
+                if (m_toolbarVisible && m_volumeVisible) DrawSlider(graphics, m_volumeRect,
+                    static_cast<double>(m_volume) / std::max(1, m_volumeMaximum), true);
             }
             const CRect close = CloseRect();
-            Gdiplus::Pen cross(Gdiplus::Color(255, m_hot ? 255 : 235, m_hot ? 255 : 235, m_hot ? 255 : 235), 1.5f);
-            const int x = close.left + 11, y = close.top + 11;
+            if (m_closeHot) {
+                Gdiplus::SolidBrush hover(Gdiplus::Color(48, 255, 255, 255));
+                graphics.FillRectangle(&hover, close.left, close.top, close.Width(), close.Height());
+            }
+            const BYTE shade = m_closeHot ? 255 : 210;
+            Gdiplus::Pen cross(Gdiplus::Color(255, shade, shade, shade), 1.5f);
+            const int x = close.left + 8, y = close.top + 8;
             graphics.DrawLine(&cross, x, y, x + 12, y + 12);
             graphics.DrawLine(&cross, x + 12, y, x, y + 12);
         }
-        POINT origin = {0, 0};
-        SIZE size = {width, height};
+        POINT origin = {0, 0}; SIZE size = {width, height};
         BLENDFUNCTION blend = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
         ::UpdateLayeredWindow(m_hWnd, nullptr, nullptr, &size, dc, &origin, 0, &blend, ULW_ALPHA);
-        ::SelectObject(dc, previous);
-        ::DeleteObject(bitmap);
-        ::DeleteDC(dc);
+        ::SelectObject(dc, previous); ::DeleteObject(bitmap); ::DeleteDC(dc);
     }
-
+    void DrawSlider(Gdiplus::Graphics& graphics, const CRect& rect, double value, bool enabled) {
+        value = std::clamp(value, 0.0, 1.0);
+        const float left = static_cast<float>(rect.left), right = static_cast<float>(rect.right - 1);
+        const float y = static_cast<float>(rect.CenterPoint().y), x = left + static_cast<float>(value) * (right - left);
+        Gdiplus::Pen track(Gdiplus::Color(enabled ? 120 : 45, 235, 235, 235), 3.0f);
+        track.SetStartCap(Gdiplus::LineCapRound); track.SetEndCap(Gdiplus::LineCapRound);
+        graphics.DrawLine(&track, left, y, right, y);
+        if (enabled) {
+            Gdiplus::Pen elapsed(Gdiplus::Color(255, 235, 235, 235), 3.0f);
+            graphics.DrawLine(&elapsed, left, y, x, y);
+            Gdiplus::SolidBrush accent(Gdiplus::Color(255, 0, 120, 212));
+            graphics.FillEllipse(&accent, x - 5, y - 5, 10.0f, 10.0f);
+        }
+    }
 protected:
-    LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam) override
-    {
+    LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam) override {
         if (message == WM_NCHITTEST) {
-            CPoint point(lParam);
-            ScreenToClient(&point);
+            CPoint point(lParam); ScreenToClient(&point);
             return IsControlPoint(point) ? HTCLIENT : HTTRANSPARENT;
         }
         if (message == WM_MOUSEACTIVATE) return MA_NOACTIVATE;
         if (message == WM_MOUSEMOVE) {
             TRACKMOUSEEVENT track = {sizeof(track), TME_LEAVE, m_hWnd, 0};
-            ::TrackMouseEvent(&track);
-            Refresh(m_view);
-            return 0;
+            ::TrackMouseEvent(&track); Refresh(m_view); return 0;
         }
-        if (message == WM_MOUSELEAVE) {
-            if (!InsideView()) Hide();
-            else Refresh(m_view);
-            return 0;
-        }
+        if (message == WM_MOUSELEAVE) { Refresh(m_view); return 0; }
         return CWnd::WindowProc(message, wParam, lParam);
     }
-
 public:
-    CFluentOverlayProbe()
-    {
+    CFluentOverlayProbe() {
         Gdiplus::GdiplusStartupInput startup;
         if (Gdiplus::GdiplusStartup(&m_gdiplus, &startup, nullptr) != Gdiplus::Ok) m_gdiplus = 0;
     }
-    ~CFluentOverlayProbe()
-    {
+    ~CFluentOverlayProbe() {
+        if (m_tip.GetSafeHwnd()) m_tip.DestroyWindow();
         if (GetSafeHwnd()) DestroyWindow();
         if (m_gdiplus) Gdiplus::GdiplusShutdown(m_gdiplus);
     }
-
-    std::function<void()> playPause;
-    std::function<bool(UINT, WPARAM, double)> seekMouse;
-    std::function<bool()> seekActive;
-
-    void SetControlState(bool canPlay, bool playing, bool canSeek, bool controlsVisible,
-                         LONGLONG start, LONGLONG stop, LONGLONG position, const CString& time)
-    {
-        const bool changed = m_canPlay != canPlay || m_playing != playing || m_canSeek != canSeek
-            || m_controlsVisible != controlsVisible || m_start != start || m_stop != stop || m_position != position || m_time != time;
-        m_canPlay = canPlay; m_playing = playing; m_canSeek = canSeek; m_controlsVisible = controlsVisible;
+    void SetNativeLayout(std::vector<Button> buttons, HIMAGELIST images, bool toolbar, bool seek,
+                         bool volume, int volumeValue, int volumeMaximum) {
+        if (buttons != m_buttons || images != m_images || toolbar != m_toolbarVisible
+                || seek != m_seekVisible || volume != m_volumeVisible) m_dirty = true;
+        // Remove tooltip text references before replacing the snapshot.
+        if (m_dirty && m_tip.GetSafeHwnd()) {
+            for (size_t i = 0; i < m_buttonRects.size(); ++i) m_tip.DelTool(this, static_cast<UINT_PTR>(i + 1));
+        }
+        if (buttons != m_buttons) m_buttons = std::move(buttons);
+        m_images = images; m_toolbarVisible = toolbar;
+        m_seekVisible = seek; m_volumeVisible = volume;
+        if (m_volume != volumeValue || m_volumeMaximum != volumeMaximum) m_dirty = true;
+        m_volume = volumeValue; m_volumeMaximum = volumeMaximum;
+    }
+    void SetControlState(bool, bool, bool canSeek, bool controlsVisible,
+                         LONGLONG start, LONGLONG stop, LONGLONG position, const CString& time) {
+        const bool changed = m_dirty || m_canSeek != canSeek || m_controlsVisible != controlsVisible
+            || m_start != start || m_stop != stop || m_position != position || m_time != time;
+        m_canSeek = canSeek; m_controlsVisible = controlsVisible;
         m_start = start; m_stop = stop; m_position = position; m_time = time;
         if (changed && GetSafeHwnd() && IsWindowVisible()) DrawSurface();
     }
-
-    bool RouteInput(const MSG& message)
-    {
+    bool RouteInput(const MSG& message) {
         if (m_seeking && seekActive && !seekActive()) m_seeking = false;
-        if (!GetSafeHwnd() || (!IsWindowVisible() && !m_seeking && !m_pressed && !m_playPressed)) return false;
-        CPoint point(message.pt);
-        ScreenToClient(&point);
-        const bool down = message.message == WM_LBUTTONDOWN || message.message == WM_LBUTTONDBLCLK;
-        const bool up = message.message == WM_LBUTTONUP;
-        if (down && CloseRect().PtInRect(point)) {
-            m_pressed = true;
-            ::SetCapture(m_view->GetSafeHwnd());
-            return true;
+        if (m_volumeDragging && volumeActive && !volumeActive()) m_volumeDragging = false;
+        if (!GetSafeHwnd() || (!IsWindowVisible() && !CapturedInput())) return false;
+        if (m_tip.GetSafeHwnd()) m_tip.RelayEvent(const_cast<MSG*>(&message));
+        CPoint point(message.pt); ScreenToClient(&point);
+        const bool leftDown = message.message == WM_LBUTTONDOWN || message.message == WM_LBUTTONDBLCLK;
+        const bool rightDown = message.message == WM_RBUTTONDOWN || message.message == WM_RBUTTONDBLCLK;
+        const bool up = message.message == WM_LBUTTONUP || message.message == WM_RBUTTONUP;
+        const int hit = HitButton(point);
+        if (leftDown && CloseRect().PtInRect(point)) {
+            m_closePressed = true; ::SetCapture(m_view->GetSafeHwnd()); return true;
         }
-        if (down && m_controlsVisible && PlayRect().PtInRect(point)) {
-            if (m_canPlay) {
-                m_playPressed = true;
-                ::SetCapture(m_view->GetSafeHwnd());
+        if ((leftDown || rightDown) && m_controlsVisible && hit != -1) {
+            if (hit == -2 || (m_buttons[hit].state & TBSTATE_ENABLED)) {
+                m_pressedId = hit >= 0 ? m_buttons[hit].id : 0;
+                m_pressedButton = hit; m_rightPressed = rightDown; ::SetCapture(m_view->GetSafeHwnd());
             }
             return true;
         }
-        if ((down && m_controlsVisible && TimelineRect().PtInRect(point)) || m_seeking) {
-            if (down || up || message.message == WM_MOUSEMOVE) {
-                if (seekMouse && m_canSeek) {
-                    const CRect timeline = TimelineRect();
-                    const double position = std::clamp(static_cast<double>(point.x - timeline.left) / (timeline.Width() - 1), 0.0, 1.0);
-                    m_seeking = seekMouse(down ? WM_LBUTTONDOWN : message.message, message.wParam, position);
-                }
+        const bool move = message.message == WM_MOUSEMOVE;
+        if ((leftDown && m_controlsVisible && m_seekVisible && m_timeline.PtInRect(point)) || m_seeking) {
+            if (leftDown || message.message == WM_LBUTTONUP || move) {
+                if (seekMouse && m_canSeek) m_seeking = seekMouse(leftDown ? WM_LBUTTONDOWN : message.message,
+                    message.wParam, std::clamp(static_cast<double>(point.x - m_timeline.left) / std::max(1, m_timeline.Width() - 1), 0.0, 1.0));
                 return true;
             }
         }
-        if (up && (m_pressed || m_playPressed)) {
-            const bool close = m_pressed, play = m_playPressed;
-            m_pressed = m_playPressed = false;
+        if ((leftDown && m_controlsVisible && m_volumeVisible && m_volumeRect.PtInRect(point)) || m_volumeDragging) {
+            if (leftDown || message.message == WM_LBUTTONUP || move) {
+                if (volumeMouse) m_volumeDragging = volumeMouse(leftDown ? WM_LBUTTONDOWN : message.message,
+                    message.wParam, std::clamp(static_cast<double>(point.x - m_volumeRect.left) / std::max(1, m_volumeRect.Width() - 1), 0.0, 1.0));
+                return true;
+            }
+        }
+        if (message.message == WM_MOUSEWHEEL && m_volumeVisible && m_volumeRect.PtInRect(point)) {
+            if (volumeMouse) volumeMouse(WM_MOUSEWHEEL, message.wParam, 0);
+            return true;
+        }
+        if (up && (m_closePressed || m_pressedButton != -1)) {
+            const bool close = m_closePressed, right = m_rightPressed;
+            const int pressed = m_pressedButton;
+            m_closePressed = false; m_pressedButton = -1;
             if (::GetCapture() == m_view->GetSafeHwnd()) ::ReleaseCapture();
-            if (close && CloseRect().PtInRect(point)) ::PostMessage(::GetAncestor(m_view->GetSafeHwnd(), GA_ROOT), WM_CLOSE, 0, 0);
-            if (play && m_canPlay && PlayRect().PtInRect(point) && playPause) playPause();
+            if (close && message.message == WM_LBUTTONUP && CloseRect().PtInRect(point))
+                ::PostMessage(::GetAncestor(m_view->GetSafeHwnd(), GA_ROOT), WM_CLOSE, 0, 0);
+            if (pressed == -2 && hit == -2) { ShowOverflow(); return true; }
+            if (pressed >= 0 && pressed == hit && pressed < static_cast<int>(m_buttons.size())
+                    && (right ? message.message == WM_RBUTTONUP : message.message == WM_LBUTTONUP)
+                    && m_buttons[pressed].id == m_pressedId
+                    && (m_buttons[pressed].state & TBSTATE_ENABLED) && invokeButton) {
+                CRect anchor = m_buttonRects[pressed]; ClientToScreen(&anchor);
+                invokeButton(m_buttons[pressed].id, anchor, right);
+            }
             return true;
         }
         return false;
     }
-
-    void CancelPress() { m_pressed = m_playPressed = false; }
-
-    void Hide() { if (GetSafeHwnd()) ShowWindow(SW_HIDE); }
-
-    void Refresh(CWnd* view, HWND trackingWindow = nullptr)
-    {
+    void ShowOverflow() {
+        if (m_overflowStart < 0) return;
+        HMENU menu = ::CreatePopupMenu();
+        // Native Windows popup, with exactly the configured buttons that did not fit.
+        const auto buttons = m_buttons;
+        for (size_t i = m_overflowStart; i < buttons.size(); ++i) {
+            UINT flags = MF_STRING | ((buttons[i].state & TBSTATE_ENABLED) ? MF_ENABLED : MF_GRAYED);
+            if (buttons[i].state & TBSTATE_CHECKED) flags |= MF_CHECKED;
+            ::AppendMenu(menu, flags, static_cast<UINT_PTR>(1000 + i), buttons[i].tip);
+        }
+        CRect anchor = m_overflowRect; ClientToScreen(&anchor);
+        const UINT selected = ::TrackPopupMenu(menu, TPM_RETURNCMD | TPM_NONOTIFY | TPM_LEFTALIGN | TPM_BOTTOMALIGN,
+            anchor.left, anchor.top, 0, GetTopLevelParent()->GetSafeHwnd(), nullptr);
+        ::DestroyMenu(menu);
+        if (selected >= 1000 && selected - 1000 < buttons.size() && invokeButton)
+            invokeButton(buttons[selected - 1000].id, anchor, false);
+    }
+    void CancelPress() { m_closePressed = false; m_pressedButton = -1; }
+    void Hide() {
+        if (m_tip.GetSafeHwnd()) m_tip.Pop();
+        if (GetSafeHwnd()) ShowWindow(SW_HIDE);
+    }
+    void Refresh(CWnd* view, HWND trackingWindow = nullptr) {
         if (!m_gdiplus) return;
         m_view = view;
-        CRect rc;
-        view->GetClientRect(rc);
-        if (rc.Width() < 180 || rc.Height() < 120 || !view->IsWindowVisible() || !InsideView()) {
-            Hide();
-            return;
+        CRect rc; view->GetClientRect(rc);
+        if (rc.Width() < 180 || rc.Height() < 120 || !view->IsWindowVisible() || !InsideView()) { Hide(); return; }
+        if (!GetSafeHwnd()) {
+            if (!CreateEx(WS_EX_LAYERED | WS_EX_NOACTIVATE, AfxRegisterWndClass(0, ::LoadCursor(nullptr, IDC_ARROW)),
+                    L"Fluent native overlay", WS_CHILD, rc, view, 0)) return;
+            m_tip.Create(this, TTS_ALWAYSTIP | TTS_NOPREFIX); m_tip.Activate(TRUE);
         }
-        if (!GetSafeHwnd() && !CreateEx(WS_EX_LAYERED | WS_EX_NOACTIVATE,
-                AfxRegisterWndClass(0, ::LoadCursor(nullptr, IDC_ARROW)), L"Fluent alpha probe",
-                WS_CHILD, rc, view, 0)) return;
-        CString title;
-        view->GetTopLevelParent()->GetWindowText(title);
-        CPoint cursor;
-        ::GetCursorPos(&cursor);
-        ScreenToClient(&cursor);
-        const bool oldHot = m_hot;
-        const CSize oldSize = m_size;
-        m_size = rc.Size();
-        m_hot = CloseRect().PtInRect(cursor) != FALSE;
-        const bool repaint = !IsWindowVisible() || oldSize != m_size || oldHot != m_hot || title != m_title;
-        m_title = title;
-        if (!IsWindowVisible() || oldSize != m_size || ::GetWindow(m_hWnd, GW_HWNDPREV)) {
+        CString title; view->GetTopLevelParent()->GetWindowText(title);
+        CPoint cursor; ::GetCursorPos(&cursor); ScreenToClient(&cursor);
+        const CSize oldSize = m_size; m_size = rc.Size(); EnsureGeometry();
+        const bool hot = CloseRect().PtInRect(cursor) != FALSE;
+        const int hotButton = HitButton(cursor);
+        const bool repaint = !IsWindowVisible() || oldSize != m_size || hot != m_closeHot || hotButton != m_hotButton || title != m_title;
+        m_closeHot = hot; m_hotButton = hotButton; m_title = title;
+        if (!IsWindowVisible() || oldSize != m_size || ::GetWindow(m_hWnd, GW_HWNDPREV))
             SetWindowPos(&wndTop, 0, 0, rc.Width(), rc.Height(), SWP_NOACTIVATE);
-        }
         if (repaint) DrawSurface();
         ShowWindow(SW_SHOWNOACTIVATE);
         if (trackingWindow && trackingWindow != m_hWnd) {
-            TRACKMOUSEEVENT track = {sizeof(track), TME_LEAVE, trackingWindow, 0};
-            ::TrackMouseEvent(&track);
+            TRACKMOUSEEVENT track = {sizeof(track), TME_LEAVE, trackingWindow, 0}; ::TrackMouseEvent(&track);
         }
     }
 };

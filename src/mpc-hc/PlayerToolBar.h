@@ -83,6 +83,11 @@ private:
     static int FirstMovableButtonIndex(const std::vector<int>& buttons, int layoutRevision);
     static bool IsValidButtonLayout(const std::vector<int>& buttons, int layoutRevision);
 public:
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    std::optional<CRect> m_overlayAnchor;
+    void UpdateOverlayCommandState();
+    void InvokeOverlayButton(UINT id, const CRect& anchor, bool rightButton);
+#endif
     CPlayerToolBar(CMainFrame* pMainFrame);
     virtual ~CPlayerToolBar();
 

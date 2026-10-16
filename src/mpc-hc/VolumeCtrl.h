@@ -38,6 +38,10 @@ public:
     bool Create(CWnd* pParentWnd);
     void IncreaseVolume(), DecreaseVolume();
     void SetPosInternal(int pos);
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    bool OverlayDragging() const { return m_bDrag; }
+    bool ForwardOverlayMouse(UINT message, WPARAM flags, double fraction);
+#endif
 
 protected:
     afx_msg BOOL OnSetCursor(CWnd* pWnd, UINT nHitTest, UINT message);

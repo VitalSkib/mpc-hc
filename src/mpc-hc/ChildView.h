@@ -30,6 +30,7 @@ class CChildView : public CMouseWndWithArtView
 {
 #ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
     CFluentOverlayProbe m_fluentProbe;
+    bool m_updatingFluent = false;
     LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam) override;
 #endif
     bool m_bSwitchingFullscreen;

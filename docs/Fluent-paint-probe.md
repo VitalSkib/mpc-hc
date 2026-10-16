@@ -1,57 +1,48 @@
-# Native alpha overlay probe
+# Translucent native controls experiment
 
-This opt-in x64 Lite build defines `MPC_EXPERIMENTAL_ALPHA_OVERLAY`.
-The earlier toolbar-fill experiment is disabled; upstream toolbar drawing is restored.
+Opt-in x64 Lite build: MPC_EXPERIMENTAL_ALPHA_OVERLAY. The older no-fill flag
+is disabled. No installed player or Firefox handler is changed by this build.
 
-Hover over the main video view to display:
-- the current native player window title at top left;
-- a near-white close button at top right (standard WM_CLOSE);
-- a bottom test panel with 64/255 black alpha and opaque text.
+## Interface
 
-The overlay uses a native layered child window and UpdateLayeredWindow with
-premultiplied per-pixel alpha, following the mechanism already used in this codebase.
-It does not add WinUI, a helper process, polling, or timers. Rendering happens on
-mouse entry, title/size changes observed during hover, or close-button hover changes.
-Other mouse input passes through; normal toolbar, seekbar and volume remain unchanged.
-This is a compositing probe, not a completed Fluent controls implementation.
+- Thin translucent header, flat title and top-right close button. Hover adds a
+  neutral square highlight and makes the cross white. No shadows or bevels.
+- Lower controls mirror the selected native toolbar buttons, order, image list,
+  enabled/checked states and dynamic Play/Pause state. Native toolbar-layout and
+  image-theme options remain the source of truth; no separate button allowlist.
+- Timeline selection follows the native seekbar selection. Volume uses the native
+  volume control. Native time text is used, with status-bar time as fallback.
+- Small windows use 24px cells/16px icons and a 30px timeline section; larger
+  windows use 28px cells/20px icons and a 34px timeline section.
+- Controls stay on one row. Buttons that do not fit move to a native Windows
+  overflow menu, retaining enabled/checked states and the configured commands.
+
+## Existing behavior retained
+
+Native toolbar command-UI updates run explicitly for the hidden backend. Commands
+are sent to the original handlers. Audio/subtitle/custom dropdowns are anchored to
+the overlay button. Native right-click alternate actions are retained.
+Timeline and volume mouse input are mapped to their native control geometry and
+handled by the existing controls, including capture and seek-drag pause/resume.
+Mouse-wheel volume is sent to the native volume control.
+The original toolbar and seekbar HWNDs stay alive as hidden backends and no longer
+reserve space or appear over the overlay. Other native panels are unaffected.
+Hover is reconciled by mouse events and existing position/UI updates; no new timer,
+global mouse hook, helper process or WinUI dependency is added.
 
 ## Separate test only
 
-Extract the artifact to a separate writable folder. Close the regular player.
-Create an adjacent mpc-hc64.ini containing `[Settings]` before launching mpc-hc64.exe.
-Do not replace the installed player or change the Firefox protocol handler.
-This is a Lite build: internal codecs are not included; use an available external
-DirectShow decoder. Test real video in windowed Minimal/Compact mode first.
-Exclusive fullscreen/alternate fullscreen video windows are outside this first probe.
+Extract to the existing separate test folder, keeping mpc-hc64.ini containing
+[Settings]. Do not replace the installed player or Firefox protocol handler.
+This is a Lite build, without internal codecs. Start with a local playable video
+in windowed Minimal/Compact. Alternate exclusive-fullscreen video windows have
+not been validated.
 
-Check whether moving video remains visible under the lower panel, while text and
-close stay opaque. Check hover exit, resize, minimize/restore, fullscreen transitions,
-normal playback clicks, and close cancel/confirmation behavior.
-Build success alone does not establish visual or renderer compatibility.
+## Runtime acceptance still required
 
-## Native controls bridge
-
-The lower test label is replaced with Play/Pause, timeline, and the native time text.
-Button enabled state is read from the real toolbar; clicks use ID_PLAY_PLAYPAUSE.
-Seek input is translated into the native seekbar channel and dispatched to its
-existing mouse handlers. The native seekbar retains capture, pause/resume while
-dragging, seek throttling, and actual seek commands. Input routing also handles
-release outside the overlay and excludes unrelated menus and dialogs.
-The native position updates and command-update cycle refresh the overlay; no
-additional timer is created. Bottom availability follows the existing toolbar/seekbar selection,
-not the temporary visibility of their auto-hidden HWNDs. Original controls are deliberately retained for comparison at this stage;
-volume, menus and other buttons have not been replaced.
-
-Runtime acceptance still required: play/pause via both UI and keyboard; seek by
-click/drag including release outside the view; disabled seek for unseekable live
-streams; hover reveal/hide; no interference with native toolbar or context menus.
-
-## Hover reconciliation
-
-Hover checks now verify the window actually under the cursor, not only its
-coordinates. Player-wide mouse move/leave events and the existing position/UI
-update cycle reconcile visibility, including renderer HWNDs on another thread.
-No extra polling timer or global mouse hook is added. Missing renderer leave
-events can therefore be corrected on the next existing player update.
-The overlay is re-raised if a newly created renderer child is above it.
-Releasing a pressed control outside the view still completes capture cleanup.
+Check local playback, Play/Pause via mouse and keyboard, seek click/drag/release
+outside the view, volume click/drag/wheel and mute, previous/next/stop/rate,
+audio/subtitle dropdowns, options/fullscreen/playlist/custom buttons when selected.
+Change native Toolbar Layout and confirm the overlay follows it; test removed
+buttons, narrow-window overflow, hover exit and resize during playback.
+Compilation alone does not establish real playback or visual correctness.

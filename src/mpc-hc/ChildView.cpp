@@ -33,7 +33,15 @@ CChildView::CChildView(CMainFrame* pMainFrame)
     , m_bFirstMedia(true)
 {
 #ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
-    m_fluentProbe.playPause = [this]() { m_pMainFrame->PostMessage(WM_COMMAND, ID_PLAY_PLAYPAUSE); };
+    m_fluentProbe.invokeButton = [this](UINT id, const CRect& anchor, bool right) {
+        m_pMainFrame->m_wndToolBar.InvokeOverlayButton(id, anchor, right);
+    };
+    m_fluentProbe.volumeActive = [this]() { return m_pMainFrame->m_wndToolBar.m_volctrl.OverlayDragging(); };
+    m_fluentProbe.volumeMouse = [this](UINT message, WPARAM flags, double fraction) {
+        const bool dragging = m_pMainFrame->m_wndToolBar.m_volctrl.ForwardOverlayMouse(message, flags, fraction);
+        UpdateFluentControls();
+        return dragging;
+    };
     m_fluentProbe.seekActive = [this]() { return m_pMainFrame->m_wndSeekBar.DraggingThumb(); };
     m_fluentProbe.seekMouse = [this](UINT message, WPARAM flags, double fraction) {
         return m_pMainFrame->m_wndSeekBar.ForwardOverlayMouse(message, flags, fraction);
@@ -125,20 +133,43 @@ BOOL CChildView::PreTranslateMessage(MSG* pMsg)
 #ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
 void CChildView::UpdateFluentControls()
 {
-    if (!GetSafeHwnd() || !m_pMainFrame->m_wndToolBar.GetSafeHwnd() || !m_pMainFrame->m_wndSeekBar.GetSafeHwnd()) return;
-    auto& toolbar = m_pMainFrame->m_wndToolBar.GetToolBarCtrl();
-    const bool playing = m_pMainFrame->GetMediaState() == State_Running;
-    const int state = toolbar.GetState(playing ? ID_PLAY_PAUSE : ID_PLAY_PLAY);
-    REFERENCE_TIME start, stop;
+    if (m_updatingFluent || !GetSafeHwnd() || !m_pMainFrame->m_wndToolBar.GetSafeHwnd()
+            || !m_pMainFrame->m_wndSeekBar.GetSafeHwnd()) return;
+    m_updatingFluent = true;
+    struct ResetFlag { bool& flag; ~ResetFlag() { flag = false; } } reset{m_updatingFluent};
+    auto& nativeToolbar = m_pMainFrame->m_wndToolBar;
+    auto& toolbar = nativeToolbar.GetToolBarCtrl();
     auto& seekbar = m_pMainFrame->m_wndSeekBar;
-    seekbar.GetRange(start, stop);
-    // Selection is stable while the native HWNDs are temporarily auto-hidden.
-    const bool visible = m_pMainFrame->m_controls.ControlChecked(CMainFrameControls::Toolbar::CONTROLS)
-        || m_pMainFrame->m_controls.ControlChecked(CMainFrameControls::Toolbar::SEEKBAR);
-    m_fluentProbe.SetControlState(state != -1 && (state & TBSTATE_ENABLED), playing,
-        seekbar.CanOverlaySeek(), visible, start, stop, seekbar.GetPos(), seekbar.OverlayTimeText());
-    // Also reconcile hover during the existing native position/UI update cycle.
-    // Renderer HWNDs may consume WM_MOUSELEAVE on a different thread.
+    // Keep hidden native input geometry usable without allowing it to cover video.
+    CRect viewRect; GetClientRect(viewRect);
+    for (CWnd* backend : {static_cast<CWnd*>(&nativeToolbar), static_cast<CWnd*>(&seekbar)}) {
+        CRect rect; backend->GetClientRect(rect);
+        if (rect.Width() != viewRect.Width() || rect.Height() < 24)
+            backend->SetWindowPos(nullptr, 0, 0, viewRect.Width(), std::max(32L, rect.Height()), SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    nativeToolbar.UpdateOverlayCommandState();
+    const bool toolbarSelected = m_pMainFrame->m_controls.ControlChecked(CMainFrameControls::Toolbar::CONTROLS);
+    const bool seekSelected = m_pMainFrame->m_controls.ControlChecked(CMainFrameControls::Toolbar::SEEKBAR);
+    std::vector<CFluentOverlayProbe::Button> buttons;
+    if (toolbarSelected) {
+        for (int i = 0; i < toolbar.GetButtonCount(); ++i) {
+            TBBUTTON button = {};
+            if (!toolbar.GetButton(i, &button) || (button.fsState & TBSTATE_HIDDEN) || (button.fsStyle & BTNS_SEP)) continue;
+            const LPCWSTR tip = nativeToolbar.GetStringFromID(button.idCommand);
+            buttons.push_back({static_cast<UINT>(button.idCommand), button.iBitmap, button.fsState, tip ? CString(tip) : CString()});
+        }
+    }
+    auto& volume = nativeToolbar.m_volctrl;
+    int minimum = 0, maximum = 100; volume.GetRange(minimum, maximum);
+    CImageList* images = toolbar.GetImageList();
+    const bool volumeSelected = toolbarSelected && volume.GetSafeHwnd() && (volume.GetStyle() & WS_VISIBLE);
+    m_fluentProbe.SetNativeLayout(std::move(buttons), images ? images->GetSafeHandle() : nullptr,
+        toolbarSelected, seekSelected, volumeSelected, volume.GetPos() - minimum, maximum - minimum);
+    REFERENCE_TIME start, stop; seekbar.GetRange(start, stop);
+    CString time = seekbar.OverlayTimeText();
+    if (time.IsEmpty()) time = m_pMainFrame->m_wndStatusBar.GetStatusTimer();
+    m_fluentProbe.SetControlState(false, false, seekbar.CanOverlaySeek(), toolbarSelected || seekSelected,
+        start, stop, seekbar.GetPos(), time);
     m_fluentProbe.Refresh(this);
 }
 
@@ -153,8 +184,10 @@ bool CChildView::RouteFluentInput(const MSG& message)
     // Include movement over the original toolbar: leaving video is still a leave.
     UpdateFluentControls();
     const HWND seekbar = m_pMainFrame->m_wndSeekBar.GetSafeHwnd();
+    const HWND volume = m_pMainFrame->m_wndToolBar.m_volctrl.GetSafeHwnd();
     if (message.hwnd != m_hWnd && !::IsChild(m_hWnd, message.hwnd)
-            && !(message.hwnd == seekbar && m_pMainFrame->m_wndSeekBar.DraggingThumb())) return false;
+            && !(message.hwnd == seekbar && m_pMainFrame->m_wndSeekBar.DraggingThumb())
+            && !(message.hwnd == volume && m_pMainFrame->m_wndToolBar.m_volctrl.OverlayDragging())) return false;
     return m_fluentProbe.RouteInput(message);
 }
 
