@@ -86,6 +86,10 @@ private:
     int  TimeSectionEffectiveWidth() const; // px the section currently occupies (0 when not shown)
     void EnsureTimeFont() const;
     CString BuildTimeTemplate() const;  // widest time string for the currently enabled time options
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    bool SplitTimeSections() const;
+    CRect GetSplitTimeRect(bool duration) const;
+#endif
     CRect GetTimeRect() const;          // the dedicated time section to the right of the channel
 
     virtual BOOL PreCreateWindow(CREATESTRUCT& cs);
