@@ -2027,6 +2027,13 @@ void CMainFrame::OnSizingFixWndToVideo(UINT nSide, LPRECT lpRect, bool bCtrl)
             uBottom -= m_controls.GetVisibleToolbarsHeight();
         }
         controlsSize.cx -= uLeft + uRight;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+        // The view already occupies the toolbar part of the bottom dock zone,
+        // including when PanelsCoverVideo is enabled (always true in fullscreen).
+        if (bToolbarsOnVideo) {
+            uBottom -= std::min(uBottom, m_nativeToolbarOverlapHeight);
+        }
+#endif
         controlsSize.cy -= uTop + uBottom;
     } else if (bToolbarsOnVideo) {
         unsigned uncoveredHeight = m_controls.GetVisibleToolbarsHeight();
@@ -13730,6 +13737,11 @@ void CMainFrame::MoveVideoWindow(bool fShowStats/* = false*/, bool bSetStoppedVi
             if (!bToolbarsOnVideo) {
                 uBottom -= m_controls.GetVisibleToolbarsHeight();
             }
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+            if (bToolbarsOnVideo) {
+                uBottom -= std::min(uBottom, m_nativeToolbarOverlapHeight);
+            }
+#endif
             windowRect.InflateRect(uLeft, uTop, uRight, uBottom);
         } else if (bToolbarsOnVideo) {
             unsigned uncoveredHeight = m_controls.GetVisibleToolbarsHeight();

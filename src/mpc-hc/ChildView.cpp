@@ -266,11 +266,14 @@ void CChildView::OnPaint()
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
 void CChildView::OnWindowPosChanging(WINDOWPOS* position)
 {
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+    const RECT requested = {position->x, position->y,
+        position->x + position->cx, position->y + position->cy};
+#endif
     if (m_pMainFrame->m_nativeVideoLayout && !(position->flags & SWP_NOSIZE)) {
         unsigned overlap = 0;
         if (!m_pMainFrame->HasDedicatedFSVideoWindow()
-                && m_pMainFrame->m_controls.ToolbarsCoverVideo()
-                && !m_pMainFrame->m_controls.PanelsCoverVideo()) {
+                && m_pMainFrame->m_controls.ToolbarsCoverVideo()) {
             overlap = m_pMainFrame->m_controls.GetVisibleToolbarsHeight();
         }
         // Expand the actual renderer HWND, not just its presentation rectangle.
@@ -288,6 +291,14 @@ void CChildView::OnWindowPosChanging(WINDOWPOS* position)
         && (position->x != before.left || position->y != before.top);
     if (resized || moved) position->flags |= SWP_NOCOPYBITS;
     __super::OnWindowPosChanging(position);
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+    if (!(position->flags & SWP_NOSIZE)) {
+        const RECT applied = {position->x, position->y,
+            position->x + position->cx, position->y + position->cy};
+        GeometryDiagnostics::Record(m_pMainFrame->m_nativeVideoLayout
+            ? "layout.pane" : "window.pane", m_hWnd, &requested, &applied);
+    }
+#endif
 }
 #endif
 
