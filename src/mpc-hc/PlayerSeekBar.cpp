@@ -907,6 +907,12 @@ LRESULT CPlayerSeekBar::OnAlphaRefresh(WPARAM, LPARAM)
     // renderer before publishing fresh alpha pixels on this same HWND.
     if (GetExStyle() & WS_EX_LAYERED) ModifyStyleEx(WS_EX_LAYERED, 0);
     m_alphaPresentationFailed = false;
+    if (AppIsThemeLoaded() && m_pMainFrame->m_controls.ToolbarsCoverVideo()
+            && !m_pMainFrame->HasDedicatedFSVideoWindow()) {
+        // Keep the bar layered while repainting beneath it; an ordinary opaque
+        // child would exclude its rectangle from the renderer's repaint.
+        ModifyStyleEx(0, WS_EX_LAYERED);
+    }
     m_pMainFrame->MoveVideoWindow();
     m_pMainFrame->m_wndView.RedrawWindow(nullptr, nullptr,
         RDW_INVALIDATE | RDW_NOERASE | RDW_UPDATENOW | RDW_ALLCHILDREN);
