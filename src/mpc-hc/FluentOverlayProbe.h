@@ -26,7 +26,7 @@ private:
     int m_hotTime = -1;
     bool m_remainingTime = false;
     float m_seekHover = 0, m_volumeHover = 0, m_seekTarget = 0, m_volumeTarget = 0;
-    ULONGLONG m_animationTick = 0;
+    ULONGLONG m_animationTick = 0, m_timerDue = 0, m_frameTick = 0;
     static constexpr UINT_PTR PositionTool = 0xfffffff0, DurationTool = 0xfffffff1;
     bool AnimatingSliders() const { return m_seekHover != m_seekTarget || m_volumeHover != m_volumeTarget; }
     void AdvanceSliders(ULONGLONG now) {
@@ -52,15 +52,17 @@ private:
     static constexpr UINT_PTR DeadlineTimer = 1;
     void ArmDeadline() {
         if (!GetSafeHwnd()) return;
-        KillTimer(DeadlineTimer);
-        if (!IsWindowVisible()) return;
+        if (!IsWindowVisible()) { KillTimer(DeadlineTimer); m_timerDue = 0; return; }
         const ULONGLONG now = GetTickCount64();
         ULONGLONG due = m_feedbackUntil > now ? m_feedbackUntil : 0;
         if (m_fullscreen && m_panelsVisible && !m_idleHidden && !CapturedInput()) {
-            const ULONGLONG idleDue = m_fadeStart ? now + 40 : m_lastInput + 4000;
+            const ULONGLONG idleDue = m_fadeStart ? m_frameTick + 40 : m_lastInput + 4000;
             if (!due || idleDue < due) due = idleDue;
         }
-        if (AnimatingSliders() && (!due || now + 16 < due)) due = now + 16;
+        if (AnimatingSliders() && (!due || m_animationTick + 16 < due)) due = m_animationTick + 16;
+        // Repeated native UI refreshes must not postpone an animation deadline.
+        if (due && due == m_timerDue) return;
+        KillTimer(DeadlineTimer); m_timerDue = due;
         if (due) SetTimer(DeadlineTimer, static_cast<UINT>(std::max<ULONGLONG>(1, due > now ? due - now : 1)), nullptr);
     }
     void WakeControls() {
@@ -409,8 +411,8 @@ private:
 protected:
     LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam) override {
         if (message == WM_TIMER && wParam == DeadlineTimer) {
-            KillTimer(DeadlineTimer);
-            const ULONGLONG now = GetTickCount64();
+            KillTimer(DeadlineTimer); m_timerDue = 0;
+            const ULONGLONG now = GetTickCount64(); m_frameTick = now;
             AdvanceSliders(now);
             if (m_feedbackUntil && now >= m_feedbackUntil) { m_feedback.Empty(); m_feedbackUntil = 0; }
             if (m_fullscreen && m_panelsVisible && !CapturedInput() && now - m_lastInput >= 4000) {
@@ -602,7 +604,7 @@ public:
     void Hide() {
         m_seekHover = m_seekTarget = m_volumeHover = m_volumeTarget = 0;
         if (m_tip.GetSafeHwnd()) m_tip.Pop();
-        if (GetSafeHwnd()) { KillTimer(DeadlineTimer); ShowWindow(SW_HIDE); }
+        if (GetSafeHwnd()) { KillTimer(DeadlineTimer); m_timerDue = 0; ShowWindow(SW_HIDE); }
     }
     void Refresh(CWnd* view, HWND trackingWindow = nullptr) {
         if (!m_gdiplus) return;
