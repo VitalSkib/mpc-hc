@@ -25,6 +25,9 @@
 #include "mplayerc.h"
 #include "CMPCTheme.h"
 #include "WinAPIUtils.h"
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+#include <gdiplus.h>
+#endif
 
 
 #define TOOLTIP_SHOW_DELAY 100
@@ -56,6 +59,10 @@ CPlayerSeekBar::CPlayerSeekBar(CMainFrame* pMainFrame)
     ZeroMemory(&m_ti, sizeof(m_ti));
     m_ti.cbSize = sizeof(m_ti);
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    Gdiplus::GdiplusStartupInput startup;
+    Gdiplus::GdiplusStartup(&m_seekbarGraphicsToken, &startup, nullptr);
+#endif
     GetEventd().Connect(m_eventc, {
         MpcEvent::DPI_CHANGED,
         MpcEvent::STREAM_POS_UPDATE_REQUEST,
@@ -64,6 +71,9 @@ CPlayerSeekBar::CPlayerSeekBar(CMainFrame* pMainFrame)
 
 CPlayerSeekBar::~CPlayerSeekBar()
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    if (m_seekbarGraphicsToken) Gdiplus::GdiplusShutdown(m_seekbarGraphicsToken);
+#endif
 }
 
 BOOL CPlayerSeekBar::Create(CWnd* pParentWnd)
@@ -293,7 +303,13 @@ CRect CPlayerSeekBar::GetBaseRect() const
     }
 
     if (AppIsThemeLoaded()) { //no thumb so we can use all the space
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+        // One shared inset keeps the circular thumb inside the native HWND.
+        // Native seek/hover/preview all consume this same channel geometry.
+        r.DeflateRect(m_pMainFrame->m_dpi.ScaleFloorX(8), m_pMainFrame->m_dpi.ScaleFloorX(2));
+#else
         r.DeflateRect(m_pMainFrame->m_dpi.ScaleFloorX(2), m_pMainFrame->m_dpi.ScaleFloorX(2));
+#endif
     } else {
         CSize sz(m_pMainFrame->m_dpi.ScaleFloorX(8), m_pMainFrame->m_dpi.ScaleFloorY(7) + 1);
         r.DeflateRect(sz.cx, sz.cy, sz.cx, sz.cy);
@@ -838,6 +854,7 @@ bool CPlayerSeekBar::PaintNativeAlpha()
     GetWindowRect(bounds);
     const int width = bounds.Width(), height = bounds.Height();
     if (width <= 0 || height <= 0) return true;
+    if (!m_seekbarGraphicsToken) return false;
 
     BITMAPINFO info = {};
     info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -858,29 +875,84 @@ bool CPlayerSeekBar::PaintNativeAlpha()
         return false;
     }
     const HGDIOBJ previous = ::SelectObject(memory.GetSafeHdc(), bitmap);
-    memory.FillSolidRect(0, 0, width, height, CMPCTheme::ContentBGColor);
     CPoint clientOrigin(0, 0);
     ClientToScreen(&clientOrigin);
-    memory.SetViewportOrg(clientOrigin.x - bounds.left, clientOrigin.y - bounds.top);
-    PaintNative(memory);
-    memory.SelectClipRgn(nullptr);
-    memory.SetViewportOrg(0, 0);
-    ::GdiFlush();
-
-    // First probe: retain the native artwork exactly. Only the background
-    // receives 25% alpha; foreground pixels remain opaque. A proper themed
-    // alpha painter can replace this adapter after native behaviour is proven.
-    const COLORREF background = CMPCTheme::ContentBGColor;
-    auto* pixels = static_cast<DWORD*>(bits);
-    for (size_t i = 0, count = size_t(width) * height; i < count; ++i) {
-        const DWORD rgb = pixels[i] & 0x00ffffff;
-        const bool isBackground = rgb == ((DWORD(GetRValue(background)) << 16)
-            | (DWORD(GetGValue(background)) << 8) | GetBValue(background));
-        if (isBackground) {
-            pixels[i] = 0x40000000; // premultiplied black, alpha 64
-        } else {
-            pixels[i] = rgb | 0xff000000;
+    {
+        // Draw directly into premultiplied alpha; no colour-key conversion.
+        Gdiplus::Bitmap surface(width, height, width * 4, PixelFormat32bppPARGB,
+            static_cast<BYTE*>(bits));
+        Gdiplus::Graphics graphics(&surface);
+        graphics.Clear(Gdiplus::Color(64, 0, 0, 0));
+        graphics.TranslateTransform(float(clientOrigin.x - bounds.left), float(clientOrigin.y - bounds.top));
+        graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+        const CRect channel = GetChannelRect();
+        const float centreY = float(channel.CenterPoint().y);
+        const float stroke = float(std::max(1, m_pMainFrame->m_dpi.ScaleY(3)));
+        const long position = channel.left + ChannelPointFromPosition(m_rtPosDraw);
+        Gdiplus::Pen track(Gdiplus::Color(135, 235, 235, 235), stroke);
+        track.SetStartCap(Gdiplus::LineCapRound);
+        track.SetEndCap(Gdiplus::LineCapRound);
+        if (channel.Width() > 0) {
+            graphics.DrawLine(&track, float(channel.left), centreY, float(channel.right - 1), centreY);
         }
+        if (m_bHasDuration && channel.Width() > 0) {
+            const Gdiplus::Color accent(m_bEnabled ? 255 : 120, 0, 120, 212);
+            Gdiplus::Pen played(accent, stroke);
+            played.SetStartCap(Gdiplus::LineCapRound);
+            played.SetEndCap(Gdiplus::LineCapRound);
+            if (position > channel.left) {
+                graphics.DrawLine(&played, float(channel.left), centreY, float(position), centreY);
+            }
+            const auto mark = [&](REFERENCE_TIME time, COLORREF colour, int thickness) {
+                const float x = float(channel.left + ChannelPointFromPosition(time));
+                Gdiplus::Pen pen(Gdiplus::Color(255, GetRValue(colour), GetGValue(colour), GetBValue(colour)),
+                    float(m_pMainFrame->m_dpi.ScaleX(thickness)));
+                graphics.DrawLine(&pen, x, centreY - stroke, x, centreY + stroke);
+            };
+            REFERENCE_TIME aPos, bPos;
+            if (m_pMainFrame->CheckABRepeat(aPos, bPos)) {
+                if (aPos) mark(aPos, CMPCTheme::SeekbarABColor, 2);
+                if (bPos) mark(bPos, CMPCTheme::SeekbarABColor, 2);
+            }
+            {
+                CAutoLock lock(&m_csChapterBag);
+                if (m_pChapterBag) {
+                    for (DWORD i = 0; i < m_pChapterBag->ChapGetCount(); ++i) {
+                        REFERENCE_TIME time;
+                        if (SUCCEEDED(m_pChapterBag->ChapGet(i, &time, nullptr))) {
+                            mark(time, CMPCTheme::SeekbarChapterColor, 1);
+                        }
+                    }
+                }
+            }
+            const float diameter = float(m_pMainFrame->m_dpi.ScaleY(13));
+            const float core = float(m_pMainFrame->m_dpi.ScaleY(m_bHoverThumb || m_bDraggingThumb ? 9 : 7));
+            Gdiplus::SolidBrush ring(Gdiplus::Color(m_bEnabled ? 255 : 150, 240, 240, 240));
+            Gdiplus::SolidBrush dot(accent);
+            graphics.FillEllipse(&ring, float(position) - diameter / 2, centreY - diameter / 2, diameter, diameter);
+            graphics.FillEllipse(&dot, float(position) - core / 2, centreY - core / 2, core, core);
+        }
+        m_lastThumbRect = GetThumbRect(); // retain the native invalidation/hover footprint
+        if (TimeSectionVisible()) {
+            EnsureTimeFont();
+            LOGFONT fontInfo = {};
+            m_timeFont.GetLogFont(&fontInfo);
+            Gdiplus::Font font(memory.GetSafeHdc(), &fontInfo);
+            CRect text = GetTimeRect();
+            const int padding = m_pMainFrame->m_dpi.ScaleX(TIME_SECTION_PADDING);
+            if (TimeSectionOnLeft()) text.left += padding;
+            else text.right -= padding;
+            Gdiplus::StringFormat format(Gdiplus::StringFormat::GenericTypographic());
+            format.SetAlignment(TimeSectionOnLeft() ? Gdiplus::StringAlignmentNear : Gdiplus::StringAlignmentFar);
+            format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+            format.SetFormatFlags(format.GetFormatFlags() | Gdiplus::StringFormatFlagsNoWrap);
+            graphics.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAliasGridFit);
+            const COLORREF colour = CMPCTheme::TextFGColor;
+            Gdiplus::SolidBrush ink(Gdiplus::Color(255, GetRValue(colour), GetGValue(colour), GetBValue(colour)));
+            graphics.DrawString(m_timeText.GetString(), m_timeText.GetLength(), &font,
+                Gdiplus::RectF(float(text.left), float(text.top), float(text.Width()), float(text.Height())), &format, &ink);
+        }
+        graphics.Flush(Gdiplus::FlushIntentionSync);
     }
     POINT origin = {0, 0};
     SIZE size = {width, height};

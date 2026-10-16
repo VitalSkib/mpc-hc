@@ -6,12 +6,16 @@ expect the original toolbar, title behaviour, OSD and all original settings.
 This is a composition/behaviour checkpoint, not the finished Fluent design.
 
 The actual `CPlayerSeekBar` HWND stays visible and receives input directly.
-Its original paint body is moved unchanged to `PaintNative(CDC&)`. In the
-probe, this painter renders into a 32-bit DIB and the same HWND presents it
-through `UpdateLayeredWindow`. Native background-colour pixels become 25%
-black; all other pixels remain opaque. This colour-based adapter is temporary,
-not a final anti-aliased theme renderer. No copied input geometry, second
-seekbar, new timers or custom hide policy are introduced.
+Its original paint body remains available as the opaque fallback. The alpha
+painter now draws directly into a premultiplied 32-bit surface: a 3-DPI-pixel
+track, blue played segment and a 13-DPI-pixel pale thumb with a blue centre.
+The black background has alpha 64 (25%); anti-aliased edges retain their own
+alpha instead of being classified by colour. Chapters/A-B marks and time text
+consume the existing native state and settings. The shared native channel gets
+an 8-DPI-pixel horizontal inset so the endpoint circles stay inside the HWND;
+all original seek/hover/preview calculations use that same geometry. Native
+height settings and the native thumb invalidation/hover footprint remain in
+use. No second seekbar, input proxy, new timer or custom hide policy is added.
 
 Alpha is attempted only for loaded media with the modern theme, when the
 native `ToolbarsCoverVideo()` policy already places toolbars over video, and
@@ -24,7 +28,8 @@ for the rest of that player instance and emits a debugger TRACE.
 1. Use the standalone artifact; do not replace the installed player. Open a
    local video with a duration. Keep the native seekbar enabled.
 2. Test fullscreen first. The seekbar background should show moving video
-   through it while the native track/markers/text stay readable. A black strip
+   through the area above and below the thin blue/grey track. The circular
+   thumb and text should stay readable. A black strip
    or the desktop showing through does not pass the composition test.
 3. Hover for native time tips and enable native seek previews. Click, drag,
    release outside the bar, and check native chapters/A-B markers when present.

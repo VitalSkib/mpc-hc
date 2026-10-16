@@ -143,6 +143,7 @@ private:
     // Keep the native paint pipeline separate from its presentation surface.
     void PaintNative(CDC& dc);
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    ULONG_PTR m_seekbarGraphicsToken = 0;
     bool m_alphaPresentationFailed = false;
     bool PaintNativeAlpha();
 #endif

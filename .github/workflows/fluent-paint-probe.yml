@@ -37,12 +37,33 @@ jobs:
         env:
           CL: /DMPC_EXPERIMENTAL_NATIVE_SEEKBAR
         run: build.bat Build x64 Main Release Lite
+      - name: Package isolated test settings
+        shell: pwsh
+        run: |
+          $testDir = 'bin/mpc-hc_x64 Lite'
+          @('[Settings]', 'AllowMultipleInstances=1', 'ModernThemeMode=0',
+            'ModernThemeStyle=2', 'HideFullscreenControls=1',
+            'HideFullscreenControlsPolicy=2', 'HideFullscreenControlsDelay=4000',
+            'HideWindowedControls=1', 'UseTimeTooltip=1', 'UseSeekPreview=1') |
+            Set-Content -LiteralPath "$testDir/mpc-hc64.ini" -Encoding unicode
+          @('Native seekbar alpha test. Extract separately and run mpc-hc64.exe.',
+            'Thin blue/grey track, circular thumb, 25% black surrounding background.',
+            'Moving video must show through ABOVE and BELOW the thin track.',
+            'Check native seek, outside release, hover time and seek preview.',
+            'Original toolbar/title/OSD are expected. The previous overlay is disabled.',
+            'Portable settings are included; native controls auto-hide after 4 seconds.',
+            'Source: https://github.com/VitalSkib/mpc-hc/tree/fluent-hover-ui') |
+            Set-Content -LiteralPath "$testDir/README.txt" -Encoding utf8
+          Copy-Item -LiteralPath COPYING.txt -Destination "$testDir/COPYING.txt"
       - name: Upload standalone test build
         uses: actions/upload-artifact@v4
         with:
           name: MPC-HC-x64-native-seekbar-${{ github.sha }}
           path: |
-            bin/mpc-hc_x64 Lite/**
+            bin/mpc-hc_x64 Lite/mpc-hc64.exe
+            bin/mpc-hc_x64 Lite/mpc-hc64.ini
+            bin/mpc-hc_x64 Lite/README.txt
+            bin/mpc-hc_x64 Lite/COPYING.txt
           if-no-files-found: error
           retention-days: 7
       - name: Upload build diagnostics
