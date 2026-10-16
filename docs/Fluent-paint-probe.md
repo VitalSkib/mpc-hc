@@ -110,3 +110,61 @@ Verify Repeat on/off shape and tip, mute/unmute, enter/exit fullscreen, pane sta
 custom artwork, thumb hover/release, endpoints/capture, time tips/toggle, volume
 feedback with OSD on/off and fullscreen idle fade. Font glyph presence was checked
 against the locally installed font; visual rendering still needs runtime testing.
+
+## Native routing and tooltips
+
+Overlay commands are posted to the frame's original command router. It calls the
+toolbar and continues to the frame when an ON_COMMAND_EX handler returns FALSE.
+This is required for Mute: toggling the setting/icon must also apply the audio
+renderer volume. Checked state no longer paints a persistent button background;
+only hover paints it.
+
+Volume has a separate themed tracking tooltip, updated on hover and changes as
+`Volume 100%`, independent of Show OSD. It remains while dragging, is anchored
+above the actual overlay slider, and stops on leave/hide. It adds no timer. Close
+also has a normal themed tooltip.
+
+## Original toolbar artwork reference
+
+Original SVG atlases: `src/mpc-hc/res/buttons16.svg`, `buttons24.svg`,
+`buttons32.svg`, `buttons48.svg`, `buttons64.svg`. Each has 26 columns and four
+rows: light enabled; light disabled/alternate; dark enabled; dark
+disabled/alternate. Disabled rows double as alternate artwork for toggle commands.
+Mute uses two separate columns. There are 25 configurable button commands,
+including four custom actions, represented by 26 image columns.
+
+| Column (one-based) | Artwork |
+| --- | --- |
+| 1 | Play |
+| 2 | Pause |
+| 3 | Stop |
+| 4 | Previous item |
+| 5 | Next item |
+| 6 | Audio tracks |
+| 7 | Subtitles |
+| 8 | Decrease playback rate |
+| 9 | Increase playback rate |
+| 10 | Frame-step |
+| 11 | Open media |
+| 12 | Options |
+| 13 | Fullscreen toggle |
+| 14 | Playlist toggle |
+| 15 | Shuffle toggle |
+| 16 | Repeat toggle |
+| 17 | Seek backward |
+| 18 | Seek forward |
+| 19 | File properties |
+| 20 | Exit |
+| 21 | Custom action 1 |
+| 22 | Custom action 2 |
+| 23 | Custom action 3 |
+| 24 | Custom action 4 |
+| 25 | Speaker on |
+| 26 | Speaker muted |
+
+Supply individual SVGs with a common 24x24 viewBox and separate true on/off shapes
+for Fullscreen, Playlist, Shuffle and Repeat. Play/Pause and speaker/mute are
+already separate columns. Disabled colors/opacity and multi-size atlases can be
+generated during packaging. Keep accent colors separate from foreground colors.
+The current system-font substitution must be switched to native theme artwork
+when the replacement set is integrated.

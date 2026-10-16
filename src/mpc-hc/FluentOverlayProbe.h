@@ -43,7 +43,39 @@ private:
         m_seekTarget = seek; m_volumeTarget = volume; m_animationTick = now;
     }
     CWnd* m_view = nullptr;
-    CMPCThemeToolTipCtrl m_tip;
+    CMPCThemeToolTipCtrl m_tip, m_volumeTip;
+    CString m_volumeTipText;
+    bool m_volumeTipActive = false;
+    static constexpr UINT_PTR VolumeTool = 0xfffffff2, CloseTool = 0xfffffff3;
+    void HideVolumeTip() {
+        if (!m_volumeTip.GetSafeHwnd() || !m_volumeTipActive) return;
+        TOOLINFO tool = {}; tool.cbSize = sizeof(tool); tool.hwnd = m_hWnd; tool.uId = VolumeTool;
+        m_volumeTipActive = false;
+        m_volumeTip.SendMessage(TTM_TRACKACTIVATE, FALSE, reinterpret_cast<LPARAM>(&tool));
+    }
+    void UpdateVolumeTip(CPoint cursor) {
+        if (!m_volumeTip.GetSafeHwnd()) return;
+        const bool dragging = m_volumeDragging && volumeActive && volumeActive();
+        if (!IsWindowVisible() || !m_panelsVisible || !m_volumeVisible || (!HitVolume(cursor) && !dragging)) {
+            HideVolumeTip(); return;
+        }
+        TOOLINFO tool = {}; tool.cbSize = sizeof(tool); tool.hwnd = m_hWnd; tool.uId = VolumeTool;
+        tool.uFlags = TTF_TRACK | TTF_ABSOLUTE;
+        CString text; text.Format(L"Volume %d%%", MulDiv(m_volume, 100, std::max(1, m_volumeMaximum)));
+        if (text != m_volumeTipText) {
+            m_volumeTipText = text; tool.lpszText = const_cast<LPWSTR>(m_volumeTipText.GetString());
+            m_volumeTip.SendMessage(TTM_UPDATETIPTEXT, 0, reinterpret_cast<LPARAM>(&tool));
+            m_volumeTip.Update();
+        }
+        if (!m_volumeTipActive) {
+            m_tip.Pop();
+            m_volumeTipActive = true;
+            m_volumeTip.SendMessage(TTM_TRACKACTIVATE, TRUE, reinterpret_cast<LPARAM>(&tool));
+        }
+        CRect tip; m_volumeTip.GetWindowRect(tip);
+        CPoint anchor(m_volumeRect.CenterPoint().x, m_volumeRect.top - 7); ClientToScreen(&anchor);
+        m_volumeTip.SendMessage(TTM_TRACKPOSITION, 0, MAKELPARAM(anchor.x - tip.Width() / 2, anchor.y - tip.Height()));
+    }
     CString m_title, m_time, m_positionText, m_durationText, m_feedback;
     bool m_fullscreen = false, m_idleHidden = false, m_panelsVisible = true;
     ULONGLONG m_lastInput = GetTickCount64(), m_fadeStart = 0, m_feedbackUntil = 0;
@@ -134,13 +166,13 @@ private:
         m_view->GetWindowRect(rc);
         if (!rc.PtInRect(point)) return false;
         const HWND window = ::WindowFromPoint(point);
-        return window && (window == m_tip.GetSafeHwnd() || window == m_view->GetSafeHwnd() || ::IsChild(m_view->GetSafeHwnd(), window));
+        return window && (window == m_tip.GetSafeHwnd() || window == m_volumeTip.GetSafeHwnd() || window == m_view->GetSafeHwnd() || ::IsChild(m_view->GetSafeHwnd(), window));
     }
     void EnsureGeometry() {
         if (!m_dirty && m_layoutSize == m_size) return;
         if (m_tip.GetSafeHwnd()) {
             for (size_t i = 0; i < m_buttonRects.size(); ++i) m_tip.DelTool(this, static_cast<UINT_PTR>(i + 1));
-            m_tip.DelTool(this, PositionTool); m_tip.DelTool(this, DurationTool);
+            m_tip.DelTool(this, PositionTool); m_tip.DelTool(this, DurationTool); m_tip.DelTool(this, CloseTool);
         }
         m_buttonRects.clear();
         m_timeline.SetRectEmpty(); m_volumeRect.SetRectEmpty(); m_timeRect.SetRectEmpty(); m_durationRect.SetRectEmpty();
@@ -190,6 +222,7 @@ private:
             for (size_t i = 0; i < m_buttonRects.size(); ++i) {
                 if (!m_buttonRects[i].IsRectEmpty()) m_tip.AddTool(this, m_buttons[i].tip, m_buttonRects[i], static_cast<UINT_PTR>(i + 1));
             }
+            m_tip.AddTool(this, L"Close", CloseRect(), CloseTool);
             if (!m_timeRect.IsRectEmpty()) m_tip.AddTool(this, m_remainingTime ? L"Time remaining" : L"Time elapsed", m_timeRect, PositionTool);
             if (!m_durationRect.IsRectEmpty()) m_tip.AddTool(this, L"Total duration", m_durationRect, DurationTool);
         }
@@ -329,7 +362,7 @@ private:
                     const auto& button = m_buttons[i];
                     const auto& rect = m_buttonRects[i];
                     if (rect.IsRectEmpty()) continue;
-                    if ((button.state & TBSTATE_CHECKED) || m_hotButton == static_cast<int>(i))
+                    if (m_hotButton == static_cast<int>(i))
                         graphics.FillRectangle(&highlight, rect.left, rect.top, rect.Width(), rect.Height());
                     if (DrawSystemIcon(graphics, button, rect)) continue;
                     HICON icon = m_images ? ::ImageList_GetIcon(m_images, button.image, ILD_TRANSPARENT) : nullptr;
@@ -451,6 +484,7 @@ public:
         }
     }
     ~CFluentOverlayProbe() {
+        if (m_volumeTip.GetSafeHwnd()) m_volumeTip.DestroyWindow();
         if (m_tip.GetSafeHwnd()) m_tip.DestroyWindow();
         if (GetSafeHwnd()) DestroyWindow();
         m_smallIcons.reset(); m_largeIcons.reset(); m_frameIcons.reset();
@@ -478,13 +512,17 @@ public:
         // Remove tooltip text references before replacing the snapshot.
         if (m_dirty && m_tip.GetSafeHwnd()) {
             for (size_t i = 0; i < m_buttonRects.size(); ++i) m_tip.DelTool(this, static_cast<UINT_PTR>(i + 1));
-            m_tip.DelTool(this, PositionTool); m_tip.DelTool(this, DurationTool);
+            m_tip.DelTool(this, PositionTool); m_tip.DelTool(this, DurationTool); m_tip.DelTool(this, CloseTool);
         }
         if (buttons != m_buttons) m_buttons = std::move(buttons);
         m_images = images; m_toolbarVisible = toolbar;
         m_seekVisible = seek; m_volumeVisible = volume;
-        if (m_volume != volumeValue || m_volumeMaximum != volumeMaximum) m_dirty = true;
+        const bool volumeChanged = m_volume != volumeValue || m_volumeMaximum != volumeMaximum;
         m_volume = volumeValue; m_volumeMaximum = volumeMaximum; m_alignment = alignment;
+        if (volumeChanged && GetSafeHwnd() && IsWindowVisible()) {
+            DrawSurface();
+            CPoint cursor; ::GetCursorPos(&cursor); ScreenToClient(&cursor); UpdateVolumeTip(cursor);
+        }
     }
     void SetTimeParts(const CString& position, const CString& duration, bool remaining) {
         if (remaining != m_remainingTime) m_dirty = true;
@@ -602,6 +640,7 @@ public:
     }
     void CancelPress() { WakeControls(); m_closePressed = m_timePressed = m_blockedPress = false; m_pressedButton = -1; }
     void Hide() {
+        HideVolumeTip();
         m_seekHover = m_seekTarget = m_volumeHover = m_volumeTarget = 0;
         if (m_tip.GetSafeHwnd()) m_tip.Pop();
         if (GetSafeHwnd()) { KillTimer(DeadlineTimer); m_timerDue = 0; ShowWindow(SW_HIDE); }
@@ -621,6 +660,11 @@ public:
             if (!CreateEx(WS_EX_LAYERED | WS_EX_NOACTIVATE, AfxRegisterWndClass(0, ::LoadCursor(nullptr, IDC_ARROW)),
                     L"Fluent native overlay", WS_CHILD, rc, view, 0)) return;
             m_tip.Create(this, TTS_ALWAYSTIP | TTS_NOPREFIX); m_tip.Activate(TRUE);
+            m_volumeTip.Create(this, TTS_ALWAYSTIP | TTS_NOPREFIX);
+            TOOLINFO tool = {}; tool.cbSize = sizeof(tool); tool.hwnd = m_hWnd; tool.uId = VolumeTool;
+            tool.uFlags = TTF_TRACK | TTF_ABSOLUTE;
+            m_volumeTipText = L"Volume"; tool.lpszText = const_cast<LPWSTR>(m_volumeTipText.GetString());
+            m_volumeTip.SendMessage(TTM_ADDTOOL, 0, reinterpret_cast<LPARAM>(&tool));
         }
         CString title; view->GetTopLevelParent()->GetWindowText(title); title = DisplayTitle(title);
         CPoint cursor; ::GetCursorPos(&cursor); ScreenToClient(&cursor);
@@ -636,6 +680,7 @@ public:
             SetWindowPos(&wndTop, 0, 0, rc.Width(), rc.Height(), SWP_NOACTIVATE);
         if (repaint) DrawSurface();
         ShowWindow(SW_SHOWNOACTIVATE);
+        UpdateVolumeTip(cursor);
         ArmDeadline();
         if (trackingWindow && trackingWindow != m_hWnd) {
             TRACKMOUSEEVENT track = {sizeof(track), TME_LEAVE, trackingWindow, 0}; ::TrackMouseEvent(&track);

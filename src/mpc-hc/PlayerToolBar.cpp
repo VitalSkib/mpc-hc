@@ -1129,11 +1129,9 @@ void CPlayerToolBar::InvokeOverlayButton(UINT id, const CRect& anchor, bool righ
         leftButtonIndex = index;
         const UINT command = id >= ID_CUSTOM_ACTION1 && id <= ID_CUSTOM_ACTION4 ? CustomToCMD(id, VK_LBUTTON) : id;
         if (CmdIsMenu(command) || command == ID_AUDIOS || command == ID_SUBTITLES) DoCustomContextMenu(id, command, index, VK_LBUTTON);
-        else {
-            AFX_CMDHANDLERINFO handler = {};
-            if (OnCmdMsg(id, CN_COMMAND, nullptr, &handler)) OnCmdMsg(id, CN_COMMAND, nullptr, nullptr);
-            else m_pMainFrame->PostMessage(WM_COMMAND, id);
-        }
+        // The frame routes through toolbar handlers and continues to frame handlers
+        // when ON_COMMAND_EX returns FALSE (Mute must also apply audio volume).
+        else m_pMainFrame->PostMessage(WM_COMMAND, id);
     }
     m_overlayAnchor.reset();
 }
