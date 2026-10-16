@@ -109,7 +109,12 @@ void CVolumeCtrl::SetPosInternal(int pos)
     // Post even when the clamped position is unchanged (e.g. Volume Up at 100):
     // the frame handler owes the user OSD feedback on every press and dedups the
     // renderer/API work itself.
-    GetParent()->PostMessage(WM_HSCROLL, MAKEWPARAM(static_cast<WORD>(currentPos), SB_THUMBPOSITION), reinterpret_cast<LPARAM>(m_hWnd)); // this will be reflected back on us
+    WPARAM scroll = MAKEWPARAM(static_cast<WORD>(currentPos), SB_THUMBPOSITION);
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    // Carry the origin through both posted notifications, even after mouse-up.
+    if (m_overlayInput) scroll |= static_cast<WPARAM>(OverlayScrollFlag) << 16;
+#endif
+    GetParent()->PostMessage(WM_HSCROLL, scroll, reinterpret_cast<LPARAM>(m_hWnd)); // reflected back on us
     POINT p;
     ::GetCursorPos(&p);
     ScreenToClient(&p);

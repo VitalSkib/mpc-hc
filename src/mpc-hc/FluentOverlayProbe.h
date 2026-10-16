@@ -226,14 +226,15 @@ private:
                         graphics.FillRectangle(&highlight, rect.left, rect.top, rect.Width(), rect.Height());
                     // Distinguish a single frame from the next playlist item.
                     if (button.id == ID_PLAY_FRAMESTEP) {
-                        const auto center = rect.CenterPoint();
+                        const int cx = rect.CenterPoint().x, cy = rect.CenterPoint().y;
                         const BYTE alpha = (button.state & TBSTATE_ENABLED) ? 255 : 90;
                         Gdiplus::Pen pen(Gdiplus::Color(alpha, 238, 238, 238), 1.4f);
-                        graphics.DrawRectangle(&pen, center.x - 7, center.y - 6, 14, 12);
+                        graphics.DrawRectangle(&pen, cx - 7, cy - 6, 14, 12);
                         Gdiplus::SolidBrush fill(Gdiplus::Color(alpha, 255, 255, 255));
-                        Gdiplus::Point triangle[] = {{center.x - 3, center.y - 4}, {center.x - 3, center.y + 4}, {center.x + 3, center.y}};
+                        Gdiplus::Point triangle[] = {Gdiplus::Point(cx - 3, cy - 4),
+                            Gdiplus::Point(cx - 3, cy + 4), Gdiplus::Point(cx + 3, cy)};
                         graphics.FillPolygon(&fill, triangle, 3);
-                        graphics.DrawLine(&pen, center.x + 4, center.y - 4, center.x + 4, center.y + 4);
+                        graphics.DrawLine(&pen, cx + 4, cy - 4, cx + 4, cy + 4);
                         continue;
                     }
                     HICON icon = m_images ? ::ImageList_GetIcon(m_images, button.image, ILD_TRANSPARENT) : nullptr;
