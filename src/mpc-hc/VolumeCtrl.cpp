@@ -88,13 +88,16 @@ bool CVolumeCtrl::ForwardOverlayMouse(UINT message, WPARAM flags, double fractio
     if (!IsWindowEnabled()) return false;
     CRect rect;
     GetChannelRect(rect);
+    if (!(AppIsThemeLoaded() && modernStyle)) { rect.left += 3; rect.right -= 4; }
     if (rect.Width() <= 1) return false;
-    const CPoint point(rect.left + static_cast<int>(fraction * (rect.Width() - 1)), rect.CenterPoint().y);
+    const CPoint point(rect.left + static_cast<int>(lround(fraction * rect.Width())), rect.CenterPoint().y);
+    m_overlayInput = true;
     // Existing handlers preserve volume step, notifications and capture behavior.
     if (message == WM_MOUSEWHEEL) {
         CPoint screen = point; ClientToScreen(&screen);
         SendMessage(message, flags, MAKELPARAM(screen.x, screen.y));
     } else SendMessage(message, flags, MAKELPARAM(point.x, point.y));
+    m_overlayInput = false;
     return m_bDrag;
 }
 #endif
@@ -330,7 +333,11 @@ void CVolumeCtrl::OnLButtonDown(UINT nFlags, CPoint point)
     }
     m_bDrag = true;
     if (AppIsThemeLoaded() && modernStyle) {
-        if (themedToolTip.m_hWnd) {
+        if (themedToolTip.m_hWnd
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+            && !m_overlayInput
+#endif
+        ) {
             TOOLINFO ti = { sizeof(TOOLINFO) };
             ti.uFlags = TTF_TRACK | TTF_IDISHWND | TTF_ABSOLUTE;
             ti.hwnd = m_hWnd;
@@ -457,7 +464,11 @@ void CVolumeCtrl::updateModernVolCtrl(CPoint point)
     POINT p = { useX, point.y };
     ClientToScreen(&p);
     CRect ttRect;
-    if (themedToolTip.m_hWnd) {
+    if (themedToolTip.m_hWnd
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+        && !m_overlayInput
+#endif
+    ) {
         CRect cr = r;
         ClientToScreen(cr);
         themedToolTip.GetWindowRect(ttRect);

@@ -10067,6 +10067,9 @@ void CMainFrame::OnPlayPlay()
             strOSD = strPlay;
         }
         if (GetPlaybackMode() != PM_DIGITAL_CAPTURE) {
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+            if (!m_bFirstPlay) // The hover header already supplies the file/stream title.
+#endif
             m_OSD.DisplayMessage(OSD_TOPLEFT, strOSD, 3000);
         }
     }
@@ -11403,6 +11406,9 @@ void CMainFrame::OnPlayVolume(UINT nID)
         } else {
             strVolume.Format(IDS_VOLUME_OSD, volume);
         }
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+        if (!m_wndToolBar.m_volctrl.OverlayDragging())
+#endif
         m_OSD.DisplayMessage(OSD_TOPLEFT, strVolume);
         //SendStatusMessage(strVolume, 3000); // Now the volume is displayed in three places at once.
     }

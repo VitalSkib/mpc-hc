@@ -1,6 +1,7 @@
 /* Experimental native alpha overlay. Distributed under MPC-HC's GPLv3+ license. */
 #pragma once
 #include <gdiplus.h>
+#include "CMPCThemeToolTipCtrl.h"
 
 class CFluentOverlayProbe final : public CWnd
 {
@@ -22,7 +23,7 @@ public:
 private:
     ULONG_PTR m_gdiplus = 0;
     CWnd* m_view = nullptr;
-    CToolTipCtrl m_tip;
+    CMPCThemeToolTipCtrl m_tip;
     CString m_title, m_time, m_positionText, m_durationText;
     CSize m_size = CSize(0, 0), m_layoutSize = CSize(0, 0);
     std::vector<Button> m_buttons;
@@ -50,10 +51,15 @@ private:
         for (size_t i = 0; i < m_buttonRects.size(); ++i) if (m_buttonRects[i].PtInRect(point)) return static_cast<int>(i);
         return m_overflowRect.PtInRect(point) ? -2 : -1;
     }
+    bool HitVolume(CPoint point) const {
+        CRect hit = m_volumeRect;
+        hit.InflateRect(7, 5);
+        return m_volumeVisible && hit.PtInRect(point);
+    }
     bool IsControlPoint(CPoint point) const {
         return CloseRect().PtInRect(point) || (m_controlsVisible &&
             (HitButton(point) != -1 || HitTime(point) || (m_seekVisible && m_timeline.PtInRect(point))
-                || (m_volumeVisible && m_volumeRect.PtInRect(point))));
+                || (HitVolume(point))));
     }
     bool InsideView() const {
         CPoint point;
@@ -62,7 +68,7 @@ private:
         m_view->GetWindowRect(rc);
         if (!rc.PtInRect(point)) return false;
         const HWND window = ::WindowFromPoint(point);
-        return window && (window == m_view->GetSafeHwnd() || ::IsChild(m_view->GetSafeHwnd(), window));
+        return window && (window == m_tip.GetSafeHwnd() || window == m_view->GetSafeHwnd() || ::IsChild(m_view->GetSafeHwnd(), window));
     }
     void EnsureGeometry() {
         if (!m_dirty && m_layoutSize == m_size) return;
@@ -218,12 +224,28 @@ private:
                     if (rect.IsRectEmpty()) continue;
                     if ((button.state & TBSTATE_CHECKED) || m_hotButton == static_cast<int>(i))
                         graphics.FillRectangle(&highlight, rect.left, rect.top, rect.Width(), rect.Height());
+                    // Distinguish a single frame from the next playlist item.
+                    if (button.id == ID_PLAY_FRAMESTEP) {
+                        const auto center = rect.CenterPoint();
+                        const BYTE alpha = (button.state & TBSTATE_ENABLED) ? 255 : 90;
+                        Gdiplus::Pen pen(Gdiplus::Color(alpha, 238, 238, 238), 1.4f);
+                        graphics.DrawRectangle(&pen, center.x - 7, center.y - 6, 14, 12);
+                        Gdiplus::SolidBrush fill(Gdiplus::Color(alpha, 255, 255, 255));
+                        Gdiplus::Point triangle[] = {{center.x - 3, center.y - 4}, {center.x - 3, center.y + 4}, {center.x + 3, center.y}};
+                        graphics.FillPolygon(&fill, triangle, 3);
+                        graphics.DrawLine(&pen, center.x + 4, center.y - 4, center.x + 4, center.y + 4);
+                        continue;
+                    }
                     HICON icon = m_images ? ::ImageList_GetIcon(m_images, button.image, ILD_TRANSPARENT) : nullptr;
                     if (icon) {
                         auto image = DecodeIcon(icon);
                         if (!image) { ::DestroyIcon(icon); continue; }
                         Gdiplus::ColorMatrix matrix = {{{1,0,0,0,0},{0,1,0,0,0},{0,0,1,0,0},
                             {0,0,0,(button.state & TBSTATE_ENABLED) ? 1.0f : 0.35f,0},{0,0,0,0,1}}};
+                        if ((button.state & TBSTATE_ENABLED) && m_hotButton == static_cast<int>(i)) {
+                            matrix.m[0][0] = matrix.m[1][1] = matrix.m[2][2] = 0;
+                            matrix.m[4][0] = matrix.m[4][1] = matrix.m[4][2] = 1;
+                        }
                         Gdiplus::ImageAttributes attrs;
                         attrs.SetColorMatrix(&matrix);
                         const int iconSize = Compact() ? 16 : 20;
@@ -368,7 +390,7 @@ public:
                 return true;
             }
         }
-        if ((leftDown && m_controlsVisible && m_volumeVisible && m_volumeRect.PtInRect(point)) || m_volumeDragging) {
+        if ((leftDown && m_controlsVisible && HitVolume(point)) || m_volumeDragging) {
             if (leftDown || message.message == WM_LBUTTONUP || move) {
                 if (volumeMouse) m_volumeDragging = volumeMouse(leftDown ? WM_LBUTTONDOWN : message.message,
                     message.wParam, std::clamp(static_cast<double>(point.x - m_volumeRect.left) / std::max(1, m_volumeRect.Width() - 1), 0.0, 1.0));
@@ -378,7 +400,7 @@ public:
                 return true;
             }
         }
-        if (message.message == WM_MOUSEWHEEL && m_volumeVisible && m_volumeRect.PtInRect(point)) {
+        if (message.message == WM_MOUSEWHEEL && HitVolume(point)) {
             if (volumeMouse) volumeMouse(WM_MOUSEWHEEL, message.wParam, 0);
             return true;
         }

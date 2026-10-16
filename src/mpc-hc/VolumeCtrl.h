@@ -39,6 +39,7 @@ public:
     void IncreaseVolume(), DecreaseVolume();
     void SetPosInternal(int pos);
 #ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    bool m_overlayInput = false;
     bool OverlayDragging() const { return m_bDrag; }
     bool ForwardOverlayMouse(UINT message, WPARAM flags, double fraction);
 #endif
