@@ -813,6 +813,88 @@ END_MESSAGE_MAP()
 void CPlayerSeekBar::OnPaint()
 {
     CPaintDC dc(this);
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    // This is the actual seekbar HWND: native input, capture, tooltip, chapter
+    // and preview handlers are unchanged. No mirrored control or input proxy.
+    const bool alpha = !m_alphaPresentationFailed && AppIsThemeLoaded()
+        && m_pMainFrame->GetLoadState() == MLS::LOADED
+        && m_pMainFrame->m_controls.ToolbarsCoverVideo()
+        && !m_pMainFrame->HasDedicatedFSVideoWindow();
+    if (alpha) {
+        if (!(GetExStyle() & WS_EX_LAYERED)) ModifyStyleEx(0, WS_EX_LAYERED);
+        if (PaintNativeAlpha()) return;
+        m_alphaPresentationFailed = true;
+        TRACE(L"Native seekbar alpha presentation failed; reverting to native opaque paint.\n");
+    }
+    if (GetExStyle() & WS_EX_LAYERED) ModifyStyleEx(WS_EX_LAYERED, 0);
+#endif
+    PaintNative(dc);
+}
+
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+bool CPlayerSeekBar::PaintNativeAlpha()
+{
+    CRect bounds;
+    GetWindowRect(bounds);
+    const int width = bounds.Width(), height = bounds.Height();
+    if (width <= 0 || height <= 0) return true;
+
+    BITMAPINFO info = {};
+    info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth = width;
+    info.bmiHeader.biHeight = -height;
+    info.bmiHeader.biPlanes = 1;
+    info.bmiHeader.biBitCount = 32;
+    info.bmiHeader.biCompression = BI_RGB;
+    void* bits = nullptr;
+    HBITMAP bitmap = ::CreateDIBSection(nullptr, &info, DIB_RGB_COLORS, &bits, nullptr, 0);
+    if (!bitmap || !bits) {
+        if (bitmap) ::DeleteObject(bitmap);
+        return false;
+    }
+    CDC memory;
+    if (!memory.CreateCompatibleDC(nullptr)) {
+        ::DeleteObject(bitmap);
+        return false;
+    }
+    const HGDIOBJ previous = ::SelectObject(memory.GetSafeHdc(), bitmap);
+    memory.FillSolidRect(0, 0, width, height, CMPCTheme::ContentBGColor);
+    CPoint clientOrigin(0, 0);
+    ClientToScreen(&clientOrigin);
+    memory.SetViewportOrg(clientOrigin.x - bounds.left, clientOrigin.y - bounds.top);
+    PaintNative(memory);
+    memory.SelectClipRgn(nullptr);
+    memory.SetViewportOrg(0, 0);
+    ::GdiFlush();
+
+    // First probe: retain the native artwork exactly. Only the background
+    // receives 25% alpha; foreground pixels remain opaque. A proper themed
+    // alpha painter can replace this adapter after native behaviour is proven.
+    const COLORREF background = CMPCTheme::ContentBGColor;
+    auto* pixels = static_cast<DWORD*>(bits);
+    for (size_t i = 0, count = size_t(width) * height; i < count; ++i) {
+        const DWORD rgb = pixels[i] & 0x00ffffff;
+        const bool isBackground = rgb == ((DWORD(GetRValue(background)) << 16)
+            | (DWORD(GetGValue(background)) << 8) | GetBValue(background));
+        if (isBackground) {
+            pixels[i] = 0x40000000; // premultiplied black, alpha 64
+        } else {
+            pixels[i] = rgb | 0xff000000;
+        }
+    }
+    POINT origin = {0, 0};
+    SIZE size = {width, height};
+    BLENDFUNCTION blend = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+    const BOOL result = ::UpdateLayeredWindow(m_hWnd, nullptr, nullptr, &size,
+        memory.GetSafeHdc(), &origin, 0, &blend, ULW_ALPHA);
+    ::SelectObject(memory.GetSafeHdc(), previous);
+    ::DeleteObject(bitmap);
+    return !!result;
+}
+#endif
+
+void CPlayerSeekBar::PaintNative(CDC& dc)
+{
 
     COLORREF
     dark   = GetSysColor(COLOR_GRAYTEXT),

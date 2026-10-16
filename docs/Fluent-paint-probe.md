@@ -1,3 +1,47 @@
+# Native seekbar transparency checkpoint
+
+The current CI artifact uses `MPC_EXPERIMENTAL_NATIVE_SEEKBAR`, not
+`MPC_EXPERIMENTAL_ALPHA_OVERLAY`. The previous Fluent overlay is compiled out:
+expect the original toolbar, title behaviour, OSD and all original settings.
+This is a composition/behaviour checkpoint, not the finished Fluent design.
+
+The actual `CPlayerSeekBar` HWND stays visible and receives input directly.
+Its original paint body is moved unchanged to `PaintNative(CDC&)`. In the
+probe, this painter renders into a 32-bit DIB and the same HWND presents it
+through `UpdateLayeredWindow`. Native background-colour pixels become 25%
+black; all other pixels remain opaque. This colour-based adapter is temporary,
+not a final anti-aliased theme renderer. No copied input geometry, second
+seekbar, new timers or custom hide policy are introduced.
+
+Alpha is attempted only for loaded media with the modern theme, when the
+native `ToolbarsCoverVideo()` policy already places toolbars over video, and
+there is no dedicated fullscreen video window. Other modes keep native opaque
+painting. Allocation/presentation failure falls back to opaque native painting
+for the rest of that player instance and emits a debugger TRACE.
+
+## Runtime acceptance
+
+1. Use the standalone artifact; do not replace the installed player. Open a
+   local video with a duration. Keep the native seekbar enabled.
+2. Test fullscreen first. The seekbar background should show moving video
+   through it while the native track/markers/text stay readable. A black strip
+   or the desktop showing through does not pass the composition test.
+3. Hover for native time tips and enable native seek previews. Click, drag,
+   release outside the bar, and check native chapters/A-B markers when present.
+4. Check configured auto-hide delay/policy, resize, fullscreen transitions and
+   a second renderer. In windowed mode the native hide-windowed-controls policy
+   must place controls over video for alpha to be enabled.
+5. Check seekbar time-placement/height preferences and the opaque fallback in
+   modes that do not cover video. No helpers or Firefox scripts are involved.
+
+Source verification confirms the original painter and seek/hover/preview/capture
+handlers are unchanged. A successful CI build alone does not establish runtime
+alpha composition or behaviour. Those require the checks above.
+
+---
+
+## Previous overlay prototype (historical)
+
 # Translucent native controls experiment
 
 Opt-in x64 Lite build: MPC_EXPERIMENTAL_ALPHA_OVERLAY. The older no-fill flag

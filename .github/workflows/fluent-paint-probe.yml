@@ -1,4 +1,4 @@
-name: Fluent alpha overlay probe
+name: Native seekbar alpha probe
 
 on:
   pull_request:
@@ -32,15 +32,15 @@ jobs:
           Invoke-WebRequest 'https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/win64/nasm-2.16.03-win64.zip' -OutFile "$env:RUNNER_TEMP\nasm.zip"
           Expand-Archive "$env:RUNNER_TEMP\nasm.zip" "$env:RUNNER_TEMP\nasm"
           (Get-ChildItem "$env:RUNNER_TEMP\nasm" -Filter nasm.exe -Recurse | Select-Object -First 1).DirectoryName >> $env:GITHUB_PATH
-      - name: Build experimental x64 player
+      - name: Build native-controls x64 probe
         shell: cmd
         env:
-          CL: /DMPC_EXPERIMENTAL_ALPHA_OVERLAY
+          CL: /DMPC_EXPERIMENTAL_NATIVE_SEEKBAR
         run: build.bat Build x64 Main Release Lite
       - name: Upload standalone test build
         uses: actions/upload-artifact@v4
         with:
-          name: MPC-HC-x64-alpha-overlay-${{ github.sha }}
+          name: MPC-HC-x64-native-seekbar-${{ github.sha }}
           path: |
             bin/mpc-hc_x64 Lite/**
           if-no-files-found: error

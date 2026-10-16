@@ -140,6 +140,12 @@ public:
 private:
     DECLARE_MESSAGE_MAP()
 
+    // Keep the native paint pipeline separate from its presentation surface.
+    void PaintNative(CDC& dc);
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    bool m_alphaPresentationFailed = false;
+    bool PaintNativeAlpha();
+#endif
     afx_msg void OnPaint();
     afx_msg void OnLButtonDown(UINT nFlags, CPoint point);
     afx_msg void OnLButtonDblClk(UINT nFlags, CPoint point);
