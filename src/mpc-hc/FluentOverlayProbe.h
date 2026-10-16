@@ -131,7 +131,7 @@ public:
 
     void Hide() { if (GetSafeHwnd()) ShowWindow(SW_HIDE); }
 
-    void Refresh(CWnd* view)
+    void Refresh(CWnd* view, HWND trackingWindow = nullptr)
     {
         if (!m_gdiplus) return;
         m_view = view;
@@ -158,7 +158,9 @@ public:
         SetWindowPos(&wndTop, 0, 0, rc.Width(), rc.Height(), SWP_NOACTIVATE);
         if (repaint) DrawSurface();
         ShowWindow(SW_SHOWNOACTIVATE);
-        TRACKMOUSEEVENT track = {sizeof(track), TME_LEAVE, view->GetSafeHwnd(), 0};
-        ::TrackMouseEvent(&track);
+        if (trackingWindow && trackingWindow != m_hWnd) {
+            TRACKMOUSEEVENT track = {sizeof(track), TME_LEAVE, trackingWindow, 0};
+            ::TrackMouseEvent(&track);
+        }
     }
 };

@@ -81,6 +81,8 @@ BOOL CChildView::PreTranslateMessage(MSG* pMsg)
 {
 #ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
     if (pMsg->message == WM_MOUSEMOVE) {
+        m_fluentProbe.Refresh(this, pMsg->hwnd);
+    } else if (pMsg->message == WM_MOUSELEAVE) {
         m_fluentProbe.Refresh(this);
     }
 #endif
