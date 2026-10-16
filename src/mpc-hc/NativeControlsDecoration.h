@@ -40,7 +40,7 @@ class CNativeControlsDecoration final : public CWnd
             if (m_header) {
                 graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
                 graphics.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAliasGridFit);
-                Gdiplus::Font font(L"Segoe UI", float(Scale(14)), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+                Gdiplus::Font font(L"Segoe UI", float(Scale(16)), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
                 Gdiplus::SolidBrush text(Gdiplus::Color(240, 255, 255, 255));
                 Gdiplus::StringFormat format;
                 format.SetLineAlignment(Gdiplus::StringAlignmentCenter);

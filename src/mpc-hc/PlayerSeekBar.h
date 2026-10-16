@@ -89,6 +89,7 @@ private:
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
     bool SplitTimeSections() const;
     CRect GetSplitTimeRect(bool duration) const;
+    CRect GetTimeHitRect(bool duration = false) const;
 #endif
     CRect GetTimeRect() const;          // the dedicated time section to the right of the channel
 

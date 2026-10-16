@@ -354,6 +354,22 @@ CRect CPlayerSeekBar::GetSplitTimeRect(bool duration) const
     else r.right = r.left + width;
     return r;
 }
+
+CRect CPlayerSeekBar::GetTimeHitRect(bool duration) const
+{
+    CRect hit;
+    GetClientRect(hit);
+    const CRect seek = GetSeekableRect();
+    if (SplitTimeSections()) {
+        if (duration) hit.left = seek.right;
+        else hit.right = seek.left;
+    } else if (TimeSectionOnLeft()) {
+        hit.right = seek.left;
+    } else {
+        hit.left = seek.right;
+    }
+    return hit;
+}
 #endif
 
 CRect CPlayerSeekBar::GetChannelRect() const
@@ -990,6 +1006,16 @@ bool CPlayerSeekBar::PaintNativeAlpha()
         graphics.Clear(Gdiplus::Color(64, 0, 0, 0));
 #endif
         graphics.TranslateTransform(float(clientOrigin.x - bounds.left), float(clientOrigin.y - bounds.top));
+        if (TimeSectionVisible()) {
+            // A zero-alpha layered pixel passes mouse input to the video below.
+            // Keep the entire padded time field hit-testable without a visible fill.
+            Gdiplus::SolidBrush hitSurface(Gdiplus::Color(1, 0, 0, 0));
+            auto retainTimeInput = [&](const CRect& hit) {
+                graphics.FillRectangle(&hitSurface, hit.left, hit.top, hit.Width(), hit.Height());
+            };
+            retainTimeInput(GetTimeHitRect(false));
+            if (SplitTimeSections()) retainTimeInput(GetTimeHitRect(true));
+        }
         graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
         const CRect channel = GetChannelRect();
         CRect client;
@@ -1271,8 +1297,8 @@ void CPlayerSeekBar::OnContextMenu(CWnd* pWnd, CPoint point)
         ScreenToClient(&clientPoint);
         bool timeHit = GetTimeRect().PtInRect(clientPoint);
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-        if (SplitTimeSections()) timeHit = GetSplitTimeRect(false).PtInRect(clientPoint)
-            || GetSplitTimeRect(true).PtInRect(clientPoint);
+        timeHit = GetTimeHitRect(false).PtInRect(clientPoint)
+            || (SplitTimeSections() && GetTimeHitRect(true).PtInRect(clientPoint));
 #endif
         if (timeHit) {
             m_pMainFrame->m_wndStatusBar.ShowTimerOptionsMenu(this, point);
@@ -1285,8 +1311,8 @@ void CPlayerSeekBar::OnContextMenu(CWnd* pWnd, CPoint point)
 void CPlayerSeekBar::OnLButtonDown(UINT nFlags, CPoint point)
 {
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-    if (SplitTimeSections() && (GetSplitTimeRect(false).PtInRect(point)
-            || GetSplitTimeRect(true).PtInRect(point))) {
+    if (TimeSectionVisible() && m_bHasDuration && (GetTimeHitRect(false).PtInRect(point)
+            || (SplitTimeSections() && GetTimeHitRect(true).PtInRect(point)))) {
         m_pMainFrame->m_wndStatusBar.ToggleTimerDisplay();
         return;
     }
