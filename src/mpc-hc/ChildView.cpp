@@ -145,7 +145,7 @@ void CChildView::UpdateFluentControls()
     for (CWnd* backend : {static_cast<CWnd*>(&nativeToolbar), static_cast<CWnd*>(&seekbar)}) {
         CRect rect; backend->GetClientRect(rect);
         if (rect.Width() != viewRect.Width() || rect.Height() < 24)
-            backend->SetWindowPos(nullptr, 0, 0, viewRect.Width(), std::max(32L, rect.Height()), SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+            backend->SetWindowPos(nullptr, 0, 0, viewRect.Width(), std::max(32, rect.Height()), SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     }
     nativeToolbar.UpdateOverlayCommandState();
     const bool toolbarSelected = m_pMainFrame->m_controls.ControlChecked(CMainFrameControls::Toolbar::CONTROLS);

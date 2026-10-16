@@ -253,8 +253,13 @@ public:
         if (m_seeking && seekActive && !seekActive()) m_seeking = false;
         if (m_volumeDragging && volumeActive && !volumeActive()) m_volumeDragging = false;
         if (!GetSafeHwnd() || (!IsWindowVisible() && !CapturedInput())) return false;
-        if (m_tip.GetSafeHwnd()) m_tip.RelayEvent(const_cast<MSG*>(&message));
         CPoint point(message.pt); ScreenToClient(&point);
+        if (m_tip.GetSafeHwnd()) {
+            MSG tooltipMessage = message;
+            tooltipMessage.hwnd = m_hWnd;
+            tooltipMessage.lParam = MAKELPARAM(point.x, point.y);
+            m_tip.RelayEvent(&tooltipMessage);
+        }
         const bool leftDown = message.message == WM_LBUTTONDOWN || message.message == WM_LBUTTONDBLCLK;
         const bool rightDown = message.message == WM_RBUTTONDOWN || message.message == WM_RBUTTONDBLCLK;
         const bool up = message.message == WM_LBUTTONUP || message.message == WM_RBUTTONUP;
