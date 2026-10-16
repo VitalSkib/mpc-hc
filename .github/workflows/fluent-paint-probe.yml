@@ -1,0 +1,58 @@
+name: Fluent toolbar paint probe
+
+on:
+  push:
+    branches: [fluent-hover-ui]
+  pull_request:
+    branches: [develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Configure Visual Studio and Windows SDK
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.ATLMFC -property installationPath
+          if (-not $vs) { throw 'Visual C++ ATL/MFC is missing from this runner.' }
+          $sdk = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Include" -Directory |
+            Where-Object Name -Match '^10\.0\.\d+\.0$' |
+            Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
+          if (-not $sdk) { throw 'Windows SDK not found.' }
+          @('@echo off', ('set "MPCHC_VS_PATH=' + $vs + '"'), ('set "MPCHC_WINSDK_VER=' + $sdk.Name + '"')) |
+            Set-Content build.user.bat -Encoding ascii
+          Invoke-WebRequest 'https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/win64/nasm-2.16.03-win64.zip' -OutFile "$env:RUNNER_TEMP\nasm.zip"
+          Expand-Archive "$env:RUNNER_TEMP\nasm.zip" "$env:RUNNER_TEMP\nasm"
+          (Get-ChildItem "$env:RUNNER_TEMP\nasm" -Filter nasm.exe -Recurse | Select-Object -First 1).DirectoryName >> $env:GITHUB_PATH
+      - name: Build experimental x64 player
+        shell: cmd
+        env:
+          CL: /DMPC_EXPERIMENTAL_NO_TOOLBAR_FILL
+        run: build.bat Build x64 Main Release Lite
+      - name: Upload standalone test build
+        uses: actions/upload-artifact@v4
+        with:
+          name: MPC-HC-x64-toolbar-no-fill-${{ github.sha }}
+          path: |
+            bin/mpc-hc_x64 Lite/**
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-diagnostics
+          path: |
+            bin/logs/**
+          if-no-files-found: ignore
+          retention-days: 7

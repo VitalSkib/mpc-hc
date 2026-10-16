@@ -74,6 +74,13 @@ Sound muted(active state) + Sound unavailable(inactive state)
 #define VOLUMEBUTTON_SVG_INDEX 24
 #define TOOLBAR_BUTTON_HORIZONTAL_PADDING 7  // From SetSizes(height+7, height+6)
 
+// Isolated paint experiment. Normal builds keep the upstream drawing path.
+#ifdef MPC_EXPERIMENTAL_NO_TOOLBAR_FILL
+static constexpr bool kExperimentalNoToolbarFill = true;
+#else
+static constexpr bool kExperimentalNoToolbarFill = false;
+#endif
+
 std::map<WORD, CPlayerToolBar::svgButtonInfo> CPlayerToolBar::supportedSvgButtons = {
     {ID_LEFTSEPARATOR, {TBBS_SEPARATOR, -1, 0, LOCK_LEFT}},
     {ID_PLAY_PLAY, {TBBS_CHECKGROUP, 0}},
@@ -829,6 +836,10 @@ void CPlayerToolBar::OnCustomDraw(NMHDR* pNMHDR, LRESULT* pResult)
             lr = CDRF_DODEFAULT;
             break;
         case CDDS_PREPAINT: {
+            if (kExperimentalNoToolbarFill) {
+                lr |= CDRF_NOTIFYITEMDRAW | CDRF_NOTIFYPOSTPAINT;
+                break;
+            }
             // paint the control background, this is needed for XP
             CDC dc;
             dc.Attach(pTBCD->nmcd.hdc);
@@ -860,6 +871,11 @@ void CPlayerToolBar::OnCustomDraw(NMHDR* pNMHDR, LRESULT* pResult)
             }
             break;
         case CDDS_ITEMPOSTPAINT:
+            if (kExperimentalNoToolbarFill) {
+                // Do not paint the flexible/left separator back over the parent.
+                lr |= CDRF_SKIPDEFAULT;
+                break;
+            }
             // paint over the separators to hide them
             CDC dc;
             dc.Attach(pTBCD->nmcd.hdc);
@@ -1116,6 +1132,9 @@ BOOL CPlayerToolBar::OnRepeatButton(UINT nID) {
 
 void CPlayerToolBar::OnNcPaint() // when using XP styles the NC area isn't drawn for our toolbar...
 {
+    if (kExperimentalNoToolbarFill) {
+        return;
+    }
     CRect wr, cr;
 
     CWindowDC dc(this);
