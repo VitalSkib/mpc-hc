@@ -110,10 +110,6 @@ void CVolumeCtrl::SetPosInternal(int pos)
     // the frame handler owes the user OSD feedback on every press and dedups the
     // renderer/API work itself.
     WPARAM scroll = MAKEWPARAM(static_cast<WORD>(currentPos), SB_THUMBPOSITION);
-#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
-    // Carry the origin through both posted notifications, even after mouse-up.
-    if (m_overlayInput) scroll |= static_cast<WPARAM>(OverlayScrollFlag) << 16;
-#endif
     GetParent()->PostMessage(WM_HSCROLL, scroll, reinterpret_cast<LPARAM>(m_hWnd)); // reflected back on us
     POINT p;
     ::GetCursorPos(&p);

@@ -863,7 +863,10 @@ void COSD::DisplayMessage(
     }
 
 #ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
-    if (nPos != OSD_DEBUG && overlayMessage && overlayMessage(strMsg, nDuration)) return;
+    if (nPos != OSD_DEBUG) {
+        if (!AfxGetAppSettings().fShowOSD) return;
+        if (overlayMessage && overlayMessage(strMsg, nDuration)) return;
+    }
 #endif
     const CAppSettings& s = AfxGetAppSettings();
 

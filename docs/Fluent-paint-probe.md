@@ -74,16 +74,39 @@ not restart the deadline, and captured slider gestures prevent hiding. Windowed
 hover behavior is retained.
 
 The title uses a 15/17px font and removes a terminal known media extension. Volume
-percentage stays visible to the right of its slider. Normal command messages are
+percentage uses the normal volume OSD message rather than reserving row space. Normal command messages are
 routed from COSD into a compact translucent status box below the title; debug
 messages retain the native OSD path. Cross-thread messages retain the native
-fallback. Initial filename feedback remains suppressed.
+fallback. The native Show OSD option gates compact feedback too. Initial filename
+feedback remains suppressed.
 
 Toolbar-owned command UI and click handlers are routed through the actual toolbar
-first, including Repeat and Fullscreen. All enabled icons use the same 78-percent
-white base and full white hover; disabled icons remain dim.
+first, including Repeat and Fullscreen. Standard artwork uses the installed
+Segoe Fluent Icons regular font at 16px; no font is bundled. The native selected
+image index chooses both normal and alternate glyph banks (including RepeatOff,
+Mute, fullscreen and pane states). Unsupported/custom artwork retains its native
+colors, image and alpha. No blur, glow or white tint is added. Tooltips are obtained
+from the native state-aware tooltip handler. Frame-step uses a thin frame with a
+small system Play glyph; ShuffleOff adds the off-bank slash to the system glyph.
 
 Runtime checks: added Repeat/Fullscreen actions and hover; consistent Frame-step
 brightness; volume percentage; compact Play/Pause messages with the native OSD
 option on and off; title extension handling; fullscreen fade, wake, slider capture,
 pause and return to windowed mode.
+
+## Timeline and feedback styling
+
+Played portions use blue; both thumbs have a 13px pale outer disc and a smaller
+blue centre. The centre expands smoothly on hover/capture and returns when the
+hover ends. Animation reuses the existing deadline timer only while transitioning.
+Time labels brighten on hover and have Elapsed/Remaining or Total-duration tips
+matching the actual native display mode.
+
+Volume row width is restored to 60/84px, retaining native group centring. Volume
+messages again follow the native command path, rendered in the compact feedback
+box with a lighter 35-percent black background. Enable Show OSD to see them.
+
+Verify Repeat on/off shape and tip, mute/unmute, enter/exit fullscreen, pane state,
+custom artwork, thumb hover/release, endpoints/capture, time tips/toggle, volume
+feedback with OSD on/off and fullscreen idle fade. Font glyph presence was checked
+against the locally installed font; visual rendering still needs runtime testing.

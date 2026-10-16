@@ -169,8 +169,8 @@ void CChildView::UpdateFluentControls()
             TBBUTTON button = {};
             if (!toolbar.GetButton(i, &button) || (button.fsState & TBSTATE_HIDDEN) || (button.fsStyle & BTNS_SEP)) continue;
             if (button.idCommand == ID_VOLUME_MUTE) button.iBitmap = nativeToolbar.OverlayVolumeImage();
-            const LPCWSTR tip = nativeToolbar.GetStringFromID(button.idCommand);
-            buttons.push_back({static_cast<UINT>(button.idCommand), button.iBitmap, button.fsState, tip ? CString(tip) : CString()});
+            const CString tip = nativeToolbar.OverlayButtonTip(button.idCommand);
+            buttons.push_back({static_cast<UINT>(button.idCommand), button.iBitmap, button.fsState, tip});
         }
     }
     auto& volume = nativeToolbar.m_volctrl;
@@ -182,9 +182,9 @@ void CChildView::UpdateFluentControls()
     REFERENCE_TIME start, stop; seekbar.GetRange(start, stop);
     CString positionText, durationText;
     m_pMainFrame->m_wndStatusBar.GetOverlayTimeParts(positionText, durationText);
-    m_fluentProbe.SetTimeParts(positionText, durationText);
+    m_fluentProbe.SetTimeParts(positionText, durationText, AfxGetAppSettings().fRemainingTime);
     const CString time = positionText + L" / " + durationText;
-    m_fluentProbe.SetControlState(m_pMainFrame->IsFullScreenMode(), false, seekbar.CanOverlaySeek(), toolbarSelected || seekSelected,
+    m_fluentProbe.SetControlState(m_pMainFrame->IsFullScreenMode(), AfxGetAppSettings().fShowOSD, seekbar.CanOverlaySeek(), toolbarSelected || seekSelected,
         start, stop, seekbar.GetPos(), time);
     m_fluentProbe.Refresh(this);
 }

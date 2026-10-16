@@ -87,6 +87,7 @@ public:
     std::optional<CRect> m_overlayAnchor;
     void UpdateOverlayCommandState();
     int OverlayVolumeImage() const;
+    CString OverlayButtonTip(UINT id);
     void InvokeOverlayButton(UINT id, const CRect& anchor, bool rightButton);
 #endif
     CPlayerToolBar(CMainFrame* pMainFrame);

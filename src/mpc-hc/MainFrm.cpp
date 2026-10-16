@@ -3862,12 +3862,7 @@ void CMainFrame::OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar)
     if (!pScrollBar) return;
     
     if (pScrollBar->IsKindOf(RUNTIME_CLASS(CVolumeCtrl))) {
-#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
-        // CVolumeCtrl reflection swaps the words before posting to this frame.
-        OnPlayVolume((nSBCode & CVolumeCtrl::OverlayScrollFlag) ? UINT_MAX : 0);
-#else
         OnPlayVolume(0);
-#endif
     } else if (pScrollBar->IsKindOf(RUNTIME_CLASS(CPlayerSeekBar)) && GetLoadState() == MLS::LOADED) {
         SeekTo(m_wndSeekBar.GetPos());
     } else if (*pScrollBar == *m_pVideoWnd) {
@@ -11411,9 +11406,6 @@ void CMainFrame::OnPlayVolume(UINT nID)
         } else {
             strVolume.Format(IDS_VOLUME_OSD, volume);
         }
-#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
-        if (nID != UINT_MAX && !m_wndToolBar.m_volctrl.OverlayDragging())
-#endif
         m_OSD.DisplayMessage(OSD_TOPLEFT, strVolume);
         //SendStatusMessage(strVolume, 3000); // Now the volume is displayed in three places at once.
     }

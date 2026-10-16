@@ -1086,6 +1086,16 @@ int CPlayerToolBar::OverlayVolumeImage() const
     return VOLUMEBUTTON_SVG_INDEX + ((AfxGetAppSettings().fMute || m_volctrl.GetPos() <= 0) ? 1 : 0);
 }
 
+CString CPlayerToolBar::OverlayButtonTip(UINT id)
+{
+    TOOLTIPTEXT text = {};
+    text.hdr.idFrom = id;
+    LRESULT result = 0;
+    if (OnToolTipNotify(id, &text.hdr, &result) && text.lpszText) return CString(text.lpszText);
+    const LPCWSTR fallback = GetStringFromID(id);
+    return fallback ? CString(fallback) : CString();
+}
+
 void CPlayerToolBar::UpdateOverlayCommandState()
 {
     // The backend HWND is hidden; explicitly run its original command UI updates.

@@ -22,6 +22,26 @@ public:
 
 private:
     ULONG_PTR m_gdiplus = 0;
+    std::unique_ptr<Gdiplus::Font> m_smallIcons, m_largeIcons, m_frameIcons;
+    int m_hotTime = -1;
+    bool m_remainingTime = false;
+    float m_seekHover = 0, m_volumeHover = 0, m_seekTarget = 0, m_volumeTarget = 0;
+    ULONGLONG m_animationTick = 0;
+    static constexpr UINT_PTR PositionTool = 0xfffffff0, DurationTool = 0xfffffff1;
+    bool AnimatingSliders() const { return m_seekHover != m_seekTarget || m_volumeHover != m_volumeTarget; }
+    void AdvanceSliders(ULONGLONG now) {
+        const float step = std::min(1.0f, static_cast<float>(now - m_animationTick) / 120.0f);
+        const auto advance = [step](float value, float target) {
+            return value < target ? std::min(target, value + step) : std::max(target, value - step);
+        };
+        m_seekHover = advance(m_seekHover, m_seekTarget); m_volumeHover = advance(m_volumeHover, m_volumeTarget);
+        m_animationTick = now;
+    }
+    void SliderTargets(float seek, float volume) {
+        if (seek == m_seekTarget && volume == m_volumeTarget) return;
+        const ULONGLONG now = GetTickCount64(); AdvanceSliders(now);
+        m_seekTarget = seek; m_volumeTarget = volume; m_animationTick = now;
+    }
     CWnd* m_view = nullptr;
     CMPCThemeToolTipCtrl m_tip;
     CString m_title, m_time, m_positionText, m_durationText, m_feedback;
@@ -40,6 +60,7 @@ private:
             const ULONGLONG idleDue = m_fadeStart ? now + 40 : m_lastInput + 4000;
             if (!due || idleDue < due) due = idleDue;
         }
+        if (AnimatingSliders() && (!due || now + 16 < due)) due = now + 16;
         if (due) SetTimer(DeadlineTimer, static_cast<UINT>(std::max<ULONGLONG>(1, due > now ? due - now : 1)), nullptr);
     }
     void WakeControls() {
@@ -86,6 +107,14 @@ private:
         for (size_t i = 0; i < m_buttonRects.size(); ++i) if (m_buttonRects[i].PtInRect(point)) return static_cast<int>(i);
         return m_overflowRect.PtInRect(point) ? -2 : -1;
     }
+    bool HitSeek(CPoint point) const {
+        CRect hit = m_timeline; hit.InflateRect(7, 4);
+        return m_seekVisible && hit.PtInRect(point);
+    }
+    static bool HitThumb(const CRect& rect, double fraction, CPoint point) {
+        const int x = rect.left + static_cast<int>(std::clamp(fraction, 0.0, 1.0) * std::max(1, rect.Width() - 1));
+        return std::abs(point.x - x) <= 10 && std::abs(point.y - rect.CenterPoint().y) <= 10;
+    }
     bool HitVolume(CPoint point) const {
         CRect hit = m_volumeRect;
         hit.InflateRect(7, 5);
@@ -93,7 +122,7 @@ private:
     }
     bool IsControlPoint(CPoint point) const {
         return m_panelsVisible && (CloseRect().PtInRect(point) || (m_controlsVisible &&
-            (HitButton(point) != -1 || HitTime(point) || (m_seekVisible && m_timeline.PtInRect(point))
+            (HitButton(point) != -1 || HitTime(point) || HitSeek(point)
                 || HitVolume(point))));
     }
     bool InsideView() const {
@@ -109,12 +138,13 @@ private:
         if (!m_dirty && m_layoutSize == m_size) return;
         if (m_tip.GetSafeHwnd()) {
             for (size_t i = 0; i < m_buttonRects.size(); ++i) m_tip.DelTool(this, static_cast<UINT_PTR>(i + 1));
+            m_tip.DelTool(this, PositionTool); m_tip.DelTool(this, DurationTool);
         }
         m_buttonRects.clear();
         m_timeline.SetRectEmpty(); m_volumeRect.SetRectEmpty(); m_timeRect.SetRectEmpty(); m_durationRect.SetRectEmpty();
         const int margin = Compact() ? 12 : 16;
         const int left = margin, right = m_size.cx - margin, cell = Compact() ? 24 : 28;
-        const int volumeWidth = m_volumeVisible ? (Compact() ? 96 : 120) : 0;
+        const int volumeWidth = m_volumeVisible ? (Compact() ? 60 : 84) : 0;
         const int gap = m_volumeVisible ? 8 : 0;
         const int spaceForButtons = right - left - volumeWidth - gap;
         int capacity = std::max(0, spaceForButtons / cell);
@@ -152,12 +182,14 @@ private:
         }
         if (m_volumeVisible) {
             const int volumeLeft = m_alignment == 0 ? right - volumeWidth : groupLeft + groupWidth + gap;
-            m_volumeRect = CRect(volumeLeft + 7, y + 3, volumeLeft + volumeWidth - 39, y + cell - 3);
+            m_volumeRect = CRect(volumeLeft + 7, y + 3, volumeLeft + volumeWidth - 3, y + cell - 3);
         }
         if (m_tip.GetSafeHwnd()) {
             for (size_t i = 0; i < m_buttonRects.size(); ++i) {
                 if (!m_buttonRects[i].IsRectEmpty()) m_tip.AddTool(this, m_buttons[i].tip, m_buttonRects[i], static_cast<UINT_PTR>(i + 1));
             }
+            if (!m_timeRect.IsRectEmpty()) m_tip.AddTool(this, m_remainingTime ? L"Time remaining" : L"Time elapsed", m_timeRect, PositionTool);
+            if (!m_durationRect.IsRectEmpty()) m_tip.AddTool(this, L"Total duration", m_durationRect, DurationTool);
         }
         m_layoutSize = m_size;
         m_dirty = false;
@@ -195,17 +227,6 @@ private:
             for (size_t i = 0; i < pixels.size(); ++i) pixels[i] = (mask[i] & 0x00ffffff) ? 0 : (pixels[i] | 0xff000000);
         }
         ::DeleteDC(dc);
-        // Toggle buttons use a translucent "off" resource even when enabled.
-        // Normalize its peak alpha; command state, not resource opacity, sets dimming.
-        DWORD peak = 0;
-        for (DWORD pixel : pixels) peak = std::max(peak, pixel >> 24);
-        if (peak && peak < 255) {
-            for (DWORD& pixel : pixels) {
-                const auto scale = [peak](DWORD channel) { return std::min<DWORD>(255, channel * 255 / peak); };
-                pixel = (scale(pixel >> 24) << 24) | (scale((pixel >> 16) & 255) << 16)
-                    | (scale((pixel >> 8) & 255) << 8) | scale(pixel & 255);
-            }
-        }
         auto image = std::make_unique<Gdiplus::Bitmap>(width, height, PixelFormat32bppPARGB);
         Gdiplus::Rect rect(0, 0, width, height);
         Gdiplus::BitmapData target = {};
@@ -215,6 +236,41 @@ private:
                 pixels.data() + static_cast<size_t>(y) * width, static_cast<size_t>(width) * 4);
         image->UnlockBits(&target);
         return image;
+    }
+    bool DrawSystemIcon(Gdiplus::Graphics& graphics, const Button& button, const CRect& rect) {
+        const auto* font = Compact() ? m_smallIcons.get() : m_largeIcons.get();
+        if (!font || !m_images || ImageList_GetImageCount(m_images) != 52 || button.image < 0 || button.image >= 52) return false;
+        // MPC's two 26-slot banks are selected by the native toolbar itself.
+        // This is an artwork table, not a second implementation of command states.
+        static constexpr WCHAR glyphs[2][26] = {
+            {0xe768,0xe769,0xe71a,0xe892,0xe893,0xe8d6,0xe7f0,0xec49,0xec4a,0xe768,0xe8e5,0xe713,0xe92c,0xe89f,0xe8b1,0xe8ee,0xeb9e,0xeb9d,0xe946,0xe8bb,0,0,0,0,0xe767,0xe74f},
+            {0xe768,0xe769,0xe71a,0xe892,0xe893,0xe8d6,0xe7f0,0xec49,0xec4a,0xe768,0xe8e5,0xe713,0xe92d,0xe8a0,0xe8b1,0xf5e7,0xeb9e,0xeb9d,0xe946,0xe8bb,0,0,0,0,0xe767,0xe74f}
+        };
+        const WCHAR glyph = glyphs[button.image / 26][button.image % 26];
+        if (!glyph) return false;
+        const bool enabled = (button.state & TBSTATE_ENABLED) != 0;
+        const bool hot = enabled && m_hotButton >= 0 && static_cast<size_t>(m_hotButton) < m_buttons.size() && m_buttons[m_hotButton].id == button.id;
+        const BYTE alpha = enabled ? (hot ? 255 : 220) : 85;
+        Gdiplus::SolidBrush ink(Gdiplus::Color(alpha, 255, 255, 255));
+        Gdiplus::StringFormat format(Gdiplus::StringFormat::GenericTypographic());
+        format.SetAlignment(Gdiplus::StringAlignmentCenter); format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+        if (button.image % 26 == 9 && m_frameIcons) {
+            const int cx = rect.CenterPoint().x, cy = rect.CenterPoint().y;
+            Gdiplus::Pen frame(Gdiplus::Color(alpha, 255, 255, 255), 1.0f);
+            graphics.DrawRectangle(&frame, cx - 7.5f, cy - 5.5f, 15.0f, 11.0f);
+            graphics.DrawString(&glyph, 1, m_frameIcons.get(),
+                Gdiplus::RectF(static_cast<float>(rect.left), static_cast<float>(rect.top), static_cast<float>(rect.Width()), static_cast<float>(rect.Height())), &format, &ink);
+            return true;
+        }
+        graphics.DrawString(&glyph, 1, font,
+            Gdiplus::RectF(static_cast<float>(rect.left), static_cast<float>(rect.top), static_cast<float>(rect.Width()), static_cast<float>(rect.Height())), &format, &ink);
+        if (button.image / 26 == 1 && button.image % 26 == 14) {
+            // The font has Shuffle but no ShuffleOff glyph; retain the off-bank slash.
+            Gdiplus::Pen slash(Gdiplus::Color(alpha, 255, 255, 255), 1.0f);
+            const int cx = rect.CenterPoint().x, cy = rect.CenterPoint().y;
+            graphics.DrawLine(&slash, cx - 7.0f, cy - 7.0f, cx + 7.0f, cy + 7.0f);
+        }
+        return true;
     }
     void DrawSurface() {
         EnsureGeometry();
@@ -252,15 +308,17 @@ private:
             if (m_panelsVisible && m_controlsVisible) {
                 if (m_seekVisible) {
                     DrawSlider(graphics, m_timeline, m_canSeek && m_stop > m_start
-                        ? static_cast<double>(m_position - m_start) / static_cast<double>(m_stop - m_start) : 0, m_canSeek);
+                        ? static_cast<double>(m_position - m_start) / static_cast<double>(m_stop - m_start) : 0, m_canSeek, m_seekHover);
                     format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+                    Gdiplus::SolidBrush positionInk(Gdiplus::Color(255, m_hotTime == 0 ? 255 : 220, m_hotTime == 0 ? 255 : 220, m_hotTime == 0 ? 255 : 220));
+                    Gdiplus::SolidBrush durationInk(Gdiplus::Color(255, m_hotTime == 1 ? 255 : 220, m_hotTime == 1 ? 255 : 220, m_hotTime == 1 ? 255 : 220));
                     graphics.DrawString(m_positionText, -1, &font,
                         Gdiplus::RectF(static_cast<float>(m_timeRect.left), static_cast<float>(m_timeRect.top),
-                            static_cast<float>(m_timeRect.Width()), static_cast<float>(m_timeRect.Height())), &format, &text);
+                            static_cast<float>(m_timeRect.Width()), static_cast<float>(m_timeRect.Height())), &format, &positionInk);
                     format.SetAlignment(Gdiplus::StringAlignmentFar);
                     graphics.DrawString(m_durationText, -1, &font,
                         Gdiplus::RectF(static_cast<float>(m_durationRect.left), static_cast<float>(m_durationRect.top),
-                            static_cast<float>(m_durationRect.Width()), static_cast<float>(m_durationRect.Height())), &format, &text);
+                            static_cast<float>(m_durationRect.Width()), static_cast<float>(m_durationRect.Height())), &format, &durationInk);
                     format.SetAlignment(Gdiplus::StringAlignmentNear);
                     format.SetLineAlignment(Gdiplus::StringAlignmentNear);
                 }
@@ -271,28 +329,16 @@ private:
                     if (rect.IsRectEmpty()) continue;
                     if ((button.state & TBSTATE_CHECKED) || m_hotButton == static_cast<int>(i))
                         graphics.FillRectangle(&highlight, rect.left, rect.top, rect.Width(), rect.Height());
-                    // Distinguish a single frame from the next playlist item.
-                    if (button.id == ID_PLAY_FRAMESTEP) {
-                        const int cx = rect.CenterPoint().x, cy = rect.CenterPoint().y;
-                        const BYTE alpha = (button.state & TBSTATE_ENABLED) ? (m_hotButton == static_cast<int>(i) ? 255 : 199) : 71;
-                        Gdiplus::Pen pen(Gdiplus::Color(alpha, 255, 255, 255), 1.4f);
-                        graphics.DrawRectangle(&pen, cx - 7, cy - 6, 14, 12);
-                        Gdiplus::SolidBrush fill(Gdiplus::Color(alpha, 255, 255, 255));
-                        Gdiplus::Point triangle[] = {Gdiplus::Point(cx - 3, cy - 4),
-                            Gdiplus::Point(cx - 3, cy + 4), Gdiplus::Point(cx + 3, cy)};
-                        graphics.FillPolygon(&fill, triangle, 3);
-                        graphics.DrawLine(&pen, cx + 4, cy - 4, cx + 4, cy + 4);
-                        continue;
-                    }
+                    if (DrawSystemIcon(graphics, button, rect)) continue;
                     HICON icon = m_images ? ::ImageList_GetIcon(m_images, button.image, ILD_TRANSPARENT) : nullptr;
                     if (icon) {
                         auto image = DecodeIcon(icon);
                         if (!image) { ::DestroyIcon(icon); continue; }
                         const float opacity = (button.state & TBSTATE_ENABLED)
                             ? (m_hotButton == static_cast<int>(i) ? 1.0f : 0.78f) : 0.28f;
-                        // One monochrome palette, independent of light/dark source resources.
-                        Gdiplus::ColorMatrix matrix = {{{0,0,0,0,0},{0,0,0,0,0},{0,0,0,0,0},
-                            {0,0,0,opacity,0},{1,1,1,0,1}}};
+                        // Unknown/custom artwork retains its colors and alternate image.
+                        Gdiplus::ColorMatrix matrix = {{{1,0,0,0,0},{0,1,0,0,0},{0,0,1,0,0},
+                            {0,0,0,opacity,0},{0,0,0,0,1}}};
                         Gdiplus::ImageAttributes attrs;
                         attrs.SetColorMatrix(&matrix);
                         const int iconSize = Compact() ? 16 : 20;
@@ -308,13 +354,7 @@ private:
                     for (int offset : {-5, 0, 5}) graphics.FillEllipse(&text, center.x + offset - 1, center.y - 1, 2, 2);
                 }
                 if (m_toolbarVisible && m_volumeVisible) {
-                    DrawSlider(graphics, m_volumeRect, static_cast<double>(m_volume) / std::max(1, m_volumeMaximum), true);
-                    CString percent; percent.Format(L"%d%%", MulDiv(m_volume, 100, std::max(1, m_volumeMaximum)));
-                    format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
-                    graphics.DrawString(percent, -1, &font,
-                        Gdiplus::RectF(static_cast<float>(m_volumeRect.right + 9), static_cast<float>(m_volumeRect.top - 3),
-                            36.0f, static_cast<float>(m_volumeRect.Height() + 6)), &format, &text);
-                    format.SetLineAlignment(Gdiplus::StringAlignmentNear);
+                    DrawSlider(graphics, m_volumeRect, static_cast<double>(m_volume) / std::max(1, m_volumeMaximum), true, m_volumeHover);
                 }
             }
             if (m_panelsVisible) {
@@ -336,7 +376,7 @@ private:
                 Gdiplus::RectF bounds;
                 graphics.MeasureString(m_feedback, -1, &feedbackFont, Gdiplus::PointF(0, 0), &bounds);
                 const float boxWidth = std::min(static_cast<float>(width - 28), bounds.Width + 20.0f);
-                Gdiplus::SolidBrush statusBG(Gdiplus::Color(155, 0, 0, 0));
+                Gdiplus::SolidBrush statusBG(Gdiplus::Color(90, 0, 0, 0));
                 graphics.FillRectangle(&statusBG, 14.0f, static_cast<float>(top), boxWidth, 30.0f);
                 format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
                 graphics.DrawString(m_feedback, -1, &feedbackFont,
@@ -348,7 +388,7 @@ private:
         ::UpdateLayeredWindow(m_hWnd, nullptr, nullptr, &size, dc, &origin, 0, &blend, ULW_ALPHA);
         ::SelectObject(dc, previous); ::DeleteObject(bitmap); ::DeleteDC(dc);
     }
-    void DrawSlider(Gdiplus::Graphics& graphics, const CRect& rect, double value, bool enabled) {
+    void DrawSlider(Gdiplus::Graphics& graphics, const CRect& rect, double value, bool enabled, float hover) {
         value = std::clamp(value, 0.0, 1.0);
         const float left = static_cast<float>(rect.left), right = static_cast<float>(rect.right - 1);
         const float y = static_cast<float>(rect.CenterPoint().y), x = left + static_cast<float>(value) * (right - left);
@@ -356,10 +396,14 @@ private:
         track.SetStartCap(Gdiplus::LineCapRound); track.SetEndCap(Gdiplus::LineCapRound);
         graphics.DrawLine(&track, left, y, right, y);
         if (enabled) {
-            Gdiplus::Pen elapsed(Gdiplus::Color(255, 235, 235, 235), 3.0f);
+            Gdiplus::Pen elapsed(Gdiplus::Color(255, 0, 120, 212), 3.0f);
+            elapsed.SetStartCap(Gdiplus::LineCapRound); elapsed.SetEndCap(Gdiplus::LineCapRound);
             graphics.DrawLine(&elapsed, left, y, x, y);
             Gdiplus::SolidBrush accent(Gdiplus::Color(255, 0, 120, 212));
-            graphics.FillEllipse(&accent, x - 5, y - 5, 10.0f, 10.0f);
+            Gdiplus::SolidBrush shell(Gdiplus::Color(255, 242, 242, 242));
+            graphics.FillEllipse(&shell, x - 6.5f, y - 6.5f, 13.0f, 13.0f);
+            const float radius = 3.0f + 1.5f * hover;
+            graphics.FillEllipse(&accent, x - radius, y - radius, radius * 2, radius * 2);
         }
     }
 protected:
@@ -367,6 +411,7 @@ protected:
         if (message == WM_TIMER && wParam == DeadlineTimer) {
             KillTimer(DeadlineTimer);
             const ULONGLONG now = GetTickCount64();
+            AdvanceSliders(now);
             if (m_feedbackUntil && now >= m_feedbackUntil) { m_feedback.Empty(); m_feedbackUntil = 0; }
             if (m_fullscreen && m_panelsVisible && !CapturedInput() && now - m_lastInput >= 4000) {
                 if (!m_fadeStart) m_fadeStart = now;
@@ -394,10 +439,19 @@ public:
     CFluentOverlayProbe() {
         Gdiplus::GdiplusStartupInput startup;
         if (Gdiplus::GdiplusStartup(&m_gdiplus, &startup, nullptr) != Gdiplus::Ok) m_gdiplus = 0;
+        if (m_gdiplus) {
+            Gdiplus::FontFamily system(L"Segoe Fluent Icons");
+            if (system.GetLastStatus() == Gdiplus::Ok) {
+                m_smallIcons = std::make_unique<Gdiplus::Font>(&system, 16.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+                m_largeIcons = std::make_unique<Gdiplus::Font>(&system, 16.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+                m_frameIcons = std::make_unique<Gdiplus::Font>(&system, 10.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+            }
+        }
     }
     ~CFluentOverlayProbe() {
         if (m_tip.GetSafeHwnd()) m_tip.DestroyWindow();
         if (GetSafeHwnd()) DestroyWindow();
+        m_smallIcons.reset(); m_largeIcons.reset(); m_frameIcons.reset();
         if (m_gdiplus) Gdiplus::GdiplusShutdown(m_gdiplus);
     }
     void Activity(const MSG& message) {
@@ -422,6 +476,7 @@ public:
         // Remove tooltip text references before replacing the snapshot.
         if (m_dirty && m_tip.GetSafeHwnd()) {
             for (size_t i = 0; i < m_buttonRects.size(); ++i) m_tip.DelTool(this, static_cast<UINT_PTR>(i + 1));
+            m_tip.DelTool(this, PositionTool); m_tip.DelTool(this, DurationTool);
         }
         if (buttons != m_buttons) m_buttons = std::move(buttons);
         m_images = images; m_toolbarVisible = toolbar;
@@ -429,14 +484,18 @@ public:
         if (m_volume != volumeValue || m_volumeMaximum != volumeMaximum) m_dirty = true;
         m_volume = volumeValue; m_volumeMaximum = volumeMaximum; m_alignment = alignment;
     }
-    void SetTimeParts(const CString& position, const CString& duration) {
+    void SetTimeParts(const CString& position, const CString& duration, bool remaining) {
+        if (remaining != m_remainingTime) m_dirty = true;
+        m_remainingTime = remaining;
         if (m_positionText.GetLength() != position.GetLength() || m_durationText.GetLength() != duration.GetLength()) m_dirty = true;
         m_positionText = position; m_durationText = duration;
     }
-    void SetControlState(bool fullscreen, bool, bool canSeek, bool controlsVisible,
+    void SetControlState(bool fullscreen, bool feedbackEnabled, bool canSeek, bool controlsVisible,
                          LONGLONG start, LONGLONG stop, LONGLONG position, const CString& time) {
         if (m_fullscreen != fullscreen) { m_fullscreen = fullscreen; WakeControls(); }
-        const bool changed = m_dirty || m_canSeek != canSeek || m_controlsVisible != controlsVisible
+        const bool feedbackCleared = !feedbackEnabled && !m_feedback.IsEmpty();
+        if (feedbackCleared) { m_feedback.Empty(); m_feedbackUntil = 0; }
+        const bool changed = feedbackCleared || m_dirty || m_canSeek != canSeek || m_controlsVisible != controlsVisible
             || m_start != start || m_stop != stop || m_position != position || m_time != time;
         m_canSeek = canSeek; m_controlsVisible = controlsVisible;
         m_start = start; m_stop = stop; m_position = position; m_time = time;
@@ -479,7 +538,7 @@ public:
             return true;
         }
         const bool move = message.message == WM_MOUSEMOVE;
-        if ((leftDown && m_controlsVisible && m_seekVisible && m_timeline.PtInRect(point)) || m_seeking) {
+        if ((leftDown && m_controlsVisible && HitSeek(point)) || m_seeking) {
             if (leftDown || message.message == WM_LBUTTONUP || move) {
                 if (leftDown && !m_canSeek) {
                     m_blockedPress = true; ::SetCapture(m_view->GetSafeHwnd());
@@ -541,6 +600,7 @@ public:
     }
     void CancelPress() { WakeControls(); m_closePressed = m_timePressed = m_blockedPress = false; m_pressedButton = -1; }
     void Hide() {
+        m_seekHover = m_seekTarget = m_volumeHover = m_volumeTarget = 0;
         if (m_tip.GetSafeHwnd()) m_tip.Pop();
         if (GetSafeHwnd()) { KillTimer(DeadlineTimer); ShowWindow(SW_HIDE); }
     }
@@ -565,8 +625,11 @@ public:
         const CSize oldSize = m_size; m_size = rc.Size(); EnsureGeometry();
         const bool hot = CloseRect().PtInRect(cursor) != FALSE;
         const int hotButton = HitButton(cursor);
-        const bool repaint = feedbackExpired || panelChanged || !IsWindowVisible() || oldSize != m_size || hot != m_closeHot || hotButton != m_hotButton || title != m_title;
-        m_closeHot = hot; m_hotButton = hotButton; m_title = title;
+        const int hotTime = m_timeRect.PtInRect(cursor) ? 0 : m_durationRect.PtInRect(cursor) ? 1 : -1;
+        SliderTargets(m_panelsVisible && m_canSeek && (m_seeking || HitThumb(m_timeline, m_stop > m_start ? static_cast<double>(m_position - m_start) / (m_stop - m_start) : 0, cursor)) ? 1.0f : 0.0f,
+            m_panelsVisible && m_volumeVisible && (m_volumeDragging || HitThumb(m_volumeRect, static_cast<double>(m_volume) / std::max(1, m_volumeMaximum), cursor)) ? 1.0f : 0.0f);
+        const bool repaint = feedbackExpired || panelChanged || !IsWindowVisible() || oldSize != m_size || hot != m_closeHot || hotButton != m_hotButton || hotTime != m_hotTime || title != m_title;
+        m_closeHot = hot; m_hotButton = hotButton; m_hotTime = hotTime; m_title = title;
         if (!IsWindowVisible() || oldSize != m_size || ::GetWindow(m_hWnd, GW_HWNDPREV))
             SetWindowPos(&wndTop, 0, 0, rc.Width(), rc.Height(), SWP_NOACTIVATE);
         if (repaint) DrawSurface();
