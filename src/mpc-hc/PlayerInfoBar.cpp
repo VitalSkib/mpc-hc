@@ -294,6 +294,8 @@ BOOL CPlayerInfoBar::OnEraseBkgnd(CDC* pDC)
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
     if ((GetExStyle() & WS_EX_LAYERED) && NativeTextBarPresentation::Prepare(*this)) {
         pDC->FillSolidRect(&r, CMPCTheme::InfoBarBGColor);
+        CRect separator(r.left, r.top, r.right, r.top + 1);
+        pDC->FillSolidRect(&separator, CMPCTheme::InfoBarBorderColor);
     } else
 #endif
     if (AppIsThemeLoaded()) {
