@@ -1324,6 +1324,13 @@ void CPlayerSeekBar::OnLButtonDown(UINT nFlags, CPoint point)
         m_bDraggingThumb = true;
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
         m_thumbAnimation.State(*this, m_bHoverThumb, true);
+        // Honour the native option at capture, and reuse its existing resume
+        // bookkeeping. A file already paused must remain paused on release.
+        if (pauseAfterFirstScroll) {
+            pauseAfterFirstScroll = false;
+            pausedForScrolling = true;
+            m_pMainFrame->MediaControlPause();
+        }
 #endif
         MoveThumb(point);
         CheckScrollDistance(point, 0ULL, 0LL);
