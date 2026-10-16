@@ -43,7 +43,7 @@ class CNativeControlsDecoration final : public CWnd
                 format.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap);
                 format.SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
                 const Gdiplus::RectF title(float(Scale(16)), 0,
-                    float(std::max(0, m_close.left - Scale(24))), float(height));
+                    float(std::max<LONG>(0, m_close.left - Scale(24))), float(height));
                 graphics.DrawString(m_title, -1, &font, title, &format, &text);
                 // Flat close glyph, without an individual background or bevel.
                 Gdiplus::Pen pen(Gdiplus::Color(m_hot ? 255 : 210, 255, 255, 255),
