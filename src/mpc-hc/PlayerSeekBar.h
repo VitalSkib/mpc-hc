@@ -145,6 +145,13 @@ private:
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
     ULONG_PTR m_seekbarGraphicsToken = 0;
     bool m_alphaPresentationFailed = false;
+    bool m_alphaRefreshPosted = false;
+    bool m_alphaRefreshing = false;
+    CRect m_alphaWindowRect = CRect(0, 0, 0, 0);
+    void QueueAlphaRefresh();
+    afx_msg LRESULT OnAlphaRefresh(WPARAM, LPARAM);
+    afx_msg void OnWindowPosChanging(WINDOWPOS* position);
+    afx_msg void OnWindowPosChanged(WINDOWPOS* position);
     bool PaintNativeAlpha();
 #endif
     afx_msg void OnPaint();
