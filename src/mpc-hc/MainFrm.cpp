@@ -1717,7 +1717,16 @@ BOOL CMainFrame::PreTranslateMessage(MSG* pMsg)
 
 void CMainFrame::RecalcLayout(BOOL bNotify)
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    // CFrameWnd positions the pane through DeferWindowPos. Extend that very
+    // placement, before WM_SIZE updates the renderer, rather than resize twice.
+    const bool previousNativeLayout = m_nativeVideoLayout;
+    m_nativeVideoLayout = true;
+#endif
     __super::RecalcLayout(bNotify);
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    m_nativeVideoLayout = previousNativeLayout;
+#endif
 
     CRect r;
     GetWindowRect(&r);
@@ -2020,7 +2029,11 @@ void CMainFrame::OnSizingFixWndToVideo(UINT nSide, LPRECT lpRect, bool bCtrl)
         controlsSize.cx -= uLeft + uRight;
         controlsSize.cy -= uTop + uBottom;
     } else if (bToolbarsOnVideo) {
-        controlsSize.cy -= m_controls.GetVisibleToolbarsHeight();
+        unsigned uncoveredHeight = m_controls.GetVisibleToolbarsHeight();
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+        uncoveredHeight -= std::min(uncoveredHeight, m_nativeToolbarOverlapHeight);
+#endif
+        controlsSize.cy -= uncoveredHeight;
     }
 
     CSize newWindowSize(lpRect->right - lpRect->left, lpRect->bottom - lpRect->top);
@@ -13719,7 +13732,12 @@ void CMainFrame::MoveVideoWindow(bool fShowStats/* = false*/, bool bSetStoppedVi
             }
             windowRect.InflateRect(uLeft, uTop, uRight, uBottom);
         } else if (bToolbarsOnVideo) {
-            windowRect.bottom += m_controls.GetVisibleToolbarsHeight();
+            unsigned uncoveredHeight = m_controls.GetVisibleToolbarsHeight();
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+            // Native layout already includes the area beneath the toolbars.
+            uncoveredHeight -= std::min(uncoveredHeight, m_nativeToolbarOverlapHeight);
+#endif
+            windowRect.bottom += uncoveredHeight;
         }
 
         int nCompensateForMenubar = m_bShowingFloatingMenubar && !IsD3DFullScreenMode() ? GetSystemMetrics(SM_CYMENU) : 0;

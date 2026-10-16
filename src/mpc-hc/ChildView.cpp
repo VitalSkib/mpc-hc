@@ -266,9 +266,19 @@ void CChildView::OnPaint()
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
 void CChildView::OnWindowPosChanging(WINDOWPOS* position)
 {
-    // The video view under the translucent sibling must not retain a copy
-    // of the old-sized frame. Its existing OnSize/OnPaint paths still own
-    // renderer updates; this handler only adjusts the Win32 resize flag.
+    if (m_pMainFrame->m_nativeVideoLayout && !(position->flags & SWP_NOSIZE)) {
+        unsigned overlap = 0;
+        if (!m_pMainFrame->HasDedicatedFSVideoWindow()
+                && m_pMainFrame->m_controls.ToolbarsCoverVideo()
+                && !m_pMainFrame->m_controls.PanelsCoverVideo()) {
+            overlap = m_pMainFrame->m_controls.GetVisibleToolbarsHeight();
+        }
+        // Expand the actual renderer HWND, not just its presentation rectangle.
+        // The native sibling bars keep their layout, commands and input.
+        position->cy += overlap;
+        m_pMainFrame->m_nativeToolbarOverlapHeight = overlap;
+    }
+    // Do not preserve pixels from the old-sized video surface.
     CRect before;
     GetWindowRect(before);
     if (CWnd* parent = GetParent()) parent->ScreenToClient(before);

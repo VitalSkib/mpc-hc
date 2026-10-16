@@ -1,4 +1,4 @@
-name: Native seekbar alpha probe
+name: Native video geometry fix
 
 on:
   pull_request:
@@ -62,7 +62,7 @@ jobs:
       - name: Upload standalone test build
         uses: actions/upload-artifact@v4
         with:
-          name: MPC-HC-x64-geometry-diagnostics-${{ github.sha }}
+          name: MPC-HC-x64-native-video-layout-${{ github.sha }}
           path: |
             bin/mpc-hc_x64 Lite/mpc-hc64.exe
             bin/mpc-hc_x64 Lite/mpc-hc64.ini
