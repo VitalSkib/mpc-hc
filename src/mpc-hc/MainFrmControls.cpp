@@ -25,19 +25,7 @@
 #include <mvrInterfaces.h>
 
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-static void PrepareNativeTextBar(CControlBar* bar)
-{
-    if (!bar->GetSafeHwnd() || (bar->GetExStyle() & WS_EX_LAYERED)) return;
-    // Video now occupies the area beneath all auto-hidden bars. Ordinary GDI
-    // labels can be overwritten by its presentation. Redirect the real bar,
-    // including its child labels, through composition at full opacity. Do not
-    // change its painting, input, layout, visibility policy or background key.
-    bar->ModifyStyleEx(0, WS_EX_LAYERED);
-    if (!::SetLayeredWindowAttributes(bar->GetSafeHwnd(), 0, 255, LWA_ALPHA)) {
-        bar->ModifyStyleEx(WS_EX_LAYERED, 0);
-        TRACE(L"Native text bar composition failed; retained original drawing.\n");
-    }
-}
+#include "NativeTextBarPresentation.h"
 #endif
 
 #define DELAY_SHOW_NOT_LOADED_TIME_MS 3000
@@ -106,7 +94,7 @@ bool CMainFrameControls::ShowToolbars(UINT nCS)
 #endif
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
                     if (pair.first == Toolbar::INFO || pair.first == Toolbar::STATS || pair.first == Toolbar::STATUS) {
-                        PrepareNativeTextBar(pCB);
+                        NativeTextBarPresentation::Prepare(*pCB);
                     }
 #endif
                     m_pMainFrame->ShowControlBar(pCB, TRUE, TRUE);

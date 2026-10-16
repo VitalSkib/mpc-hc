@@ -170,9 +170,10 @@ void CChildView::UpdateNativeDecoration()
     struct ResetFlag { bool& flag; ~ResetFlag() { flag = false; } } reset{m_refreshingNativeDecoration};
     CRect view; GetClientRect(view);
     const unsigned height = m_pMainFrame->m_controls.GetVisibleToolbarsHeight();
+    const bool videoLoaded = m_pMainFrame->GetLoadState() == MLS::LOADED && !m_pMainFrame->m_fAudioOnly;
     const bool visible = !m_bSwitchingFullscreen && IsWindowVisible()
-        && !m_pMainFrame->IsIconic() && m_pMainFrame->GetLoadState() == MLS::LOADED
-        && !m_pMainFrame->m_fAudioOnly && !m_pMainFrame->HasDedicatedFSVideoWindow()
+        && !m_pMainFrame->IsIconic() && !m_pMainFrame->HasDedicatedFSVideoWindow()
+        && (videoLoaded || m_pMainFrame->IsStatusBarForcedForMessage())
         && m_pMainFrame->m_controls.ToolbarsCoverVideo() && height > 0;
     if (!visible || view.IsRectEmpty()) {
         m_nativeHeader.Hide(); m_nativeBackdrop.Hide(); return;
@@ -190,7 +191,8 @@ void CChildView::UpdateNativeDecoration()
     CRect bottom(view); bottom.top = std::max(view.top, view.bottom - int(height));
     m_nativeBackdrop.Refresh(this, bottom, false, CString(), dpi);
     CRect top(view); top.bottom = std::min(bottom.top, view.top + m_pMainFrame->m_dpi.ScaleY(40));
-    m_nativeHeader.Refresh(this, top, true, title, dpi);
+    if (videoLoaded) m_nativeHeader.Refresh(this, top, true, title, dpi);
+    else m_nativeHeader.Hide();
 }
 #endif
 

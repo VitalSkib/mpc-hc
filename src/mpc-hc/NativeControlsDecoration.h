@@ -36,7 +36,7 @@ class CNativeControlsDecoration final : public CWnd
             Gdiplus::Bitmap surface(width, height, width * 4, PixelFormat32bppPARGB,
                 static_cast<BYTE*>(pixels));
             Gdiplus::Graphics graphics(&surface);
-            graphics.Clear(Gdiplus::Color(64, 0, 0, 0));
+            graphics.Clear(Gdiplus::Color(128, 0, 0, 0));
             if (m_header) {
                 graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
                 graphics.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAliasGridFit);

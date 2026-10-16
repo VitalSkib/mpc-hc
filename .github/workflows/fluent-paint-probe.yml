@@ -47,7 +47,7 @@ jobs:
             'HideWindowedControls=1', 'UseTimeTooltip=1', 'UseSeekPreview=1') |
             Set-Content -LiteralPath "$testDir/mpc-hc64.ini" -Encoding unicode
           @('Native seekbar alpha test. Extract separately and run mpc-hc64.exe.',
-            'Native controls with 25% black backdrop and matching title/close header.',
+            'Native controls with 50% black backdrop and matching title/close header.',
             'Header and backdrop follow native control visibility; no independent hover timer.',
             'Thin blue/grey native seekbar with zero-alpha background above the backdrop.',
             'Moving video must show through ABOVE and BELOW the thin track.',

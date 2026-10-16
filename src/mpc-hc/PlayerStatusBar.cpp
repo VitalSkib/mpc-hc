@@ -25,6 +25,9 @@
 #include "MainFrm.h"
 #include "DSUtil.h"
 #include "CMPCTheme.h"
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+#include "NativeTextBarPresentation.h"
+#endif
 #include "DpiHelper.h"
 #include "ImageGrayer.h"
 #include "SVGImage.h"
@@ -551,6 +554,11 @@ void CPlayerStatusBar::OnPaint()
         r.InflateRect(1, 0, 1, 0);
     }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    if ((GetExStyle() & WS_EX_LAYERED) && NativeTextBarPresentation::Prepare(*this)) {
+        dc.FillSolidRect(&r, CMPCTheme::InfoBarBGColor);
+    } else
+#endif
     if (AppIsThemeLoaded()) {
         dc.FillSolidRect(&r, CMPCTheme::InfoBarBorderColor);
         CRect top(r.left, r.top, r.right, r.top + 1);
