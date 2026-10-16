@@ -867,7 +867,14 @@ void CPlayerSeekBar::OnPaint()
 void CPlayerSeekBar::OnWindowPosChanging(WINDOWPOS* position)
 {
     // Do not preserve pixels composed against the old video geometry.
-    position->flags |= SWP_NOCOPYBITS;
+    CRect before;
+    GetWindowRect(before);
+    if (CWnd* parent = GetParent()) parent->ScreenToClient(before);
+    const bool resized = !(position->flags & SWP_NOSIZE)
+        && (position->cx != before.Width() || position->cy != before.Height());
+    const bool moved = !(position->flags & SWP_NOMOVE)
+        && (position->x != before.left || position->y != before.top);
+    if (resized || moved) position->flags |= SWP_NOCOPYBITS;
     __super::OnWindowPosChanging(position);
 }
 

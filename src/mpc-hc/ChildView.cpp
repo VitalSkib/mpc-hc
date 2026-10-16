@@ -251,7 +251,14 @@ void CChildView::OnWindowPosChanging(WINDOWPOS* position)
     // The video view under the translucent sibling must not retain a copy
     // of the old-sized frame. Its existing OnSize/OnPaint paths still own
     // renderer updates; this handler only adjusts the Win32 resize flag.
-    position->flags |= SWP_NOCOPYBITS;
+    CRect before;
+    GetWindowRect(before);
+    if (CWnd* parent = GetParent()) parent->ScreenToClient(before);
+    const bool resized = !(position->flags & SWP_NOSIZE)
+        && (position->cx != before.Width() || position->cy != before.Height());
+    const bool moved = !(position->flags & SWP_NOMOVE)
+        && (position->x != before.left || position->y != before.top);
+    if (resized || moved) position->flags |= SWP_NOCOPYBITS;
     __super::OnWindowPosChanging(position);
 }
 #endif
