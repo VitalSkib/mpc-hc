@@ -90,6 +90,10 @@ private:
     void EnsureTimeFont() const;
     CString BuildTimeTemplate() const;  // widest time string for the currently enabled time options
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    bool m_rightRemaining = false;
+    CString m_rightTimeText;
+    int m_leftTimeWidth = 0, m_rightTimeWidth = 0;
+    CString PresentedTimeText() const;
     bool SplitTimeSections() const;
     CRect GetSplitTimeRect(bool duration) const;
     CRect GetTimeHitRect(bool duration = false) const;

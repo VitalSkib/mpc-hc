@@ -63,6 +63,7 @@ CPlayerSeekBar::CPlayerSeekBar(CMainFrame* pMainFrame)
     m_ti.cbSize = sizeof(m_ti);
 
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    m_rightRemaining = !!AfxGetApp()->GetProfileInt(L"Settings", L"SeekbarRightRemaining", 0);
     Gdiplus::GdiplusStartupInput startup;
     Gdiplus::GdiplusStartup(&m_seekbarGraphicsToken, &startup, nullptr);
 #endif
@@ -334,6 +335,12 @@ CRect CPlayerSeekBar::GetBaseRect() const
 }
 
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+CString CPlayerSeekBar::PresentedTimeText() const
+{
+    const int separator = m_timeText.Find(_T(" / "));
+    return separator < 0 ? m_timeText : m_timeText.Left(separator + 3) + m_rightTimeText;
+}
+
 bool CPlayerSeekBar::SplitTimeSections() const
 {
     // Presentation only: both values are supplied by the native status timer.
@@ -341,7 +348,7 @@ bool CPlayerSeekBar::SplitTimeSections() const
         && m_timeText.Find(_T(" / ")) >= 0
         && m_pMainFrame->m_controls.ToolbarsCoverVideo()
         && !m_pMainFrame->HasDedicatedFSVideoWindow()
-        && GetBaseRect().Width() > std::max(m_timeReservedWidth, m_timeActualWidth)
+        && GetBaseRect().Width() > m_leftTimeWidth + m_rightTimeWidth
             + m_pMainFrame->m_dpi.ScaleX(96);
 }
 
@@ -349,7 +356,7 @@ CRect CPlayerSeekBar::GetSplitTimeRect(bool duration) const
 {
     EnsureTimeFont();
     CRect r(GetBaseRect());
-    const int width = (std::max(m_timeReservedWidth, m_timeActualWidth) + 1) / 2;
+    const int width = duration ? m_rightTimeWidth : m_leftTimeWidth;
     if (duration) r.left = r.right - width;
     else r.right = r.left + width;
     return r;
@@ -363,10 +370,16 @@ CRect CPlayerSeekBar::GetTimeHitRect(bool duration) const
     if (SplitTimeSections()) {
         if (duration) hit.left = seek.right;
         else hit.right = seek.left;
-    } else if (TimeSectionOnLeft()) {
-        hit.right = seek.left;
     } else {
-        hit.left = seek.right;
+        if (TimeSectionOnLeft()) hit.right = seek.left;
+        else hit.left = seek.right;
+        if (m_timeText.Find(_T(" / ")) >= 0) {
+            // Compact representation keeps independent clicks on its two parts.
+            const int sum = std::max(1, m_leftTimeWidth + m_rightTimeWidth);
+            const int boundary = hit.left + MulDiv(hit.Width(), m_leftTimeWidth, sum);
+            if (duration) hit.left = boundary;
+            else hit.right = boundary;
+        }
     }
     return hit;
 }
@@ -515,7 +528,11 @@ CString CPlayerSeekBar::BuildTimeTemplate() const
         return time;
     }
 
-    CString t = s.fRemainingTime ? (_T("- ") + time + _T(" / ") + time) : (time + _T(" / ") + time);
+    CString duration = time;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    if (m_rightRemaining) duration = _T("- ") + duration;
+#endif
+    CString t = s.fRemainingTime ? (_T("- ") + time + _T(" / ") + duration) : (time + _T(" / ") + duration);
     if (s.bTimerShowPercentage) {
         t += _T(" (100.0%)");
     }
@@ -561,6 +578,12 @@ void CPlayerSeekBar::UpdateTime()
     // running position / "Live" for durationless media (live streams, capture). The section is shown
     // whenever that text is non-empty (TimeSectionVisible), so no space is reserved when idle.
     const int oldEffWidth = TimeSectionEffectiveWidth();
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    const int oldLeft = m_leftTimeWidth, oldRight = m_rightTimeWidth;
+    const CString oldRightText = m_rightTimeText;
+    m_leftTimeWidth = m_rightTimeWidth = 0;
+    m_rightTimeText.Empty();
+#endif
 
     CString newText;
     if (ShowTimeOnSeekBar()) {
@@ -576,13 +599,26 @@ void CPlayerSeekBar::UpdateTime()
         // clips. The model stays the stable floor, so the common case doesn't jitter.
         CClientDC dc(this);
         CFont* pOldFont = dc.SelectObject(&m_timeFont);
-        newActualWidth = dc.GetTextExtent(newText).cx + m_pMainFrame->m_dpi.ScaleX(TIME_SECTION_PADDING);
+        const int padding = m_pMainFrame->m_dpi.ScaleX(TIME_SECTION_PADDING);
+        newActualWidth = dc.GetTextExtent(newText).cx + padding;
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
         const int separator = newText.Find(_T(" / "));
         if (separator >= 0) {
-            const int left = dc.GetTextExtent(newText.Left(separator)).cx;
-            const int right = dc.GetTextExtent(newText.Mid(separator + 3)).cx;
-            newActualWidth = 2 * (std::max(left, right) + m_pMainFrame->m_dpi.ScaleX(TIME_SECTION_PADDING));
+            m_rightTimeText = newText.Mid(separator + 3);
+            const CString remaining = m_pMainFrame->m_wndStatusBar.GetRemainingTimer();
+            if (m_rightRemaining && !remaining.IsEmpty()) {
+                // Retain the native percentage suffix and all precision options.
+                const int suffix = m_rightTimeText.Find(_T(" ("));
+                m_rightTimeText = remaining + (suffix >= 0 ? m_rightTimeText.Mid(suffix) : CString());
+            }
+            const CString model = BuildTimeTemplate();
+            const int split = model.Find(_T(" / "));
+            const CString left = newText.Left(separator);
+            m_leftTimeWidth = std::max(dc.GetTextExtent(left).cx,
+                dc.GetTextExtent(split >= 0 ? model.Left(split) : left).cx) + padding;
+            m_rightTimeWidth = std::max(dc.GetTextExtent(m_rightTimeText).cx,
+                dc.GetTextExtent(split >= 0 ? model.Mid(split + 3) : m_rightTimeText).cx) + padding;
+            newActualWidth = dc.GetTextExtent(left + _T(" / ") + m_rightTimeText).cx + padding;
         }
 #endif
         dc.SelectObject(pOldFont);
@@ -592,9 +628,19 @@ void CPlayerSeekBar::UpdateTime()
     m_timeActualWidth = newActualWidth;
 
     const int newEffWidth = TimeSectionEffectiveWidth();
-    if (newEffWidth != oldEffWidth) {
+    const bool geometryChanged = newEffWidth != oldEffWidth
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+        || oldLeft != m_leftTimeWidth || oldRight != m_rightTimeWidth
+#endif
+        ;
+    const bool displayChanged = textChanged
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+        || oldRightText != m_rightTimeText
+#endif
+        ;
+    if (geometryChanged) {
         Invalidate(); // channel geometry changed (section appeared/disappeared or resized)
-    } else if (textChanged) {
+    } else if (displayChanged) {
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
         if (SplitTimeSections()) {
             InvalidateRect(GetSplitTimeRect(false));
@@ -1014,7 +1060,7 @@ bool CPlayerSeekBar::PaintNativeAlpha()
                 graphics.FillRectangle(&hitSurface, hit.left, hit.top, hit.Width(), hit.Height());
             };
             retainTimeInput(GetTimeHitRect(false));
-            if (SplitTimeSections()) retainTimeInput(GetTimeHitRect(true));
+            if (m_timeText.Find(_T(" / ")) >= 0) retainTimeInput(GetTimeHitRect(true));
         }
         graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
         const CRect channel = GetChannelRect();
@@ -1090,9 +1136,9 @@ bool CPlayerSeekBar::PaintNativeAlpha()
             if (SplitTimeSections()) {
                 const int separator = m_timeText.Find(_T(" / "));
                 drawTime(m_timeText.Left(separator), GetSplitTimeRect(false), true);
-                drawTime(m_timeText.Mid(separator + 3), GetSplitTimeRect(true), false);
+                drawTime(m_rightTimeText, GetSplitTimeRect(true), false);
             } else {
-                drawTime(m_timeText, GetTimeRect(), TimeSectionOnLeft());
+                drawTime(PresentedTimeText(), GetTimeRect(), TimeSectionOnLeft());
             }
         }
         graphics.Flush(Gdiplus::FlushIntentionSync);
@@ -1298,7 +1344,7 @@ void CPlayerSeekBar::OnContextMenu(CWnd* pWnd, CPoint point)
         bool timeHit = GetTimeRect().PtInRect(clientPoint);
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
         timeHit = GetTimeHitRect(false).PtInRect(clientPoint)
-            || (SplitTimeSections() && GetTimeHitRect(true).PtInRect(clientPoint));
+            || (m_timeText.Find(_T(" / ")) >= 0 && GetTimeHitRect(true).PtInRect(clientPoint));
 #endif
         if (timeHit) {
             m_pMainFrame->m_wndStatusBar.ShowTimerOptionsMenu(this, point);
@@ -1311,10 +1357,17 @@ void CPlayerSeekBar::OnContextMenu(CWnd* pWnd, CPoint point)
 void CPlayerSeekBar::OnLButtonDown(UINT nFlags, CPoint point)
 {
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-    if (TimeSectionVisible() && m_bHasDuration && (GetTimeHitRect(false).PtInRect(point)
-            || (SplitTimeSections() && GetTimeHitRect(true).PtInRect(point)))) {
-        m_pMainFrame->m_wndStatusBar.ToggleTimerDisplay();
-        return;
+    if (TimeSectionVisible() && m_bHasDuration) {
+        if (m_timeText.Find(_T(" / ")) >= 0 && GetTimeHitRect(true).PtInRect(point)) {
+            m_rightRemaining = !m_rightRemaining;
+            AfxGetApp()->WriteProfileInt(L"Settings", L"SeekbarRightRemaining", m_rightRemaining);
+            UpdateTime();
+            return;
+        }
+        if (GetTimeHitRect(false).PtInRect(point)) {
+            m_pMainFrame->m_wndStatusBar.ToggleTimerDisplay();
+            return;
+        }
     }
 #endif
     if (m_bEnabled && m_bHasDuration && GetSeekableRect().PtInRect(point)) {

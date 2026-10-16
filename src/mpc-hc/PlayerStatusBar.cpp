@@ -395,6 +395,9 @@ void CPlayerStatusBar::GetOverlayTimeParts(CString& position, CString& duration)
 
 void CPlayerStatusBar::SetStatusTimer(CString str)
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    m_remainingTimer.Empty();
+#endif
     str.Trim();
     if (GetStatusTimer() != str) {
         m_time.SetRedraw(FALSE);
@@ -407,7 +410,7 @@ void CPlayerStatusBar::SetStatusTimer(CString str)
 void CPlayerStatusBar::SetStatusTimer(REFERENCE_TIME rtNow, REFERENCE_TIME rtDur, bool fHighPrecision, const GUID& timeFormat/* = TIME_FORMAT_MEDIA_TIME*/)
 {
     CString str;
-    CString posstr;
+    CString posstr, remstr;
     const CAppSettings& s = AfxGetAppSettings();
 
     m_rtNow = rtNow;
@@ -415,7 +418,7 @@ void CPlayerStatusBar::SetStatusTimer(REFERENCE_TIME rtNow, REFERENCE_TIME rtDur
 
     if (rtDur > 0) {
         REFERENCE_TIME rtRem = rtDur - rtNow;
-        CString durstr, remstr;
+        CString durstr;
 
         if (timeFormat == TIME_FORMAT_MEDIA_TIME) {
             DVD_HMSF_TIMECODE tcNow, tcDur, tcRem;
@@ -483,6 +486,10 @@ void CPlayerStatusBar::SetStatusTimer(REFERENCE_TIME rtNow, REFERENCE_TIME rtDur
     }
 
     SetStatusTimer(str);
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    // Export the native formatter's result; both seekbar sides share this value.
+    if (rtDur > 0 && !remstr.IsEmpty()) m_remainingTimer = _T("- ") + remstr;
+#endif
 }
 
 void CPlayerStatusBar::ShowTimer(bool fShow)
