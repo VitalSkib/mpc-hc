@@ -335,6 +335,14 @@ CRect CPlayerSeekBar::GetBaseRect() const
 }
 
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+void CPlayerSeekBar::SetRightRemaining(bool remaining)
+{
+    if (m_rightRemaining != remaining) {
+        m_rightRemaining = remaining;
+        AfxGetApp()->WriteProfileInt(L"Settings", L"SeekbarRightRemaining", remaining);
+    }
+}
+
 bool CPlayerSeekBar::UpdateTimeFieldTooltip(CPoint point)
 {
     int side = -1;
@@ -609,6 +617,11 @@ void CPlayerSeekBar::EnsureTimeFont() const
 
 void CPlayerSeekBar::UpdateTime()
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    // The native left-side option also changes from the timer context menu.
+    // Resolve saved/externally selected conflicts before constructing any text.
+    if (AfxGetAppSettings().fRemainingTime) SetRightRemaining(false);
+#endif
     // Mirror the status-bar timer text: "position / duration" for media with a duration, or a single
     // running position / "Live" for durationless media (live streams, capture). The section is shown
     // whenever that text is non-empty (TimeSectionVisible), so no space is reserved when idle.
@@ -1397,13 +1410,18 @@ void CPlayerSeekBar::OnLButtonDown(UINT nFlags, CPoint point)
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
     if (TimeSectionVisible() && m_bHasDuration) {
         if (m_timeText.Find(_T(" / ")) >= 0 && GetTimeHitRect(true).PtInRect(point)) {
-            m_rightRemaining = !m_rightRemaining;
-            AfxGetApp()->WriteProfileInt(L"Settings", L"SeekbarRightRemaining", m_rightRemaining);
-            UpdateTime();
+            SetRightRemaining(!m_rightRemaining);
+            if (m_rightRemaining && AfxGetAppSettings().fRemainingTime) {
+                // Move remaining time to the right through the native handler.
+                m_pMainFrame->m_wndStatusBar.ToggleTimerDisplay();
+            } else {
+                UpdateTime();
+            }
             UpdateTimeFieldTooltip(point);
             return;
         }
         if (GetTimeHitRect(false).PtInRect(point)) {
+            SetRightRemaining(false);
             m_pMainFrame->m_wndStatusBar.ToggleTimerDisplay();
             UpdateTimeFieldTooltip(point);
             return;
