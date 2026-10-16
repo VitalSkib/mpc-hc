@@ -51,6 +51,7 @@ class CFluentOverlayProbe final : public CWnd
             // Straight video remains visible behind this per-pixel-alpha panel.
             Gdiplus::SolidBrush backdrop(Gdiplus::Color(64, 0, 0, 0));
             graphics.FillRectangle(&backdrop, 0, height - 64, width, 64);
+            graphics.FillRectangle(&backdrop, 0, 0, width, 58);
             Gdiplus::Font font(L"Segoe UI", 15.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
             Gdiplus::SolidBrush text(Gdiplus::Color(255, 235, 235, 235));
             Gdiplus::StringFormat format;
@@ -61,7 +62,6 @@ class CFluentOverlayProbe final : public CWnd
             graphics.DrawString(L"Native alpha overlay - 25% black", -1, &font,
                 Gdiplus::RectF(18, static_cast<float>(height - 43), static_cast<float>(width - 36), 28), &format, &text);
             const CRect close = CloseRect();
-            if (m_hot) graphics.FillRectangle(&backdrop, close.left, close.top, close.Width(), close.Height());
             Gdiplus::Pen cross(Gdiplus::Color(255, m_hot ? 255 : 235, m_hot ? 255 : 235, m_hot ? 255 : 235), 1.5f);
             const int x = close.left + 11, y = close.top + 11;
             graphics.DrawLine(&cross, x, y, x + 12, y + 12);
