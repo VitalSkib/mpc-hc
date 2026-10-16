@@ -195,6 +195,17 @@ private:
             for (size_t i = 0; i < pixels.size(); ++i) pixels[i] = (mask[i] & 0x00ffffff) ? 0 : (pixels[i] | 0xff000000);
         }
         ::DeleteDC(dc);
+        // Toggle buttons use a translucent "off" resource even when enabled.
+        // Normalize its peak alpha; command state, not resource opacity, sets dimming.
+        DWORD peak = 0;
+        for (DWORD pixel : pixels) peak = std::max(peak, pixel >> 24);
+        if (peak && peak < 255) {
+            for (DWORD& pixel : pixels) {
+                const auto scale = [peak](DWORD channel) { return std::min<DWORD>(255, channel * 255 / peak); };
+                pixel = (scale(pixel >> 24) << 24) | (scale((pixel >> 16) & 255) << 16)
+                    | (scale((pixel >> 8) & 255) << 8) | scale(pixel & 255);
+            }
+        }
         auto image = std::make_unique<Gdiplus::Bitmap>(width, height, PixelFormat32bppPARGB);
         Gdiplus::Rect rect(0, 0, width, height);
         Gdiplus::BitmapData target = {};
