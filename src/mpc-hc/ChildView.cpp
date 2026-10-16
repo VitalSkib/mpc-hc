@@ -78,6 +78,9 @@ void CChildView::TraceGeometry(const char* tag)
     GeometryDiagnostics::Record("ui.video-target", m_pMainFrame->m_pVideoWnd ? m_pMainFrame->m_pVideoWnd->GetSafeHwnd() : nullptr);
     GeometryDiagnostics::Record("ui.toolbar", m_pMainFrame->m_wndToolBar.GetSafeHwnd());
     GeometryDiagnostics::Record("ui.seekbar", m_pMainFrame->m_wndSeekBar.GetSafeHwnd());
+    GeometryDiagnostics::Record("ui.info", m_pMainFrame->m_wndInfoBar.GetSafeHwnd());
+    GeometryDiagnostics::Record("ui.stats", m_pMainFrame->m_wndStatsBar.GetSafeHwnd());
+    GeometryDiagnostics::Record("ui.status", m_pMainFrame->m_wndStatusBar.GetSafeHwnd());
 }
 #endif
 
