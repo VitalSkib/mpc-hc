@@ -23,6 +23,21 @@ there is no dedicated fullscreen video window. Other modes keep native opaque
 painting. Allocation/presentation failure falls back to opaque native painting
 for the rest of that player instance and emits a debugger TRACE.
 
+## EVR resize investigation
+
+The reported renderer is Enhanced Video Renderer (custom presenter). The
+previous synchronous resize-repair chain caused a runtime hang and was reverted.
+EVR Paint takes m_RenderLock; without a hang dump the precise deadlock/re-entry
+cause is unconfirmed.
+
+This probe only adds SWP_NOCOPYBITS to the native seekbar and video view and
+Invalidate(FALSE) to seekbar geometry/fullscreen/DPI notifications. Geometry
+comparison prevents same-rectangle presentation from requesting another paint.
+No renderer call, UpdateWindow, synchronous RedrawWindow, layered-style reset,
+visibility toggle, posted custom message or new timer is added. The original
+video-view OnSize/OnPaint paths are unchanged. Playback stability and stale
+backing after resize/fullscreen remain runtime acceptance items, not proven fixes.
+
 ## Runtime acceptance
 
 1. Use the standalone artifact; do not replace the installed player. Open a

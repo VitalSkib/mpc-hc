@@ -58,6 +58,9 @@ protected:
 
     afx_msg void OnPaint();
     afx_msg void OnSize(UINT nType, int cx, int cy);
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    afx_msg void OnWindowPosChanging(WINDOWPOS* position);
+#endif
     afx_msg LRESULT OnNcHitTest(CPoint point);
     afx_msg void OnNcLButtonDown(UINT nHitTest, CPoint point);
 public:

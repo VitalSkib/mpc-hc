@@ -65,6 +65,10 @@ CPlayerSeekBar::CPlayerSeekBar(CMainFrame* pMainFrame)
 #endif
     GetEventd().Connect(m_eventc, {
         MpcEvent::DPI_CHANGED,
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+        MpcEvent::SWITCHED_TO_FULLSCREEN,
+        MpcEvent::SWITCHED_FROM_FULLSCREEN,
+#endif
         MpcEvent::STREAM_POS_UPDATE_REQUEST,
     }, std::bind(&CPlayerSeekBar::EventCallback, this, std::placeholders::_1));
 }
@@ -117,6 +121,14 @@ void CPlayerSeekBar::EventCallback(MpcEvent ev)
             m_pDisabledThumb = nullptr;
             m_timeFont.DeleteObject(); // rebuilt on next use
             m_timeText.Empty();
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+            Invalidate(FALSE);
+            break;
+        case MpcEvent::SWITCHED_TO_FULLSCREEN:
+        case MpcEvent::SWITCHED_FROM_FULLSCREEN:
+            // WM_PAINT is deferred until native layout/event dispatch ends.
+            Invalidate(FALSE);
+#endif
             break;
 
         case MpcEvent::STREAM_POS_UPDATE_REQUEST:
@@ -809,6 +821,10 @@ bool CPlayerSeekBar::DraggingThumb()
 
 BEGIN_MESSAGE_MAP(CPlayerSeekBar, CDialogBar)
     ON_WM_PAINT()
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    ON_WM_WINDOWPOSCHANGING()
+    ON_WM_WINDOWPOSCHANGED()
+#endif
     ON_WM_LBUTTONDOWN()
     ON_WM_LBUTTONDBLCLK()
     ON_WM_LBUTTONUP()
@@ -848,6 +864,26 @@ void CPlayerSeekBar::OnPaint()
 }
 
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+void CPlayerSeekBar::OnWindowPosChanging(WINDOWPOS* position)
+{
+    // Do not preserve pixels composed against the old video geometry.
+    position->flags |= SWP_NOCOPYBITS;
+    __super::OnWindowPosChanging(position);
+}
+
+void CPlayerSeekBar::OnWindowPosChanged(WINDOWPOS* position)
+{
+    __super::OnWindowPosChanged(position);
+    CRect bounds;
+    GetWindowRect(bounds);
+    if (bounds != m_alphaWindowRect) {
+        m_alphaWindowRect = bounds;
+        // Only schedule ordinary paint. No renderer calls, synchronous redraw,
+        // layered-style reset, visibility toggle or timer from layout handlers.
+        Invalidate(FALSE);
+    }
+}
+
 bool CPlayerSeekBar::PaintNativeAlpha()
 {
     CRect bounds;

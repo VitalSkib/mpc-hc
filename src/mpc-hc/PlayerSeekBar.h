@@ -146,6 +146,9 @@ private:
     ULONG_PTR m_seekbarGraphicsToken = 0;
     bool m_alphaPresentationFailed = false;
     bool PaintNativeAlpha();
+    CRect m_alphaWindowRect = CRect(0, 0, 0, 0);
+    afx_msg void OnWindowPosChanging(WINDOWPOS* position);
+    afx_msg void OnWindowPosChanged(WINDOWPOS* position);
 #endif
     afx_msg void OnPaint();
     afx_msg void OnLButtonDown(UINT nFlags, CPoint point);

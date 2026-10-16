@@ -232,6 +232,9 @@ BEGIN_MESSAGE_MAP(CChildView, CMouseWndWithArtView)
     ON_WM_PAINT()
     ON_WM_ERASEBKGND()
     ON_WM_SIZE()
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    ON_WM_WINDOWPOSCHANGING()
+#endif
     ON_WM_NCHITTEST()
     ON_WM_NCLBUTTONDOWN()
 END_MESSAGE_MAP()
@@ -241,6 +244,17 @@ void CChildView::OnPaint()
     CPaintDC dc(this);
     m_pMainFrame->RepaintVideo();
 }
+
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+void CChildView::OnWindowPosChanging(WINDOWPOS* position)
+{
+    // The video view under the translucent sibling must not retain a copy
+    // of the old-sized frame. Its existing OnSize/OnPaint paths still own
+    // renderer updates; this handler only adjusts the Win32 resize flag.
+    position->flags |= SWP_NOCOPYBITS;
+    __super::OnWindowPosChanging(position);
+}
+#endif
 
 void CChildView::OnSize(UINT nType, int cx, int cy)
 {
