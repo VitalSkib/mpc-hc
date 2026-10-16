@@ -48,6 +48,10 @@ public:
         ::ClientToScreen(window, &origin);
         screen = client;
         ::OffsetRect(&screen, origin.x, origin.y);
+        // Lower index means nearer the top within this parent's child stack.
+        unsigned zIndex = 0;
+        for (HWND above = ::GetWindow(window, GW_HWNDPREV); above && zIndex < 256;
+                above = ::GetWindow(above, GW_HWNDPREV)) ++zIndex;
         const RECT zero = {};
         const RECT& src = source ? *source : zero;
         const RECT& dst = destination ? *destination : zero;
@@ -55,11 +59,13 @@ public:
             || dst.right > client.right || dst.bottom > client.bottom);
         char state[1024] = {};
         _snprintf_s(state, sizeof(state), _TRUNCATE,
-            "%s hwnd=%p parent=%p visible=%d style=%llx ex=%llx valid=%d "
+            "%s hwnd=%p parent=%p visible=%d zIndex=%u above=%p below=%p style=%llx ex=%llx valid=%d "
             "outerScreen=[%ld,%ld,%ld,%ld] client=[%ld,%ld,%ld,%ld] "
             "clientScreen=[%ld,%ld,%ld,%ld] hasSrc=%d src=[%ld,%ld,%ld,%ld] "
             "hasDst=%d dst=[%ld,%ld,%ld,%ld] destOutsideClient=%d hr=%08lx",
             tag, static_cast<void*>(window), static_cast<void*>(::GetParent(window)), int(::IsWindowVisible(window)),
+            zIndex, static_cast<void*>(::GetWindow(window, GW_HWNDPREV)),
+            static_cast<void*>(::GetWindow(window, GW_HWNDNEXT)),
             static_cast<unsigned long long>(::GetWindowLongPtrW(window, GWL_STYLE)),
             static_cast<unsigned long long>(::GetWindowLongPtrW(window, GWL_EXSTYLE)), int(valid),
             outer.left, outer.top, outer.right, outer.bottom, client.left, client.top, client.right, client.bottom,

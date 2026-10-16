@@ -280,6 +280,13 @@ void CChildView::OnWindowPosChanging(WINDOWPOS* position)
         // The native sibling bars keep their layout, commands and input.
         position->cy += overlap;
         m_pMainFrame->m_nativeToolbarOverlapHeight = overlap;
+        if (overlap) {
+            // The expanded view shares the toolbar rectangles. Keep the real
+            // sibling controls above it in this same native layout transaction.
+            // HWND_BOTTOM affects only siblings, never the main player window.
+            position->hwndInsertAfter = HWND_BOTTOM;
+            position->flags &= ~SWP_NOZORDER;
+        }
     }
     // Do not preserve pixels from the old-sized video surface.
     CRect before;
