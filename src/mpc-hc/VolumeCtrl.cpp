@@ -189,7 +189,7 @@ void CVolumeCtrl::getCustomChannelRect(LPRECT rc)
         CRect channelRect;
         GetClientRect(channelRect);
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-        channelRect.DeflateRect(AfxGetMainFrame()->m_dpi.ScaleX(8), 0);
+        channelRect.DeflateRect(AfxGetMainFrame()->m_dpi.ScaleX(12), 0);
         CopyRect(rc, channelRect);
 #else
         CopyRect(rc, CRect(channelRect.left, channelRect.top, channelRect.right - AfxGetMainFrame()->m_dpi.ScaleFloorX(2), channelRect.bottom));
@@ -629,7 +629,7 @@ CRect CVolumeCtrl::FluentThumbRect()
     CRect channel; getCustomChannelRect(channel);
     const int x = channel.left + MulDiv(std::max(0, channel.Width() - 1), DisplayedPosition(), 100);
     const int y = channel.CenterPoint().y;
-    const int radius = AfxGetMainFrame()->m_dpi.ScaleX(10);
+    const int radius = AfxGetMainFrame()->m_dpi.ScaleX(12);
     return CRect(x - radius, y - radius, x + radius + 1, y + radius + 1);
 }
 
@@ -702,8 +702,8 @@ void CVolumeCtrl::OnPaint() {
             played.SetStartCap(Gdiplus::LineCapRound); played.SetEndCap(Gdiplus::LineCapRound);
             graphics.DrawLine(&track, float(r.left), y, float(r.right - 1), y);
             if (DisplayedPosition() > 0) graphics.DrawLine(&played, float(r.left), y, x, y);
-            const float outer = float(std::min(dpiWindow.ScaleY(13), std::max(1, cr.Height() - 2)));
-            const float core = float(dpiWindow.ScaleY(1)) * m_thumbAnimation.Value();
+            const float outer = float(std::min(dpiWindow.ScaleY(int(NativeThumbAnimation::OuterDiameter)), std::max(1, cr.Height() - 2)));
+            const float core = outer * m_thumbAnimation.Value() / NativeThumbAnimation::OuterDiameter;
             Gdiplus::SolidBrush ring(Gdiplus::Color(255, 69, 69, 69));
             Gdiplus::SolidBrush dot(Gdiplus::Color(255, 76, 194, 255));
             graphics.FillEllipse(&ring, x - outer / 2, y - outer / 2, outer, outer);

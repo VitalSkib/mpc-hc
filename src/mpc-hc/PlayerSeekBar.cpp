@@ -38,7 +38,11 @@
 #define HOVER_CAPTURED_TIMEOUT 100
 #define ADD_TO_BOTTOM_WITHOUT_CONTROLBAR 2
 #define SEEK_DRAGGER_OVERLAP 5
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+#define TIME_SECTION_GAP 14         // room for the 22px thumb beside the timer
+#else
 #define TIME_SECTION_GAP 8          // gap (dialog px) between the channel and the time section
+#endif
 #define TIME_SECTION_PADDING 3      // right padding (dialog px) inside the time section
 
 IMPLEMENT_DYNAMIC(CPlayerSeekBar, CDialogBar)
@@ -322,7 +326,7 @@ CRect CPlayerSeekBar::GetBaseRect() const
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
         // One shared inset keeps the circular thumb inside the native HWND.
         // Native seek/hover/preview all consume this same channel geometry.
-        r.DeflateRect(m_pMainFrame->m_dpi.ScaleFloorX(8), m_pMainFrame->m_dpi.ScaleFloorX(2));
+        r.DeflateRect(m_pMainFrame->m_dpi.ScaleX(12), m_pMainFrame->m_dpi.ScaleFloorX(2));
 #else
         r.DeflateRect(m_pMainFrame->m_dpi.ScaleFloorX(2), m_pMainFrame->m_dpi.ScaleFloorX(2));
 #endif
@@ -462,15 +466,22 @@ CRect CPlayerSeekBar::GetSeekableRect() const
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
     if (SplitTimeSections()) {
         const CRect channel = GetChannelRect();
-        r.left = channel.left; r.right = channel.right;
+        const int radius = m_pMainFrame->m_dpi.ScaleX(12);
+        r.left = channel.left - radius; r.right = channel.right + radius;
         return r;
     }
 #endif
     if (TimeSectionVisible()) {
         if (TimeSectionOnLeft()) {
             r.left = GetChannelRect().left;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+            r.left -= m_pMainFrame->m_dpi.ScaleX(12);
+#endif
         } else {
             r.right = GetChannelRect().right;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+            r.right += m_pMainFrame->m_dpi.ScaleX(12);
+#endif
         }
     }
     return r;
@@ -710,6 +721,14 @@ CRect CPlayerSeekBar::GetThumbRect() const
 {
     const CRect channelRect(GetChannelRect());
     const long x = channelRect.left + ChannelPointFromPosition(m_rtPosDraw);
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    if (AppIsThemeLoaded()) {
+        CRect client; GetClientRect(client);
+        const int radius = m_pMainFrame->m_dpi.ScaleY(12);
+        const int y = client.CenterPoint().y;
+        return CRect(x - radius, y - radius, x + radius + 1, y + radius + 1);
+    }
+#endif
     CSize s;
     s.cy = m_pMainFrame->m_dpi.ScaleFloorY(SEEK_DRAGGER_OVERLAP);
     s.cx = m_pMainFrame->m_dpi.TransposeScaledY(channelRect.Height()) / 2 + s.cy;
@@ -1160,9 +1179,9 @@ bool CPlayerSeekBar::PaintNativeAlpha()
                     }
                 }
             }
-            const float diameter = float(std::min(m_pMainFrame->m_dpi.ScaleY(13),
+            const float diameter = float(std::min(m_pMainFrame->m_dpi.ScaleY(int(NativeThumbAnimation::OuterDiameter)),
                 std::max(1, client.Height() - m_pMainFrame->m_dpi.ScaleY(2))));
-            const float core = float(m_pMainFrame->m_dpi.ScaleY(1) * m_thumbAnimation.Value());
+            const float core = diameter * m_thumbAnimation.Value() / NativeThumbAnimation::OuterDiameter;
             Gdiplus::SolidBrush ring(Gdiplus::Color(m_bEnabled ? 255 : 150, 69, 69, 69));
             Gdiplus::SolidBrush dot(accent);
             graphics.FillEllipse(&ring, float(position) - diameter / 2, centreY - diameter / 2, diameter, diameter);
