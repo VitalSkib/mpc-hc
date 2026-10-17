@@ -720,7 +720,14 @@ bool CPlayerToolBar::ArrangeTransportControls(const CRect& client, int top, int 
     if (m_arrangingTransport) return true;
     m_arrangingTransport = true;
     auto& tb = GetToolBarCtrl();
-    for (UINT id : m_overflowButtons) tb.HideButton(id, FALSE);
+    // Native customization can copy TBSTATE_HIDDEN when moving an overflow
+    // entry. Visibility here belongs only to layout, not the saved selection.
+    for (int i = 0; i < tb.GetButtonCount(); ++i) {
+        const UINT id = GetItemID(i);
+        const auto info = supportedSvgButtons.find(id);
+        if (info != supportedSvgButtons.end() && !info->second.positionLocked
+                && !IsTransportButton(id)) tb.HideButton(id, FALSE);
+    }
     m_overflowButtons.clear();
     tb.HideButton(ID_TRANSPORT_OVERFLOW, FALSE);
     const auto widthOf = [&](UINT id) {
