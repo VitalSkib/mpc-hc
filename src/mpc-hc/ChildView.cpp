@@ -35,6 +35,15 @@ CChildView::CChildView(CMainFrame* pMainFrame)
     , m_bSwitchingFullscreen(false)
     , m_bFirstMedia(true)
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    m_nativeHeader.windowCommand = [this](int button) {
+        if (button == 0) m_pMainFrame->PostMessage(WM_SYSCOMMAND, SC_MINIMIZE);
+        else if (button == 1) {
+            if (m_pMainFrame->IsFullScreenMode()) m_pMainFrame->PostMessage(WM_COMMAND, ID_VIEW_FULLSCREEN);
+            else m_pMainFrame->PostMessage(WM_SYSCOMMAND, m_pMainFrame->IsZoomed() ? SC_RESTORE : SC_MAXIMIZE);
+        } else if (button == 2) m_pMainFrame->PostMessage(WM_CLOSE);
+    };
+#endif
 #ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
     m_fluentProbe.timeClick = [this](bool right, CPoint point) {
         if (right) m_pMainFrame->m_wndStatusBar.ShowTimerOptionsMenu(this, point);
@@ -175,12 +184,12 @@ void CChildView::UpdateNativeDecoration()
     struct ResetFlag { bool& flag; ~ResetFlag() { flag = false; } } reset{m_refreshingNativeDecoration};
     CRect view; GetClientRect(view);
     const unsigned height = m_pMainFrame->m_controls.GetVisibleToolbarsHeight();
-    const bool videoLoaded = m_pMainFrame->GetLoadState() == MLS::LOADED && !m_pMainFrame->m_fAudioOnly;
-    const bool visible = !m_bSwitchingFullscreen && IsWindowVisible()
-        && !m_pMainFrame->IsIconic() && !m_pMainFrame->HasDedicatedFSVideoWindow()
-        && (videoLoaded || m_pMainFrame->IsStatusBarForcedForMessage())
-        && m_pMainFrame->m_controls.ToolbarsCoverVideo() && height > 0;
-    if (!visible || view.IsRectEmpty()) {
+    const bool mediaLoaded = m_pMainFrame->GetLoadState() == MLS::LOADED;
+    const bool videoLoaded = mediaLoaded && !m_pMainFrame->m_fAudioOnly;
+    const bool available = !m_bSwitchingFullscreen && IsWindowVisible()
+        && !m_pMainFrame->IsIconic() && !m_pMainFrame->HasDedicatedFSVideoWindow();
+    const bool nativeVisible = m_pMainFrame->m_controls.ToolbarsCoverVideo() && height > 0;
+    if (!available || view.IsRectEmpty()) {
         m_nativeHeader.Hide(); m_nativeBackdrop.Hide(); return;
     }
     CString title; m_pMainFrame->GetWindowText(title);
@@ -194,9 +203,15 @@ void CChildView::UpdateNativeDecoration()
     }
     const int dpi = m_pMainFrame->m_dpi.ScaleY(96);
     CRect bottom(view); bottom.top = std::max(view.top, view.bottom - int(height));
-    m_nativeBackdrop.Refresh(this, bottom, false, CString(), dpi);
-    CRect top(view); top.bottom = std::min(bottom.top, view.top + m_pMainFrame->m_dpi.ScaleY(40));
-    if (videoLoaded) m_nativeHeader.Refresh(this, top, true, title, dpi);
+    const bool bottomVisible = nativeVisible && (videoLoaded || m_pMainFrame->IsStatusBarForcedForMessage());
+    if (bottomVisible) m_nativeBackdrop.Refresh(this, bottom, false, CString(), dpi);
+    else m_nativeBackdrop.Hide();
+    CRect top(view);
+    top.bottom = std::min(bottomVisible ? bottom.top : view.bottom, view.top + m_pMainFrame->m_dpi.ScaleY(40));
+    // An empty/loading window must remain closable without showing playback
+    // controls. Once media is loaded, all decoration follows native visibility.
+    if (!mediaLoaded || nativeVisible) m_nativeHeader.Refresh(this, top, true,
+        mediaLoaded ? title : CString(), dpi, m_pMainFrame->IsFullScreenMode() || m_pMainFrame->IsZoomed());
     else m_nativeHeader.Hide();
 }
 #endif
@@ -305,6 +320,11 @@ END_MESSAGE_MAP()
 void CChildView::OnPaint()
 {
     CPaintDC dc(this);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    // The initial frame layout may run before the child is visible. Ensure
+    // empty-window commands are present at its first real paint as well.
+    if (m_pMainFrame->GetLoadState() != MLS::LOADED) UpdateNativeDecoration();
+#endif
     m_pMainFrame->RepaintVideo();
 }
 

@@ -58,8 +58,8 @@ jobs:
             '[Toolbars\PlayerToolBar]', 'ToolbarAlignment=1') |
             Set-Content -LiteralPath "$testDir/mpc-hc64.ini" -Encoding unicode
           @('Native seekbar alpha test. Extract separately and run mpc-hc64.exe.',
-            'Native controls with 40% black backdrop and matching title/close header.',
-            'Header and backdrop follow native control visibility; no independent hover timer.',
+            'Native controls with 50% black backdrop and matching title/window-command header.',
+            'Window buttons stay visible without media; loaded media uses native control visibility.',
             'Thin blue/grey native seekbar with zero-alpha background above the backdrop.',
             'Moving video must show through ABOVE and BELOW the thin track.',
             'Check native seek, outside release, hover time and seek preview.',
