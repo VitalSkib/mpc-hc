@@ -294,6 +294,7 @@ void CPlayerToolBar::MakeImageList(bool createCustomizeButtons, int buttonSize, 
                 // the manual specifies that sizeButton should be sizeImage inflated by (7, 6)
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
                 const int rowHeight = AppIsThemeLoaded() ? std::max(height + 6, m_pMainFrame->m_dpi.ScaleY(42)) : height + 6;
+                SetBorders(0, 0, 0, m_pMainFrame->m_dpi.ScaleY(4));
                 SetSizes(CSize(height + 7, rowHeight), CSize(height, height));
 #else
                 SetSizes(CSize(height + 7, height + 6), CSize(height, height));
@@ -869,6 +870,40 @@ void CPlayerToolBar::NormalizeTransportLayout()
     if (themedToolTip.GetSafeHwnd()) RegisterThemedToolTipTools();
 }
 
+std::vector<LONG> CPlayerToolBar::TransportGeometry()
+{
+    std::vector<LONG> geometry;
+    CRect rect;
+    // Resolve MFC's deferred layout before inspecting the real button geometry.
+    if (GetToolBarCtrl().GetButtonCount()) GetItemRect(0, rect);
+    GetWindowRect(rect);
+    geometry.insert(geometry.end(), {rect.left, rect.top, rect.right, rect.bottom});
+    m_pMainFrame->GetClientRect(rect);
+    geometry.insert(geometry.end(), {rect.left, rect.top, rect.right, rect.bottom});
+    GetClientRect(rect);
+    geometry.insert(geometry.end(), {rect.left, rect.top, rect.right, rect.bottom});
+    auto& tb = GetToolBarCtrl();
+    for (int i = 0; i < tb.GetButtonCount(); ++i) {
+        TBBUTTON button = {}; tb.GetButton(i, &button);
+        rect.SetRectEmpty(); tb.GetItemRect(i, rect);
+        geometry.insert(geometry.end(), {LONG(button.idCommand), LONG(button.fsState & TBSTATE_HIDDEN),
+            rect.left, rect.top, rect.right, rect.bottom});
+    }
+    return geometry;
+}
+
+LRESULT CPlayerToolBar::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
+{
+    // Native command-UI updates and deferred MFC layout can change the toolbar
+    // after the frame has been placed. Reconcile before drawing, never during
+    // NM_CUSTOMDRAW or by repainting the video. Stable paints do no rearranging.
+    if (message == WM_PAINT && !m_arrangingTransport && m_pMainFrame
+            && m_volctrl.GetSafeHwnd() && TransportGeometry() != m_transportGeometry) {
+        ArrangeControls();
+    }
+    return CToolBar::WindowProc(message, wParam, lParam);
+}
+
 bool CPlayerToolBar::ArrangeTransportControls(const CRect& client)
 {
     if (m_arrangingTransport) return true;
@@ -942,6 +977,7 @@ bool CPlayerToolBar::ArrangeTransportControls(const CRect& client)
     SetSeparatorWidth(dummySeparatorIndex, std::max(gap,
         layoutWidth - left - core - secondary - mute));
     Invalidate(FALSE);
+    m_transportGeometry = TransportGeometry();
     m_arrangingTransport = false;
     return true;
 }
@@ -1351,7 +1387,7 @@ void CPlayerToolBar::DrawTransportButton(const NMCUSTOMDRAW& draw)
     Gdiplus::SolidBrush face(Gdiplus::Color(255, shade, shade, shade));
     graphics.FillEllipse(&face, x - diameter / 2, y - diameter / 2, diameter, diameter);
     Gdiplus::Pen ring(disabled ? Gdiplus::Color(255, 55, 75, 85)
-        : hot ? Gdiplus::Color(255, 65, 190, 255) : Gdiplus::Color(255, 0, 160, 232),
+        : Gdiplus::Color(255, 76, 194, 255),
         float(m_pMainFrame->m_dpi.ScaleY(3)));
     graphics.DrawEllipse(&ring, x - diameter / 2, y - diameter / 2, diameter, diameter);
     const BYTE brightness = disabled ? 100 : hot ? 255 : 240;

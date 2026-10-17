@@ -85,6 +85,9 @@ private:
     int m_volumeGlyphState = -1;
     std::vector<UINT> m_overflowButtons;
     bool m_arrangingTransport = false;
+    std::vector<LONG> m_transportGeometry;
+    std::vector<LONG> TransportGeometry();
+    LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam) override;
     afx_msg BOOL OnOverflowButton(UINT id);
     afx_msg void OnUpdateOverflowButton(CCmdUI* ui);
 #endif

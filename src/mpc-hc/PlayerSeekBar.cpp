@@ -1131,7 +1131,7 @@ bool CPlayerSeekBar::PaintNativeAlpha()
             graphics.DrawLine(&track, float(channel.left), centreY, float(channel.right - 1), centreY);
         }
         if (m_bHasDuration && channel.Width() > 0) {
-            const Gdiplus::Color accent(m_bEnabled ? 255 : 120, 0, 120, 212);
+            const Gdiplus::Color accent(m_bEnabled ? 255 : 120, 76, 194, 255);
             Gdiplus::Pen played(accent, stroke);
             played.SetStartCap(Gdiplus::LineCapRound);
             played.SetEndCap(Gdiplus::LineCapRound);

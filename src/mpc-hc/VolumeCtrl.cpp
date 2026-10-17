@@ -690,7 +690,7 @@ void CVolumeCtrl::OnPaint() {
             const float x = float(r.left) + float(std::max(0, r.Width() - 1)) * GetPos() / 100.0f;
             const float stroke = float(dpiWindow.ScaleY(3));
             Gdiplus::Pen track(Gdiplus::Color(255, 155, 155, 155), stroke);
-            Gdiplus::Pen played(Gdiplus::Color(255, 0, 120, 212), stroke);
+            Gdiplus::Pen played(Gdiplus::Color(255, 76, 194, 255), stroke);
             track.SetStartCap(Gdiplus::LineCapRound); track.SetEndCap(Gdiplus::LineCapRound);
             played.SetStartCap(Gdiplus::LineCapRound); played.SetEndCap(Gdiplus::LineCapRound);
             graphics.DrawLine(&track, float(r.left), y, float(r.right - 1), y);
@@ -698,7 +698,7 @@ void CVolumeCtrl::OnPaint() {
             const float outer = float(std::min(dpiWindow.ScaleY(13), std::max(1, cr.Height() - 2)));
             const float core = float(dpiWindow.ScaleY(1)) * m_thumbAnimation.Value();
             Gdiplus::SolidBrush ring(Gdiplus::Color(255, 240, 240, 240));
-            Gdiplus::SolidBrush dot(Gdiplus::Color(255, 0, 120, 212));
+            Gdiplus::SolidBrush dot(Gdiplus::Color(255, 76, 194, 255));
             graphics.FillEllipse(&ring, x - outer / 2, y - outer / 2, outer, outer);
             graphics.FillEllipse(&dot, x - core / 2, y - core / 2, core, core);
         }
