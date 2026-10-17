@@ -1179,8 +1179,9 @@ int CPlayerToolBar::GetMinWidth() const
     const int play = std::max(button, m_pMainFrame->m_dpi.ScaleX(48));
     const auto measuredWidth = [&](UINT id, int fallback) {
         const int index = GetToolBarCtrl().CommandToIndex(id);
-        CRect rect;
-        if (index >= 0) { GetItemRect(index, rect); return std::max<int>(fallback, rect.Width()); }
+        CRect rect(0, 0, 0, 0);
+        if (index >= 0 && !(GetToolBarCtrl().GetState(id) & TBSTATE_HIDDEN)
+                && GetToolBarCtrl().GetItemRect(index, rect)) return std::max<int>(fallback, rect.Width());
         return fallback;
     };
     int width = 0;
