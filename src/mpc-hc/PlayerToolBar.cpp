@@ -769,7 +769,7 @@ void CPlayerToolBar::ArrangeControls() {
                         CPoint middle(frame.CenterPoint().x, 0);
                         m_pMainFrame->ClientToScreen(&middle); ScreenToClient(&middle);
                         const int available = totalAvailableSpace - totalContentWidth - groupSpacing;
-                        leftSpacing = std::clamp(middle.x - beforePlay - playWidth / 2, 0, std::max(0, available - groupSpacing));
+                        leftSpacing = std::clamp<int>(static_cast<int>(middle.x) - beforePlay - playWidth / 2, 0, std::max(0, available - groupSpacing));
                         // Keep volume at the right edge. If the window is too
                         // narrow, native controls form a compact row without overlap.
                         rightSpacing = std::max(groupSpacing, available - leftSpacing);
