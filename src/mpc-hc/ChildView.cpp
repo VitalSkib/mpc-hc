@@ -126,6 +126,11 @@ BOOL CChildView::PreCreateWindow(CREATESTRUCT& cs)
 
 BOOL CChildView::PreTranslateMessage(MSG* pMsg)
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    // Keyed toolbar pixels can route movement to the video beneath them.
+    // Recognize the complete native mute-button rectangle, not just its ink.
+    if (pMsg->message == WM_MOUSEMOVE) m_pMainFrame->m_wndToolBar.UpdateVolumeFlyout(true);
+#endif
 #ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
     UpdateFluentControls();
     if (pMsg->message == WM_MOUSEMOVE) {

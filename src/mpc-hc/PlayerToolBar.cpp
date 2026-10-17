@@ -1173,12 +1173,25 @@ int CPlayerToolBar::GetVolume() const
 int CPlayerToolBar::GetMinWidth() const
 {
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-    // Eight small transport buttons, a main play button, hamburger and mute.
-    // No permanent slider or mirrored right-hand reserve in the minimum width.
+    // Measure the actual native button widths, including theme/DPI sizing.
+    // Optional controls and the hover slider do not contribute to this minimum.
     const int button = m_nButtonHeight + TOOLBAR_BUTTON_HORIZONTAL_PADDING;
     const int play = std::max(button, m_pMainFrame->m_dpi.ScaleX(48));
+    const auto measuredWidth = [&](UINT id, int fallback) {
+        const int index = GetToolBarCtrl().CommandToIndex(id);
+        CRect rect;
+        if (index >= 0) { GetItemRect(index, rect); return std::max<int>(fallback, rect.Width()); }
+        return fallback;
+    };
+    int width = 0;
+    for (UINT id : transportButtons) {
+        if (id == ID_PLAY_PAUSE) continue;
+        width += id == ID_PLAY_PLAY ? std::max(measuredWidth(ID_PLAY_PLAY, play), measuredWidth(ID_PLAY_PAUSE, play))
+            : measuredWidth(id, button);
+    }
+    width += measuredWidth(ID_TRANSPORT_OVERFLOW, button) + measuredWidth(ID_VOLUME_MUTE, button);
     const CRect borders = GetBorders();
-    return 10 * button + play + m_pMainFrame->m_dpi.ScaleX(26) + borders.left + borders.right;
+    return width + m_pMainFrame->m_dpi.ScaleX(26) + borders.left + borders.right;
 #else
     // button widths are inflated by TOOLBAR_BUTTON_HORIZONTAL_PADDING
     // x buttons + spacing + volume
