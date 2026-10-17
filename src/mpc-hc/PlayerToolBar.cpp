@@ -736,12 +736,16 @@ bool CPlayerToolBar::ArrangeTransportControls(const CRect& client, int top, int 
         core += width;
     }
     const int gap = m_pMainFrame->m_dpi.ScaleX(8);
+    // Time text ends 11 logical pixels inside the seekbar. The volume thumb
+    // extends about 6.5 px beyond a track inset of 8 px: leave another 9 px
+    // outside the slider HWND to align their visible right edges.
+    const int layoutWidth = std::max(0, static_cast<int>(client.Width()) - m_pMainFrame->m_dpi.ScaleX(9));
     const int mute = widthOf(ID_VOLUME_MUTE), overflow = widthOf(ID_TRANSPORT_OVERFLOW);
     CRect frame; m_pMainFrame->GetClientRect(frame);
     CPoint middle(frame.CenterPoint().x, 0);
     m_pMainFrame->ClientToScreen(&middle); ScreenToClient(&middle);
     const int left = std::max(0, static_cast<int>(middle.x) - beforePlay - play / 2);
-    const int capacity = std::max(0, static_cast<int>(client.Width()) - left - core
+    const int capacity = std::max(0, layoutWidth - left - core
         - mute - m_volumeCtrlSize - 2 * gap);
     std::vector<UINT> extras;
     int total = 0;
@@ -764,7 +768,7 @@ bool CPlayerToolBar::ArrangeTransportControls(const CRect& client, int top, int 
     volumeButtonIndex = tb.CommandToIndex(ID_VOLUME_MUTE);
     SetSeparatorWidth(leftSeparatorIndex, left);
     SetSeparatorWidth(dummySeparatorIndex, std::max(gap,
-        static_cast<int>(client.Width()) - left - core - secondary - mute - m_volumeCtrlSize - gap));
+        layoutWidth - left - core - secondary - mute - m_volumeCtrlSize - gap));
     CRect volume; tb.GetItemRect(volumeButtonIndex, volume);
     m_volctrl.MoveWindow(volume.right + gap, top, m_volumeCtrlSize, bottom - top);
     Invalidate(FALSE);
@@ -1025,7 +1029,7 @@ int CPlayerToolBar::GetMinWidth() const
     // right. Optional buttons must not increase the window's minimum width.
     const int button = m_nButtonHeight + TOOLBAR_BUTTON_HORIZONTAL_PADDING;
     const int play = std::max(button, m_pMainFrame->m_dpi.ScaleX(48));
-    return 6 * button + play + 2 * (2 * button + m_volumeCtrlSize + m_pMainFrame->m_dpi.ScaleX(16));
+    return 6 * button + play + 2 * (2 * button + m_volumeCtrlSize + m_pMainFrame->m_dpi.ScaleX(25));
 #else
     // button widths are inflated by TOOLBAR_BUTTON_HORIZONTAL_PADDING
     // x buttons + spacing + volume

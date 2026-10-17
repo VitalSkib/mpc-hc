@@ -595,6 +595,10 @@ void CPlayerSeekBar::EnsureTimeFont() const
     // GetChannelRect, which reserves width via this method) to avoid recursion.
     LONG channelH = GetBaseRect().Height();
     LONG mag = (channelH > 0) ? std::max(baseMag, (LONG)MulDiv(channelH, 2, 3)) : baseMag;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    // Timer typography is independent of both the 16px title and bar height.
+    mag = m_pMainFrame->m_dpi.ScaleY(13);
+#endif
 
     const bool fontChanged = (!(HFONT)m_timeFont || m_timeFontHeight != mag);
     if (fontChanged) {
