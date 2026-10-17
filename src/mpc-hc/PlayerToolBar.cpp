@@ -973,6 +973,12 @@ void CPlayerToolBar::DrawTransportButton(const NMCUSTOMDRAW& draw)
     const bool pressed = (draw.uItemState & CDIS_SELECTED) != 0;
     const float diameter = float(std::min(rect.Width() - 6, rect.Height() - 4)) - (pressed ? 1.0f : 0.0f);
     const float x = float(rect.CenterPoint().x), y = float(rect.CenterPoint().y);
+    BYTE shade = disabled ? 16 : pressed ? 40 : hot ? 32 : 24;
+    if (RGB(shade, shade, shade) == CMPCTheme::PlayerBGColor) ++shade;
+    // A flat circular face also keeps the whole main button clickable: unlike
+    // the keyed backdrop, the area inside the ring must not pass input to video.
+    Gdiplus::SolidBrush face(Gdiplus::Color(255, shade, shade, shade));
+    graphics.FillEllipse(&face, x - diameter / 2, y - diameter / 2, diameter, diameter);
     Gdiplus::Pen ring(disabled ? Gdiplus::Color(255, 55, 75, 85)
         : hot ? Gdiplus::Color(255, 65, 190, 255) : Gdiplus::Color(255, 0, 160, 232),
         float(m_pMainFrame->m_dpi.ScaleY(3)));
