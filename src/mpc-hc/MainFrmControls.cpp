@@ -334,6 +334,16 @@ bool CMainFrameControls::PanelsCoverVideo() const
 
 bool CMainFrameControls::ToolbarsCoverVideo() const
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    // Presentation geometry is independent of the auto-hide policy. All native
+    // transparent bars, the header and the video pane consume this same result.
+    // Disabling Hide Windowed Controls must keep video beneath persistent bars.
+    if (!m_pMainFrame->HasDedicatedFSVideoWindow()
+            && !m_pMainFrame->IsD3DFullScreenMode()
+            && !m_pMainFrame->m_bIsMPCVRExclusiveMode) {
+        return true;
+    }
+#endif
     const auto& s = AfxGetAppSettings();
     return m_pMainFrame->IsFullScreenMainFrame() && !m_pMainFrame->m_bIsMPCVRExclusiveMode ||
         (!m_pMainFrame->IsD3DFullScreenMode() && s.bHideWindowedControls && s.bHideFullscreenControls &&
