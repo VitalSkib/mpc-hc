@@ -56,6 +56,7 @@ public:
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
     std::function<void()> flyoutActivity;
     bool showValueInFlyout = false;
+    int DisplayedPosition() const;
     void HideFlyoutFeedback();
 #endif
 #ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY

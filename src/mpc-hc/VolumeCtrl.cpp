@@ -617,10 +617,17 @@ void CVolumeCtrl::HideFlyoutFeedback()
     UpdateVolumeTip(false);
 }
 
+int CVolumeCtrl::DisplayedPosition() const
+{
+    // Mute suppresses the effective volume, but must preserve the native gain
+    // position so unmuting restores the user's previous level.
+    return AfxGetAppSettings().fMute ? 0 : GetPos();
+}
+
 CRect CVolumeCtrl::FluentThumbRect()
 {
     CRect channel; getCustomChannelRect(channel);
-    const int x = channel.left + MulDiv(std::max(0, channel.Width() - 1), GetPos(), 100);
+    const int x = channel.left + MulDiv(std::max(0, channel.Width() - 1), DisplayedPosition(), 100);
     const int y = channel.CenterPoint().y;
     const int radius = AfxGetMainFrame()->m_dpi.ScaleX(10);
     return CRect(x - radius, y - radius, x + radius + 1, y + radius + 1);
@@ -633,7 +640,7 @@ void CVolumeCtrl::UpdateVolumeTip(bool visible)
     TOOLINFO ti = {sizeof(ti)};
     ti.uFlags = TTF_TRACK | TTF_IDISHWND | TTF_ABSOLUTE;
     ti.hwnd = m_hWnd; ti.uId = (UINT_PTR)m_hWnd;
-    m_volumeTipText.Format(L"Volume %d%%", GetPos());
+    m_volumeTipText.Format(L"Volume %d%%", DisplayedPosition());
     ti.lpszText = m_volumeTipText.GetBuffer();
     m_volumeTip.SendMessage(TTM_UPDATETIPTEXT, 0, (LPARAM)&ti);
     m_volumeTipText.ReleaseBuffer();
@@ -687,17 +694,17 @@ void CVolumeCtrl::OnPaint() {
             Gdiplus::Graphics graphics(dcMem.GetSafeHdc());
             graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
             const float y = float(r.CenterPoint().y);
-            const float x = float(r.left) + float(std::max(0, r.Width() - 1)) * GetPos() / 100.0f;
+            const float x = float(r.left) + float(std::max(0, r.Width() - 1)) * DisplayedPosition() / 100.0f;
             const float stroke = float(dpiWindow.ScaleY(3));
             Gdiplus::Pen track(Gdiplus::Color(255, 155, 155, 155), stroke);
             Gdiplus::Pen played(Gdiplus::Color(255, 76, 194, 255), stroke);
             track.SetStartCap(Gdiplus::LineCapRound); track.SetEndCap(Gdiplus::LineCapRound);
             played.SetStartCap(Gdiplus::LineCapRound); played.SetEndCap(Gdiplus::LineCapRound);
             graphics.DrawLine(&track, float(r.left), y, float(r.right - 1), y);
-            if (GetPos() > 0) graphics.DrawLine(&played, float(r.left), y, x, y);
+            if (DisplayedPosition() > 0) graphics.DrawLine(&played, float(r.left), y, x, y);
             const float outer = float(std::min(dpiWindow.ScaleY(13), std::max(1, cr.Height() - 2)));
             const float core = float(dpiWindow.ScaleY(1)) * m_thumbAnimation.Value();
-            Gdiplus::SolidBrush ring(Gdiplus::Color(255, 240, 240, 240));
+            Gdiplus::SolidBrush ring(Gdiplus::Color(255, 69, 69, 69));
             Gdiplus::SolidBrush dot(Gdiplus::Color(255, 76, 194, 255));
             graphics.FillEllipse(&ring, x - outer / 2, y - outer / 2, outer, outer);
             graphics.FillEllipse(&dot, x - core / 2, y - core / 2, core, core);

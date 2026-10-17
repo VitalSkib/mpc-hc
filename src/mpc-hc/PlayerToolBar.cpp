@@ -718,7 +718,7 @@ LRESULT CNativeVolumeFlyout::WindowProc(UINT message, WPARAM wParam, LPARAM lPar
                 m_valueFont.CreateFontIndirect(&font); m_valueFontHeight = valueFontHeight;
             }
             CRect value(rect); value.right -= valueInset; value.left = value.right - valueWidth;
-            CString text; text.Format(L"%d%%", slider->GetPos());
+            CString text; text.Format(L"%d%%", slider->DisplayedPosition());
             CFont* old = dc.SelectObject(&m_valueFont);
             dc.SetBkMode(TRANSPARENT); dc.SetTextColor(CMPCTheme::TextFGColor);
             dc.DrawText(text, value, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
@@ -782,7 +782,7 @@ void CPlayerToolBar::UpdateVolumeFlyout(bool allowOpen)
     m_volumeFlyout.valueFontHeight = m_pMainFrame->m_dpi.ScaleY(13);
     const int inset = m_pMainFrame->m_dpi.ScaleX(6);
     const int x = std::clamp<int>(mute.right - width, frame.left, std::max<int>(frame.left, frame.right - width));
-    const int y = std::max<int>(frame.top, mute.top - height);
+    const int y = std::max<int>(frame.top, mute.top - height + m_pMainFrame->m_dpi.ScaleY(3));
     m_volctrl.MoveWindow(inset, 0, width - 2 * inset - m_volumeFlyout.valueWidth, height);
     m_volctrl.ShowWindow(SW_SHOWNA);
     m_volumeFlyout.SetWindowPos(&wndTop, x, y, width, height, SWP_NOACTIVATE | SWP_SHOWWINDOW);
@@ -1186,6 +1186,10 @@ void CPlayerToolBar::SetMute(bool fMute) {
     bi.iImage = VOLUMEBUTTON_SVG_INDEX + (fMute ? 1:0);
     tb.SetButtonInfo(ID_VOLUME_MUTE, &bi);
     AfxGetAppSettings().fMute = fMute;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    if (m_volctrl.GetSafeHwnd()) m_volctrl.Invalidate(FALSE);
+    if (m_volumeFlyout.GetSafeHwnd()) m_volumeFlyout.Invalidate(FALSE);
+#endif
 }
 
 void CPlayerToolBar::ToggleButton(int buttonID, bool isActive, std::optional<bool> &lastBool) {

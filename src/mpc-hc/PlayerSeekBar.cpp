@@ -1163,7 +1163,7 @@ bool CPlayerSeekBar::PaintNativeAlpha()
             const float diameter = float(std::min(m_pMainFrame->m_dpi.ScaleY(13),
                 std::max(1, client.Height() - m_pMainFrame->m_dpi.ScaleY(2))));
             const float core = float(m_pMainFrame->m_dpi.ScaleY(1) * m_thumbAnimation.Value());
-            Gdiplus::SolidBrush ring(Gdiplus::Color(m_bEnabled ? 255 : 150, 240, 240, 240));
+            Gdiplus::SolidBrush ring(Gdiplus::Color(m_bEnabled ? 255 : 150, 69, 69, 69));
             Gdiplus::SolidBrush dot(accent);
             graphics.FillEllipse(&ring, float(position) - diameter / 2, centreY - diameter / 2, diameter, diameter);
             graphics.FillEllipse(&dot, float(position) - core / 2, centreY - core / 2, core, core);
