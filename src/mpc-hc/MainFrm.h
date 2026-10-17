@@ -393,6 +393,11 @@ private:
     // windowing
 
     bool m_bDelaySetOutputRect;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    // Only native frame layout may extend the view underneath overlay toolbars.
+    bool m_nativeVideoLayout = false;
+    unsigned m_nativeToolbarOverlapHeight = 0;
+#endif
 
     CRect m_lastWindowRect;
 

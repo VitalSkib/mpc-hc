@@ -20,6 +20,9 @@
  */
 
 #pragma once
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+#include "NativeThumbAnimation.h"
+#endif
 
 #include "EventDispatcher.h"
 #include "DSMPropertyBag.h"
@@ -86,6 +89,18 @@ private:
     int  TimeSectionEffectiveWidth() const; // px the section currently occupies (0 when not shown)
     void EnsureTimeFont() const;
     CString BuildTimeTemplate() const;  // widest time string for the currently enabled time options
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    bool m_rightRemaining = false;
+    void SetRightRemaining(bool remaining);
+    bool m_timeTipActive = false;
+    bool UpdateTimeFieldTooltip(CPoint point);
+    CString m_rightTimeText;
+    int m_leftTimeWidth = 0, m_rightTimeWidth = 0;
+    CString PresentedTimeText() const;
+    bool SplitTimeSections() const;
+    CRect GetSplitTimeRect(bool duration) const;
+    CRect GetTimeHitRect(bool duration = false) const;
+#endif
     CRect GetTimeRect() const;          // the dedicated time section to the right of the channel
 
     virtual BOOL PreCreateWindow(CREATESTRUCT& cs);
@@ -112,6 +127,11 @@ private:
     void GenerateToolTipText(REFERENCE_TIME rtPos);
 
 public:
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    bool CanOverlaySeek() const { return m_bEnabled && m_bHasDuration; }
+    CString OverlayTimeText() const { return m_timeText; }
+    bool ForwardOverlayMouse(UINT message, WPARAM flags, double fraction);
+#endif
     void Enable(bool bEnable);
     void HideToolTip();
     void UpdateToolTipPosition(CPoint point);
@@ -135,6 +155,17 @@ public:
 private:
     DECLARE_MESSAGE_MAP()
 
+    // Keep the native paint pipeline separate from its presentation surface.
+    void PaintNative(CDC& dc);
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    NativeThumbAnimation m_thumbAnimation;
+    ULONG_PTR m_seekbarGraphicsToken = 0;
+    bool m_alphaPresentationFailed = false;
+    bool PaintNativeAlpha();
+    CRect m_alphaWindowRect = CRect(0, 0, 0, 0);
+    afx_msg void OnWindowPosChanging(WINDOWPOS* position);
+    afx_msg void OnWindowPosChanged(WINDOWPOS* position);
+#endif
     afx_msg void OnPaint();
     afx_msg void OnLButtonDown(UINT nFlags, CPoint point);
     afx_msg void OnLButtonDblClk(UINT nFlags, CPoint point);

@@ -151,6 +151,9 @@ class COSD : public CWnd
     int SliderChapWidth    = 0;
 
 public:
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    std::function<bool(LPCWSTR, int)> overlayMessage;
+#endif
     COSD(CMainFrame* pMainFrame);
     ~COSD();
 

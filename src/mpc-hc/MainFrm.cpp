@@ -563,6 +563,9 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_UPDATE_COMMAND_UI(ID_PLAY_STOP, OnUpdatePlayPauseStop)
     ON_COMMAND_RANGE(ID_PLAY_FRAMESTEP, ID_PLAY_FRAMESTEP_BACK, OnPlayFramestep)
     ON_UPDATE_COMMAND_UI(ID_PLAY_FRAMESTEP, OnUpdatePlayFramestep)
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    ON_UPDATE_COMMAND_UI(ID_PLAY_FRAMESTEP_BACK, OnUpdatePlayFramestep)
+#endif
     ON_COMMAND_RANGE(ID_PLAY_SEEKBACKWARDSMALL, ID_PLAY_SEEKFORWARDLARGE, OnPlaySeek)
     ON_COMMAND(ID_PLAY_SEEKSET, OnPlaySeekSet)
     ON_COMMAND_RANGE(ID_PLAY_SEEKKEYBACKWARD, ID_PLAY_SEEKKEYFORWARD, OnPlaySeekKey)
@@ -1655,6 +1658,9 @@ BOOL CMainFrame::PreCreateWindow(CREATESTRUCT& cs)
 
 BOOL CMainFrame::PreTranslateMessage(MSG* pMsg)
 {
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    if (m_wndView.RouteFluentInput(*pMsg)) return TRUE;
+#endif
     if (pMsg->message == WM_KEYDOWN) {
         if (pMsg->wParam == VK_ESCAPE) {
             bool fEscapeNotAssigned = !AssignedToCmd(VK_ESCAPE);
@@ -1714,7 +1720,16 @@ BOOL CMainFrame::PreTranslateMessage(MSG* pMsg)
 
 void CMainFrame::RecalcLayout(BOOL bNotify)
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    // CFrameWnd positions the pane through DeferWindowPos. Extend that very
+    // placement, before WM_SIZE updates the renderer, rather than resize twice.
+    const bool previousNativeLayout = m_nativeVideoLayout;
+    m_nativeVideoLayout = true;
+#endif
     __super::RecalcLayout(bNotify);
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    m_nativeVideoLayout = previousNativeLayout;
+#endif
 
     CRect r;
     GetWindowRect(&r);
@@ -1731,7 +1746,15 @@ void CMainFrame::RecalcLayout(BOOL bNotify)
         r |= CRect(r.TopLeft(), CSize(min));
         MoveWindow(r);
     }
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    // OnSize may run inside the deferred placement transaction. Arrange once
+    // more with final frame/bar bounds, including the first media auto-size.
+    if (m_wndToolBar.GetSafeHwnd()) m_wndToolBar.ArrangeControls();
+#endif
     OSDBarSetPos();
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    m_wndView.UpdateNativeDecoration();
+#endif
 }
 
 void CMainFrame::EnableDocking(DWORD dwDockStyle)
@@ -2015,9 +2038,20 @@ void CMainFrame::OnSizingFixWndToVideo(UINT nSide, LPRECT lpRect, bool bCtrl)
             uBottom -= m_controls.GetVisibleToolbarsHeight();
         }
         controlsSize.cx -= uLeft + uRight;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+        // The view already occupies the toolbar part of the bottom dock zone,
+        // including when PanelsCoverVideo is enabled (always true in fullscreen).
+        if (bToolbarsOnVideo) {
+            uBottom -= std::min(uBottom, m_nativeToolbarOverlapHeight);
+        }
+#endif
         controlsSize.cy -= uTop + uBottom;
     } else if (bToolbarsOnVideo) {
-        controlsSize.cy -= m_controls.GetVisibleToolbarsHeight();
+        unsigned uncoveredHeight = m_controls.GetVisibleToolbarsHeight();
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+        uncoveredHeight -= std::min(uncoveredHeight, m_nativeToolbarOverlapHeight);
+#endif
+        controlsSize.cy -= uncoveredHeight;
     }
 
     CSize newWindowSize(lpRect->right - lpRect->left, lpRect->bottom - lpRect->top);
@@ -10064,6 +10098,9 @@ void CMainFrame::OnPlayPlay()
             strOSD = strPlay;
         }
         if (GetPlaybackMode() != PM_DIGITAL_CAPTURE) {
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+            if (!m_bFirstPlay) // The hover header already supplies the file/stream title.
+#endif
             m_OSD.DisplayMessage(OSD_TOPLEFT, strOSD, 3000);
         }
     }
@@ -10302,6 +10339,9 @@ void CMainFrame::OnUpdatePlayPauseStop(CCmdUI* pCmdUI)
 
     pCmdUI->SetCheck(fCheck);
     pCmdUI->Enable(fEnable);
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    m_wndView.UpdateFluentControls();
+#endif
 }
 
 void CMainFrame::OnPlayFramestep(UINT nID)
@@ -10395,8 +10435,17 @@ void CMainFrame::OnUpdatePlayFramestep(CCmdUI* pCmdUI)
 {
     bool fEnable = false;
 
-    if (pCmdUI->m_nID == ID_PLAY_FRAMESTEP) {
+    if (pCmdUI->m_nID == ID_PLAY_FRAMESTEP
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+            || pCmdUI->m_nID == ID_PLAY_FRAMESTEP_BACK
+#endif
+    ) {
         if (!m_fAudioOnly && !m_fLiveWM && GetLoadState() == MLS::LOADED && (GetPlaybackMode() == PM_FILE || (GetPlaybackMode() == PM_DVD && m_iDVDDomain == DVD_DOMAIN_Title))) {
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+            if (pCmdUI->m_nID == ID_PLAY_FRAMESTEP_BACK) {
+                fEnable = m_pMS && m_wndSeekBar.HasDuration();
+            } else
+#endif
             if (m_pFS || m_pMS && (S_OK == m_pMS->IsFormatSupported(&TIME_FORMAT_FRAME))) {
                 fEnable = true;
             }
@@ -13708,9 +13757,19 @@ void CMainFrame::MoveVideoWindow(bool fShowStats/* = false*/, bool bSetStoppedVi
             if (!bToolbarsOnVideo) {
                 uBottom -= m_controls.GetVisibleToolbarsHeight();
             }
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+            if (bToolbarsOnVideo) {
+                uBottom -= std::min(uBottom, m_nativeToolbarOverlapHeight);
+            }
+#endif
             windowRect.InflateRect(uLeft, uTop, uRight, uBottom);
         } else if (bToolbarsOnVideo) {
-            windowRect.bottom += m_controls.GetVisibleToolbarsHeight();
+            unsigned uncoveredHeight = m_controls.GetVisibleToolbarsHeight();
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+            // Native layout already includes the area beneath the toolbars.
+            uncoveredHeight -= std::min(uncoveredHeight, m_nativeToolbarOverlapHeight);
+#endif
+            windowRect.bottom += uncoveredHeight;
         }
 
         int nCompensateForMenubar = m_bShowingFloatingMenubar && !IsD3DFullScreenMode() ? GetSystemMetrics(SM_CYMENU) : 0;

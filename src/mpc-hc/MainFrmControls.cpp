@@ -24,6 +24,10 @@
 #include "mplayerc.h"
 #include <mvrInterfaces.h>
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+#include "NativeTextBarPresentation.h"
+#endif
+
 #define DELAY_SHOW_NOT_LOADED_TIME_MS 3000
 
 CMainFrameControls::ControlsVisibilityState::ControlsVisibilityState()
@@ -76,13 +80,36 @@ bool CMainFrameControls::ShowToolbars(UINT nCS)
 {
     bool bRecalcLayout = false;
     auto& st = m_controlsVisibilityState;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    // Only suppress presentation. Keep the user's selected controls unchanged,
+    // and keep native status/error messages available before a file is loaded.
+    const bool empty = m_pMainFrame->GetLoadState() != MLS::LOADED;
+    if (empty) nCS &= ~(CS_SEEKBAR | CS_TOOLBAR);
+    const auto visibleStyle = [](const CWnd& bar) {
+        return bar.GetSafeHwnd() && (bar.GetStyle() & WS_VISIBLE);
+    };
+    const bool emptyControlsVisible = empty && (visibleStyle(m_pMainFrame->m_wndSeekBar)
+        || visibleStyle(m_pMainFrame->m_wndToolBar));
+    if (nCS != st.nVisibleCS || emptyControlsVisible) {
+#else
     if (nCS != st.nVisibleCS) {
+#endif
         m_pMainFrame->m_pLastBar = nullptr;
         int i = 1;
         for (const auto& pair : m_toolbars) {
             auto& pCB = pair.second;
             if (pCB->m_hWnd) {
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+                const bool migrated = pair.first == Toolbar::CONTROLS || pair.first == Toolbar::SEEKBAR;
+                if ((nCS & i) && !migrated) {
+#else
                 if (nCS & i) {
+#endif
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+                    if (pair.first == Toolbar::INFO || pair.first == Toolbar::STATS || pair.first == Toolbar::STATUS) {
+                        NativeTextBarPresentation::Prepare(*pCB);
+                    }
+#endif
                     m_pMainFrame->ShowControlBar(pCB, TRUE, TRUE);
                     m_pMainFrame->m_pLastBar = pCB;
                 } else {
@@ -105,7 +132,12 @@ unsigned CMainFrameControls::GetToolbarsHeight(UINT nCS) const
     int i = 1;
     for (const auto& pair : m_toolbars) {
         auto& pCB = pair.second;
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+        const bool migrated = pair.first == Toolbar::CONTROLS || pair.first == Toolbar::SEEKBAR;
+        if ((nCS & i) && !migrated && IsWindow(pCB->m_hWnd)) {
+#else
         if ((nCS & i) && IsWindow(pCB->m_hWnd)) {
+#endif
             ret += pCB->CalcFixedLayout(TRUE, TRUE).cy;
         }
         i <<= 1;
@@ -302,6 +334,16 @@ bool CMainFrameControls::PanelsCoverVideo() const
 
 bool CMainFrameControls::ToolbarsCoverVideo() const
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    // Presentation geometry is independent of the auto-hide policy. All native
+    // transparent bars, the header and the video pane consume this same result.
+    // Disabling Hide Windowed Controls must keep video beneath persistent bars.
+    if (!m_pMainFrame->HasDedicatedFSVideoWindow()
+            && !m_pMainFrame->IsD3DFullScreenMode()
+            && !m_pMainFrame->m_bIsMPCVRExclusiveMode) {
+        return true;
+    }
+#endif
     const auto& s = AfxGetAppSettings();
     return m_pMainFrame->IsFullScreenMainFrame() && !m_pMainFrame->m_bIsMPCVRExclusiveMode ||
         (!m_pMainFrame->IsD3DFullScreenMode() && s.bHideWindowedControls && s.bHideFullscreenControls &&
@@ -405,7 +447,11 @@ void CMainFrameControls::UpdateToolbarsVisibility()
         // hide completely
         mask.hide(maskAll);
     } else if (bCanAutoHide) {
-        if (m_pMainFrame->m_wndSeekBar.DraggingThumb() || m_pMainFrame->m_bTBDropdownActive) {
+        if (m_pMainFrame->m_wndSeekBar.DraggingThumb() || m_pMainFrame->m_bTBDropdownActive
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+                || m_pMainFrame->m_wndToolBar.VolumeFlyoutActive()
+#endif
+                ) {
             // show bottom while dragging the seekbar thumb
             mask.show(DOCK_BOTTOM);
         } else {
@@ -521,7 +567,18 @@ void CMainFrameControls::UpdateToolbarsVisibility()
                 }
                 return ret;
             };
-            if (!testCapture() && !testHovering() &&
+            const bool captured = testCapture();
+            const bool hovered = !captured && testHovering();
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+            CRect window;
+            m_pMainFrame->GetWindowRect(window);
+            if (!captured && !window.PtInRect(screenPoint) && m_pMainFrame->m_nTrackedMenuDepth == 0) {
+                // Reuse the native hider's existing checks/deadlines. Leaving
+                // the frame ends bottom-control visibility without a new timer.
+                mask.hide(DOCK_BOTTOM);
+            }
+#endif
+            if (!captured && !hovered &&
                     ePolicy == CAppSettings::HideFullscreenControlsPolicy::SHOW_WHEN_CURSOR_MOVED &&
                     bOnWindow && !CMouse::PointEqualsImprecise(screenPoint, st.lastShowPoint) &&
                     !m_pMainFrame->m_wndView.Dragging() && uTimeout > 0) {
@@ -714,9 +771,17 @@ void CMainFrameControls::UpdateToolbarsVisibility()
         m_pMainFrame->RecalcLayout();
     }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    m_pMainFrame->m_wndToolBar.UpdateVolumeFlyout();
+#endif
     st.bLastCanAutoHideToolbars = bCanAutoHide;
     st.bLastCanAutoHidePanels = bCanAutoHide && bCanHideDockedPanels;
     st.bLastHaveExclusiveSeekbar = bExclSeekbar;
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    // Decoration follows the native visibility decision, including unchanged
+    // layouts. It has no cursor policy, hide deadline, timer or polling loop.
+    m_pMainFrame->m_wndView.UpdateNativeDecoration();
+#endif
 }
 
 unsigned CMainFrameControls::GetVisibleToolbarsHeight() const

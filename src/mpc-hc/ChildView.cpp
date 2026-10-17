@@ -26,12 +26,47 @@
 #include "CMPCTheme.h"
 #include "CMPCThemeUtil.h"
 #include "ColorProfileUtil.h"
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+#include "../DSUtil/GeometryDiagnostics.h"
+#endif
 
 CChildView::CChildView(CMainFrame* pMainFrame)
     : CMouseWndWithArtView(pMainFrame)
     , m_bSwitchingFullscreen(false)
     , m_bFirstMedia(true)
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    m_nativeHeader.windowCommand = [this](int button) {
+        if (button == 0) m_pMainFrame->PostMessage(WM_SYSCOMMAND, SC_MINIMIZE);
+        else if (button == 1) {
+            if (m_pMainFrame->IsFullScreenMode()) m_pMainFrame->PostMessage(WM_COMMAND, ID_VIEW_FULLSCREEN);
+            else m_pMainFrame->PostMessage(WM_SYSCOMMAND, m_pMainFrame->IsZoomed() ? SC_RESTORE : SC_MAXIMIZE);
+        } else if (button == 2) m_pMainFrame->PostMessage(WM_CLOSE);
+    };
+#endif
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    m_fluentProbe.timeClick = [this](bool right, CPoint point) {
+        if (right) m_pMainFrame->m_wndStatusBar.ShowTimerOptionsMenu(this, point);
+        else m_pMainFrame->m_wndStatusBar.ToggleOverlayTime();
+        UpdateFluentControls();
+    };
+    m_fluentProbe.invokeButton = [this](UINT id, const CRect& anchor, bool right) {
+        m_pMainFrame->m_wndToolBar.InvokeOverlayButton(id, anchor, right);
+    };
+    m_fluentProbe.volumeActive = [this]() {
+        auto& volume = m_pMainFrame->m_wndToolBar.m_volctrl;
+        return volume.OverlayDragging() && ::GetCapture() == volume.GetSafeHwnd();
+    };
+    m_fluentProbe.volumeMouse = [this](UINT message, WPARAM flags, double fraction) {
+        const bool dragging = m_pMainFrame->m_wndToolBar.m_volctrl.ForwardOverlayMouse(message, flags, fraction);
+        UpdateFluentControls();
+        return dragging;
+    };
+    m_fluentProbe.seekActive = [this]() { return m_pMainFrame->m_wndSeekBar.DraggingThumb(); };
+    m_fluentProbe.seekMouse = [this](UINT message, WPARAM flags, double fraction) {
+        return m_pMainFrame->m_wndSeekBar.ForwardOverlayMouse(message, flags, fraction);
+    };
+#endif
     GetEventd().Connect(m_eventc, {
         MpcEvent::SWITCHING_TO_FULLSCREEN,
         MpcEvent::SWITCHED_TO_FULLSCREEN,
@@ -44,6 +79,19 @@ CChildView::CChildView(CMainFrame* pMainFrame)
 CChildView::~CChildView()
 {
 }
+
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+void CChildView::TraceGeometry(const char* tag)
+{
+    GeometryDiagnostics::Record(tag, m_hWnd);
+    GeometryDiagnostics::Record("ui.video-target", m_pMainFrame->m_pVideoWnd ? m_pMainFrame->m_pVideoWnd->GetSafeHwnd() : nullptr);
+    GeometryDiagnostics::Record("ui.toolbar", m_pMainFrame->m_wndToolBar.GetSafeHwnd());
+    GeometryDiagnostics::Record("ui.seekbar", m_pMainFrame->m_wndSeekBar.GetSafeHwnd());
+    GeometryDiagnostics::Record("ui.info", m_pMainFrame->m_wndInfoBar.GetSafeHwnd());
+    GeometryDiagnostics::Record("ui.stats", m_pMainFrame->m_wndStatsBar.GetSafeHwnd());
+    GeometryDiagnostics::Record("ui.status", m_pMainFrame->m_wndStatusBar.GetSafeHwnd());
+}
+#endif
 
 void CChildView::EventCallback(MpcEvent ev)
 {
@@ -62,6 +110,14 @@ void CChildView::EventCallback(MpcEvent ev)
         default:
             ASSERT(FALSE);
     }
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    UpdateNativeDecoration();
+#endif
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+    char tag[64] = {};
+    _snprintf_s(tag, sizeof(tag), _TRUNCATE, "ui.event.%u", static_cast<unsigned>(ev));
+    TraceGeometry(tag);
+#endif
 }
 
 BOOL CChildView::PreCreateWindow(CREATESTRUCT& cs)
@@ -79,6 +135,19 @@ BOOL CChildView::PreCreateWindow(CREATESTRUCT& cs)
 
 BOOL CChildView::PreTranslateMessage(MSG* pMsg)
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    // Keyed toolbar pixels can route movement to the video beneath them.
+    // Recognize the complete native mute-button rectangle, not just its ink.
+    if (pMsg->message == WM_MOUSEMOVE) m_pMainFrame->m_wndToolBar.UpdateVolumeFlyout(true);
+#endif
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    UpdateFluentControls();
+    if (pMsg->message == WM_MOUSEMOVE) {
+        m_fluentProbe.Refresh(this, pMsg->hwnd);
+    } else if (pMsg->message == WM_MOUSELEAVE) {
+        m_fluentProbe.Refresh(this);
+    }
+#endif
     // filter interactive video controls mouse messages
     if (pMsg->hwnd != m_hWnd &&
             pMsg->message >= WM_MOUSEFIRST && pMsg->message <= WM_MOUSELAST &&
@@ -107,12 +176,143 @@ BOOL CChildView::PreTranslateMessage(MSG* pMsg)
     return CWnd::PreTranslateMessage(pMsg);
 }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+void CChildView::UpdateNativeDecoration()
+{
+    if (m_refreshingNativeDecoration || !GetSafeHwnd()) return;
+    m_refreshingNativeDecoration = true;
+    struct ResetFlag { bool& flag; ~ResetFlag() { flag = false; } } reset{m_refreshingNativeDecoration};
+    CRect view; GetClientRect(view);
+    const unsigned height = m_pMainFrame->m_controls.GetVisibleToolbarsHeight();
+    const bool mediaLoaded = m_pMainFrame->GetLoadState() == MLS::LOADED;
+    const bool videoLoaded = mediaLoaded && !m_pMainFrame->m_fAudioOnly;
+    const bool available = !m_bSwitchingFullscreen && IsWindowVisible()
+        && !m_pMainFrame->IsIconic() && !m_pMainFrame->HasDedicatedFSVideoWindow();
+    const bool nativeVisible = m_pMainFrame->m_controls.ToolbarsCoverVideo() && height > 0;
+    if (!available || view.IsRectEmpty()) {
+        m_nativeHeader.Hide(); m_nativeBackdrop.Hide(); return;
+    }
+    CString title; m_pMainFrame->GetWindowText(title);
+    const int dot = title.ReverseFind(L'.');
+    if (dot >= 0) {
+        CString suffix = title.Mid(dot); suffix.MakeLower();
+        for (LPCWSTR extension : {L".mp4", L".mkv", L".avi", L".mov", L".wmv", L".webm", L".m4v",
+                L".mpg", L".mpeg", L".ts", L".m2ts", L".mp3", L".flac", L".wav", L".aac", L".ogg", L".m4a"}) {
+            if (suffix == extension) { title.Truncate(dot); break; }
+        }
+    }
+    const int dpi = m_pMainFrame->m_dpi.ScaleY(96);
+    CRect bottom(view); bottom.top = std::max(view.top, view.bottom - int(height));
+    const bool bottomVisible = nativeVisible && (videoLoaded || m_pMainFrame->IsStatusBarForcedForMessage());
+    if (bottomVisible) m_nativeBackdrop.Refresh(this, bottom, false, CString(), dpi);
+    else m_nativeBackdrop.Hide();
+    CRect top(view);
+    top.bottom = std::min(bottomVisible ? bottom.top : view.bottom, view.top + m_pMainFrame->m_dpi.ScaleY(40));
+    // An empty/loading window must remain closable without showing playback
+    // controls. Once media is loaded, all decoration follows native visibility.
+    if (!mediaLoaded || nativeVisible) m_nativeHeader.Refresh(this, top, true,
+        mediaLoaded ? title : CString(), dpi, m_pMainFrame->IsFullScreenMode() || m_pMainFrame->IsZoomed());
+    else m_nativeHeader.Hide();
+}
+#endif
+
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+void CChildView::UpdateFluentControls()
+{
+    if (m_updatingFluent || !GetSafeHwnd() || !m_pMainFrame->m_wndToolBar.GetSafeHwnd()
+            || !m_pMainFrame->m_wndSeekBar.GetSafeHwnd()) return;
+    m_updatingFluent = true;
+    struct ResetFlag { bool& flag; ~ResetFlag() { flag = false; } } reset{m_updatingFluent};
+    if (!m_pMainFrame->m_OSD.overlayMessage) {
+        m_pMainFrame->m_OSD.overlayMessage = [this](LPCWSTR message, int duration) {
+            return m_fluentProbe.ShowFeedback(this, message, duration);
+        };
+    }
+    auto& nativeToolbar = m_pMainFrame->m_wndToolBar;
+    auto& toolbar = nativeToolbar.GetToolBarCtrl();
+    auto& seekbar = m_pMainFrame->m_wndSeekBar;
+    // Keep hidden native input geometry usable without allowing it to cover video.
+    CRect viewRect; GetClientRect(viewRect);
+    for (CWnd* backend : {static_cast<CWnd*>(&nativeToolbar), static_cast<CWnd*>(&seekbar)}) {
+        CRect rect; backend->GetClientRect(rect);
+        if (rect.Width() != viewRect.Width() || rect.Height() < 24)
+            backend->SetWindowPos(nullptr, 0, 0, viewRect.Width(), std::max(32, rect.Height()), SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    nativeToolbar.UpdateOverlayCommandState();
+    const bool toolbarSelected = m_pMainFrame->m_controls.ControlChecked(CMainFrameControls::Toolbar::CONTROLS);
+    const bool seekSelected = m_pMainFrame->m_controls.ControlChecked(CMainFrameControls::Toolbar::SEEKBAR);
+    std::vector<CFluentOverlayProbe::Button> buttons;
+    if (toolbarSelected) {
+        for (int i = 0; i < toolbar.GetButtonCount(); ++i) {
+            TBBUTTON button = {};
+            if (!toolbar.GetButton(i, &button) || (button.fsState & TBSTATE_HIDDEN) || (button.fsStyle & BTNS_SEP)) continue;
+            if (button.idCommand == ID_VOLUME_MUTE) button.iBitmap = nativeToolbar.OverlayVolumeImage();
+            const CString tip = nativeToolbar.OverlayButtonTip(button.idCommand);
+            buttons.push_back({static_cast<UINT>(button.idCommand), button.iBitmap, button.fsState, tip});
+        }
+    }
+    auto& volume = nativeToolbar.m_volctrl;
+    int minimum = 0, maximum = 100; volume.GetRange(minimum, maximum);
+    CImageList* images = toolbar.GetImageList();
+    const bool volumeSelected = toolbarSelected && volume.GetSafeHwnd() && (volume.GetStyle() & WS_VISIBLE);
+    m_fluentProbe.SetNativeLayout(std::move(buttons), images ? images->GetSafeHandle() : nullptr,
+        toolbarSelected, seekSelected, volumeSelected, volume.GetPos() - minimum, maximum - minimum, AfxGetAppSettings().nToolbarAlignment);
+    REFERENCE_TIME start, stop; seekbar.GetRange(start, stop);
+    CString positionText, durationText;
+    m_pMainFrame->m_wndStatusBar.GetOverlayTimeParts(positionText, durationText);
+    m_fluentProbe.SetTimeParts(positionText, durationText, AfxGetAppSettings().fRemainingTime);
+    const CString time = positionText + L" / " + durationText;
+    m_fluentProbe.SetControlState(m_pMainFrame->IsFullScreenMode(), AfxGetAppSettings().fShowOSD, seekbar.CanOverlaySeek(), toolbarSelected || seekSelected,
+        start, stop, seekbar.GetPos(), time);
+    m_fluentProbe.Refresh(this);
+}
+
+bool CChildView::RouteFluentInput(const MSG& message)
+{
+    if (message.message == WM_MOUSELEAVE || message.message == WM_NCMOUSELEAVE
+            || message.message == WM_NCMOUSEMOVE) {
+        UpdateFluentControls();
+        return false;
+    }
+    if (message.message == WM_KEYDOWN || message.message == WM_SYSKEYDOWN) {
+        m_fluentProbe.Activity(message);
+        UpdateFluentControls();
+        return false;
+    }
+    if (message.message < WM_MOUSEFIRST || message.message > WM_MOUSELAST) return false;
+    // Include movement over the original toolbar: leaving video is still a leave.
+    UpdateFluentControls();
+    const HWND seekbar = m_pMainFrame->m_wndSeekBar.GetSafeHwnd();
+    const HWND volume = m_pMainFrame->m_wndToolBar.m_volctrl.GetSafeHwnd();
+    if (message.hwnd != m_hWnd && !::IsChild(m_hWnd, message.hwnd)
+            && !(message.hwnd == seekbar && m_pMainFrame->m_wndSeekBar.DraggingThumb())
+            && !(message.hwnd == volume && m_pMainFrame->m_wndToolBar.m_volctrl.OverlayDragging())) return false;
+    m_fluentProbe.Activity(message);
+    UpdateFluentControls();
+    return m_fluentProbe.RouteInput(message);
+}
+
+LRESULT CChildView::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
+{
+    if (message == WM_CAPTURECHANGED) m_fluentProbe.CancelPress();
+    if (message == WM_MOUSELEAVE) {
+        m_fluentProbe.Refresh(this);
+    } else if (message == WM_SIZE || message == WM_DESTROY || message == WM_SHOWWINDOW) {
+        m_fluentProbe.Hide();
+    }
+    return __super::WindowProc(message, wParam, lParam);
+}
+#endif
+
 IMPLEMENT_DYNAMIC(CChildView, CMouseWndWithArtView)
 
 BEGIN_MESSAGE_MAP(CChildView, CMouseWndWithArtView)
     ON_WM_PAINT()
     ON_WM_ERASEBKGND()
     ON_WM_SIZE()
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    ON_WM_WINDOWPOSCHANGING()
+#endif
     ON_WM_NCHITTEST()
     ON_WM_NCLBUTTONDOWN()
 END_MESSAGE_MAP()
@@ -120,8 +320,59 @@ END_MESSAGE_MAP()
 void CChildView::OnPaint()
 {
     CPaintDC dc(this);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    // The initial frame layout may run before the child is visible. Ensure
+    // empty-window commands are present at its first real paint as well.
+    if (m_pMainFrame->GetLoadState() != MLS::LOADED) UpdateNativeDecoration();
+#endif
     m_pMainFrame->RepaintVideo();
 }
+
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+void CChildView::OnWindowPosChanging(WINDOWPOS* position)
+{
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+    const RECT requested = {position->x, position->y,
+        position->x + position->cx, position->y + position->cy};
+#endif
+    if (m_pMainFrame->m_nativeVideoLayout && !(position->flags & SWP_NOSIZE)) {
+        unsigned overlap = 0;
+        if (!m_pMainFrame->HasDedicatedFSVideoWindow()
+                && m_pMainFrame->m_controls.ToolbarsCoverVideo()) {
+            overlap = m_pMainFrame->m_controls.GetVisibleToolbarsHeight();
+        }
+        // Expand the actual renderer HWND, not just its presentation rectangle.
+        // The native sibling bars keep their layout, commands and input.
+        position->cy += overlap;
+        m_pMainFrame->m_nativeToolbarOverlapHeight = overlap;
+        if (overlap) {
+            // The expanded view shares the toolbar rectangles. Keep the real
+            // sibling controls above it in this same native layout transaction.
+            // HWND_BOTTOM affects only siblings, never the main player window.
+            position->hwndInsertAfter = HWND_BOTTOM;
+            position->flags &= ~SWP_NOZORDER;
+        }
+    }
+    // Do not preserve pixels from the old-sized video surface.
+    CRect before;
+    GetWindowRect(before);
+    if (CWnd* parent = GetParent()) parent->ScreenToClient(before);
+    const bool resized = !(position->flags & SWP_NOSIZE)
+        && (position->cx != before.Width() || position->cy != before.Height());
+    const bool moved = !(position->flags & SWP_NOMOVE)
+        && (position->x != before.left || position->y != before.top);
+    if (resized || moved) position->flags |= SWP_NOCOPYBITS;
+    __super::OnWindowPosChanging(position);
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+    if (!(position->flags & SWP_NOSIZE)) {
+        const RECT applied = {position->x, position->y,
+            position->x + position->cx, position->y + position->cy};
+        GeometryDiagnostics::Record(m_pMainFrame->m_nativeVideoLayout
+            ? "layout.pane" : "window.pane", m_hWnd, &requested, &applied);
+    }
+#endif
+}
+#endif
 
 void CChildView::OnSize(UINT nType, int cx, int cy)
 {
@@ -134,6 +385,12 @@ void CChildView::OnSize(UINT nType, int cx, int cy)
         m_pMainFrame->m_OSD.OnSize(nType, cx, cy);
     }
     m_pMainFrame->UpdateThumbnailClip();
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    UpdateNativeDecoration();
+#endif
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+    TraceGeometry("ui.after-size");
+#endif
 }
 
 LRESULT CChildView::OnNcHitTest(CPoint point)

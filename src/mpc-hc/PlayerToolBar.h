@@ -28,6 +28,21 @@
 #include <optional>
 
 class CMainFrame;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+// A container for the existing native volume slider, not a second control.
+class CNativeVolumeFlyout final : public CWnd
+{
+public:
+    CVolumeCtrl* slider = nullptr;
+    std::function<void()> activity;
+    int valueWidth = 36, valueInset = 6, valueFontHeight = 13;
+private:
+    CFont m_valueFont;
+    int m_valueFontHeight = 0;
+protected:
+    LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam) override;
+};
+#endif
 
 class CPlayerToolBar : public CToolBar, public CMPCThemeUtil
 {
@@ -57,6 +72,25 @@ private:
     CMPCThemeToolTipCtrl themedToolTip;
     int leftSeparatorIndex;
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    ULONG_PTR m_transportGraphicsToken = 0;
+    void DrawTransportButton(const NMCUSTOMDRAW& draw);
+    static bool IsTransportButton(UINT id);
+    void NormalizeTransportLayout();
+    bool ArrangeTransportControls(const CRect& client);
+    void HideVolumeFlyout();
+    void DrawVolumeButton(const NMCUSTOMDRAW& draw);
+    CNativeVolumeFlyout m_volumeFlyout;
+    bool m_updatingVolumeFlyout = false;
+    int m_volumeGlyphState = -1;
+    std::vector<UINT> m_overflowButtons;
+    bool m_arrangingTransport = false;
+    std::vector<LONG> m_transportGeometry;
+    std::vector<LONG> TransportGeometry();
+    LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam) override;
+    afx_msg BOOL OnOverflowButton(UINT id);
+    afx_msg void OnUpdateOverflowButton(CCmdUI* ui);
+#endif
     int m_nButtonHeight;
     std::unique_ptr<CImageList> m_pButtonsImages;
     std::unique_ptr<CImageList> m_pDisabledButtonsImages;
@@ -83,6 +117,13 @@ private:
     static int FirstMovableButtonIndex(const std::vector<int>& buttons, int layoutRevision);
     static bool IsValidButtonLayout(const std::vector<int>& buttons, int layoutRevision);
 public:
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    std::optional<CRect> m_overlayAnchor;
+    void UpdateOverlayCommandState();
+    int OverlayVolumeImage() const;
+    CString OverlayButtonTip(UINT id);
+    void InvokeOverlayButton(UINT id, const CRect& anchor, bool rightButton);
+#endif
     CPlayerToolBar(CMainFrame* pMainFrame);
     virtual ~CPlayerToolBar();
 
@@ -90,7 +131,13 @@ public:
     void MakeImageList(bool createCustomizeButtons, int buttonSize, std::unique_ptr<CImageList> &imageList);
     LPCWSTR GetStringFromID(int idCommand);
     const std::map<WORD, svgButtonInfo> GetSupportedSvgButtons() {
-        return supportedSvgButtons;
+        auto buttons = supportedSvgButtons;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+        for (auto& [id, info] : buttons) {
+            if (IsTransportButton(id)) info.positionLocked = LOCK_LEFT;
+        }
+#endif
+        return buttons;
     }
     std::unique_ptr<CImageList>& GetCustomizeButtonImages() {
         return m_pCustomizeButtonImages;
@@ -104,6 +151,12 @@ public:
     TBBUTTON GetStandardButton(int cmdid);
     void LoadButtonStrings();
     void ArrangeControls();
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    bool VolumeFlyoutActive() const;
+    void UpdateVolumeFlyout(bool allowOpen = false);
+    afx_msg void OnMouseLeave();
+    afx_msg void OnShowWindow(BOOL show, UINT status);
+#endif
     void ToolbarChange();
     void ToolBarReset();
 
@@ -150,6 +203,9 @@ protected:
     afx_msg void OnSize(UINT nType, int cx, int cy);
     afx_msg LRESULT OnMPCThemeChanged(WPARAM wParam, LPARAM lParam);
     void RegisterThemedToolTipTools();
+#ifdef MPC_EXPERIMENTAL_NO_BACKDROP
+    void UpdateBackdropTransparency();
+#endif
     afx_msg void OnInitialUpdate();
     afx_msg BOOL OnVolumeMute(UINT nID);
     afx_msg void OnUpdateVolumeMute(CCmdUI* pCmdUI);

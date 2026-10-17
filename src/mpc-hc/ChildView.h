@@ -22,17 +22,42 @@
 #pragma once
 
 #include "MouseWndWithArtView.h"
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+#include "NativeControlsDecoration.h"
+#endif
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+#include "FluentOverlayProbe.h"
+#endif
 
 class CChildView : public CMouseWndWithArtView
 {
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    CFluentOverlayProbe m_fluentProbe;
+    bool m_updatingFluent = false;
+    LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam) override;
+#endif
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    CNativeControlsDecoration m_nativeHeader, m_nativeBackdrop;
+    bool m_refreshingNativeDecoration = false;
+#endif
     bool m_bSwitchingFullscreen;
     bool m_bFirstMedia;
 
     EventClient m_eventc;
 
     void EventCallback(MpcEvent ev);
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+    void TraceGeometry(const char* tag);
+#endif
 
 public:
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    void UpdateNativeDecoration();
+#endif
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    void UpdateFluentControls();
+    bool RouteFluentInput(const MSG& message);
+#endif
     CChildView(CMainFrame* pMainFrm);
     virtual ~CChildView();
 
@@ -46,6 +71,9 @@ protected:
 
     afx_msg void OnPaint();
     afx_msg void OnSize(UINT nType, int cx, int cy);
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    afx_msg void OnWindowPosChanging(WINDOWPOS* position);
+#endif
     afx_msg LRESULT OnNcHitTest(CPoint point);
     afx_msg void OnNcLButtonDown(UINT nHitTest, CPoint point);
 public:

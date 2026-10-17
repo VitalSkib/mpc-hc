@@ -29,6 +29,9 @@
 #include "IPinHook.h"
 #include "FocusThread.h"
 #include "../../../DSUtil/vd.h"
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+#include "../../../DSUtil/GeometryDiagnostics.h"
+#endif
 #include <mpc-hc_config.h>
 
 #define FRAMERATE_MAX_DELTA 3000
@@ -1464,6 +1467,11 @@ STDMETHODIMP_(bool) CDX9AllocatorPresenter::Paint(bool bAll)
                 hr = m_pD3DDev->Present(presentationSrcRect, presentationDestRect, nullptr, nullptr);
             }
         }
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+        GeometryDiagnostics::Record(m_bIsEVR ? "evr.present" : "dx9.present", m_hWnd,
+            m_bIsFullscreen ? nullptr : &presentationSrcRect,
+            m_bIsFullscreen ? nullptr : &presentationDestRect, hr);
+#endif
         // Issue an End event
         if (pEventQueryFlushAfterVSync) {
             pEventQueryFlushAfterVSync->Issue(D3DISSUE_END);

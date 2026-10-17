@@ -1,0 +1,95 @@
+name: Native video geometry fix
+
+on:
+  pull_request:
+    branches: [develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Configure Visual Studio and Windows SDK
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.ATLMFC -property installationPath
+          if (-not $vs) { throw 'Visual C++ ATL/MFC is missing from this runner.' }
+          $mfcToolbarSource = Get-ChildItem "$vs/VC/Tools/MSVC/*/atlmfc/src/mfc/bartool.cpp" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($mfcToolbarSource) {
+            $mfcLines = Get-Content -LiteralPath $mfcToolbarSource.FullName
+            $mfcRectAccessor = $mfcLines | Select-String '^void CToolBar::GetItemRect\('
+            if ($mfcRectAccessor) {
+              Write-Output 'Native MFC rectangle accessor (deferred-layout verification):'
+              $mfcLines | Select-Object -Skip ($mfcRectAccessor[0].LineNumber - 1) -First 16
+            }
+          }
+          $sdk = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Include" -Directory |
+            Where-Object Name -Match '^10\.0\.\d+\.0$' |
+            Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
+          if (-not $sdk) { throw 'Windows SDK not found.' }
+          @('@echo off', ('set "MPCHC_VS_PATH=' + $vs + '"'), ('set "MPCHC_WINSDK_VER=' + $sdk.Name + '"')) |
+            Set-Content build.user.bat -Encoding ascii
+          Invoke-WebRequest 'https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/win64/nasm-2.16.03-win64.zip' -OutFile "$env:RUNNER_TEMP\nasm.zip"
+          Expand-Archive "$env:RUNNER_TEMP\nasm.zip" "$env:RUNNER_TEMP\nasm"
+          (Get-ChildItem "$env:RUNNER_TEMP\nasm" -Filter nasm.exe -Recurse | Select-Object -First 1).DirectoryName >> $env:GITHUB_PATH
+      - name: Build native-controls x64 probe
+        shell: cmd
+        env:
+          CL: /DMPC_EXPERIMENTAL_NATIVE_SEEKBAR /DMPC_EXPERIMENTAL_NO_BACKDROP /DMPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS /DMPC_EXPERIMENTAL_NATIVE_DECORATION
+        run: build.bat Build x64 Main Release Lite
+      - name: Package isolated test settings
+        shell: pwsh
+        run: |
+          $testDir = 'bin/mpc-hc_x64 Lite'
+          @('[Settings]', 'AllowMultipleInstances=1', 'ModernThemeMode=0',
+            'ModernThemeStyle=2', 'Win11NativeMenus=1', 'AlwaysUseShortMenu=1', 'ShowOSD=1',
+            'HideFullscreenControls=1',
+            'HideFullscreenControlsPolicy=2', 'HideFullscreenControlsDelay=4000',
+            'HideWindowedControls=1', 'UseTimeTooltip=1', 'UseSeekPreview=1',
+            '[Toolbars\PlayerToolBar]', 'ToolbarAlignment=1') |
+            Set-Content -LiteralPath "$testDir/mpc-hc64.ini" -Encoding unicode
+          @('Native seekbar alpha test. Extract separately and run mpc-hc64.exe.',
+            'Native controls with 50% black backdrop and matching title/window-command header.',
+            'Window buttons stay visible without media; loaded media uses native control visibility.',
+            'Thin blue/grey native seekbar with zero-alpha background above the backdrop.',
+            'Moving video must show through ABOVE and BELOW the thin track.',
+            'Check native seek, outside release, hover time and seek preview.',
+            'Diagnostics: MPC-HC-geometry.log is created beside the EXE and overwritten on each run.',
+            'Open the same video, resize until the fault, hide/show controls, toggle fullscreen, close.',
+            'Keep the log from that run. No frames or media filenames are logged.',
+            'Transparent pixels may pass mouse input through: check button targeting too.',
+            'Native toolbar artwork selection, state backgrounds, input and commands remain unchanged.',
+            'The empty seekbar is already thin/transparent before opening media.',
+            'Portable settings are included; native controls auto-hide after 4 seconds.',
+            'Source: https://github.com/VitalSkib/mpc-hc/tree/fluent-hover-ui') |
+            Set-Content -LiteralPath "$testDir/README.txt" -Encoding utf8
+          Copy-Item -LiteralPath COPYING.txt -Destination "$testDir/COPYING.txt"
+      - name: Upload standalone test build
+        uses: actions/upload-artifact@v4
+        with:
+          name: MPC-HC-x64-native-video-layout-${{ github.sha }}
+          path: |
+            bin/mpc-hc_x64 Lite/mpc-hc64.exe
+            bin/mpc-hc_x64 Lite/mpc-hc64.ini
+            bin/mpc-hc_x64 Lite/README.txt
+            bin/mpc-hc_x64 Lite/COPYING.txt
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-diagnostics
+          path: |
+            bin/logs/**
+          if-no-files-found: ignore
+          retention-days: 7

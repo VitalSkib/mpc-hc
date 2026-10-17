@@ -3,6 +3,9 @@
 #include "CMPCTheme.h"
 #include "CMPCThemeUtil.h"
 #include <afxglobals.h>
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+#include <dwmapi.h>
+#endif
 #include "mplayerc.h"
 
 
@@ -61,7 +64,14 @@ void CMPCThemeToolTipCtrl::paintTT(CDC& dc, CMPCThemeToolTipCtrl* tt)
     dc.FillSolidRect(r, CMPCTheme::MenuBGColor);
 
     CBrush fb;
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    // Retain the active palette, but reduce the tooltip border contrast.
+    const COLORREF bg = CMPCTheme::MenuBGColor, border = CMPCTheme::TooltipBorderColor;
+    fb.CreateSolidBrush(RGB((GetRValue(bg) + GetRValue(border)) / 2,
+        (GetGValue(bg) + GetGValue(border)) / 2, (GetBValue(bg) + GetBValue(border)) / 2));
+#else
     fb.CreateSolidBrush(CMPCTheme::TooltipBorderColor);
+#endif
     dc.FrameRect(r, &fb);
     fb.DeleteObject();
     COLORREF oldClr = dc.SetTextColor(CMPCTheme::TextFGColor);
@@ -96,6 +106,11 @@ int CMPCThemeToolTipCtrl::OnCreate(LPCREATESTRUCT lpCreateStruct)
         return -1;
     }
 
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    // Windows 11 small rounded corners; unsupported systems retain native geometry.
+    const DWORD roundSmall = 3;
+    DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(33), &roundSmall, sizeof(roundSmall));
+#endif
     return 0;
 }
 
