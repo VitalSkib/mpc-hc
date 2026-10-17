@@ -45,7 +45,8 @@ jobs:
             'ModernThemeStyle=2', 'Win11NativeMenus=1', 'AlwaysUseShortMenu=1', 'ShowOSD=1',
             'HideFullscreenControls=1',
             'HideFullscreenControlsPolicy=2', 'HideFullscreenControlsDelay=4000',
-            'HideWindowedControls=1', 'UseTimeTooltip=1', 'UseSeekPreview=1') |
+            'HideWindowedControls=1', 'UseTimeTooltip=1', 'UseSeekPreview=1',
+            '[Toolbars\PlayerToolBar]', 'ToolbarAlignment=1') |
             Set-Content -LiteralPath "$testDir/mpc-hc64.ini" -Encoding unicode
           @('Native seekbar alpha test. Extract separately and run mpc-hc64.exe.',
             'Native controls with 40% black backdrop and matching title/close header.',

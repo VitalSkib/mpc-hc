@@ -563,6 +563,9 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_UPDATE_COMMAND_UI(ID_PLAY_STOP, OnUpdatePlayPauseStop)
     ON_COMMAND_RANGE(ID_PLAY_FRAMESTEP, ID_PLAY_FRAMESTEP_BACK, OnPlayFramestep)
     ON_UPDATE_COMMAND_UI(ID_PLAY_FRAMESTEP, OnUpdatePlayFramestep)
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    ON_UPDATE_COMMAND_UI(ID_PLAY_FRAMESTEP_BACK, OnUpdatePlayFramestep)
+#endif
     ON_COMMAND_RANGE(ID_PLAY_SEEKBACKWARDSMALL, ID_PLAY_SEEKFORWARDLARGE, OnPlaySeek)
     ON_COMMAND(ID_PLAY_SEEKSET, OnPlaySeekSet)
     ON_COMMAND_RANGE(ID_PLAY_SEEKKEYBACKWARD, ID_PLAY_SEEKKEYFORWARD, OnPlaySeekKey)
@@ -10427,8 +10430,17 @@ void CMainFrame::OnUpdatePlayFramestep(CCmdUI* pCmdUI)
 {
     bool fEnable = false;
 
-    if (pCmdUI->m_nID == ID_PLAY_FRAMESTEP) {
+    if (pCmdUI->m_nID == ID_PLAY_FRAMESTEP
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+            || pCmdUI->m_nID == ID_PLAY_FRAMESTEP_BACK
+#endif
+    ) {
         if (!m_fAudioOnly && !m_fLiveWM && GetLoadState() == MLS::LOADED && (GetPlaybackMode() == PM_FILE || (GetPlaybackMode() == PM_DVD && m_iDVDDomain == DVD_DOMAIN_Title))) {
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+            if (pCmdUI->m_nID == ID_PLAY_FRAMESTEP_BACK) {
+                fEnable = m_pMS && m_wndSeekBar.HasDuration();
+            } else
+#endif
             if (m_pFS || m_pMS && (S_OK == m_pMS->IsFormatSupported(&TIME_FORMAT_FRAME))) {
                 fEnable = true;
             }

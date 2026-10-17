@@ -57,6 +57,10 @@ private:
     CMPCThemeToolTipCtrl themedToolTip;
     int leftSeparatorIndex;
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    ULONG_PTR m_transportGraphicsToken = 0;
+    void DrawTransportButton(const NMCUSTOMDRAW& draw);
+#endif
     int m_nButtonHeight;
     std::unique_ptr<CImageList> m_pButtonsImages;
     std::unique_ptr<CImageList> m_pDisabledButtonsImages;

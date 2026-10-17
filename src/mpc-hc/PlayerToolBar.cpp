@@ -31,6 +31,9 @@
 #include "SVGImage.h"
 #include "ImageGrayer.h"
 #include "CMPCTheme.h"
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+#include <gdiplus.h>
+#endif
 #include "stb/stb_image.h"
 #include "stb/stb_image_resize2.h"
 
@@ -93,6 +96,9 @@ std::map<WORD, CPlayerToolBar::svgButtonInfo> CPlayerToolBar::supportedSvgButton
     {ID_PLAY_DECRATE, {TBBS_BUTTON, 7}},
     {ID_PLAY_INCRATE, {TBBS_BUTTON, 8}},
     {ID_PLAY_FRAMESTEP, {TBBS_BUTTON, 9}},
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    {ID_PLAY_FRAMESTEP_BACK, {TBBS_BUTTON, 52}}, // appended mirrored native artwork
+#endif
     {ID_FILE_OPENMEDIA, {TBBS_BUTTON, 10}},
     {ID_VIEW_OPTIONS, {TBBS_BUTTON, 11}},
     {ID_BUTTON_FULLSCREEN, {TBBS_BUTTON, 12, IDS_AG_FULLSCREEN, LOCK_NONE, IDS_AG_EXIT_FULLSCREEN}},
@@ -125,6 +131,10 @@ CPlayerToolBar::CPlayerToolBar(CMainFrame* pMainFrame)
     , currentlyDraggingButton(-1)
     , toolbarAdjustActive(false)
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    Gdiplus::GdiplusStartupInput startup;
+    Gdiplus::GdiplusStartup(&m_transportGraphicsToken, &startup, nullptr);
+#endif
     GetEventd().Connect(m_eventc, {
         MpcEvent::DPI_CHANGED,
         MpcEvent::DEFAULT_TOOLBAR_SIZE_CHANGED,
@@ -136,6 +146,9 @@ CPlayerToolBar::CPlayerToolBar(CMainFrame* pMainFrame)
 
 CPlayerToolBar::~CPlayerToolBar()
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    if (m_transportGraphicsToken) Gdiplus::GdiplusShutdown(m_transportGraphicsToken);
+#endif
 }
 
 bool CPlayerToolBar::LoadExternalToolBar(CImage& image, float svgscale, CStringW resolutionPostfix)
@@ -267,7 +280,12 @@ void CPlayerToolBar::MakeImageList(bool createCustomizeButtons, int buttonSize, 
 
             if (!createCustomizeButtons) {
                 // the manual specifies that sizeButton should be sizeImage inflated by (7, 6)
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+                const int rowHeight = AppIsThemeLoaded() ? std::max(height + 6, m_pMainFrame->m_dpi.ScaleY(42)) : height + 6;
+                SetSizes(CSize(height + 7, rowHeight), CSize(height, height));
+#else
                 SetSizes(CSize(height + 7, height + 6), CSize(height, height));
+#endif
 
                 volumeOn.Destroy();
                 volumeOff.Destroy();
@@ -327,9 +345,35 @@ void CPlayerToolBar::MakeImageList(bool createCustomizeButtons, int buttonSize, 
 
             imageList->Add(CBitmap::FromHandle(dynamicToolbar), nullptr);
             dynamicToolbar.Destroy();
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+            // Keep the external 26-column atlas contract. Add the backward-step
+            // image after its existing slots instead of changing theme resources.
+            auto appendBackwardStep = [&](CImageList& list, int row) {
+                CImage mirrored;
+                mirrored.Create(height, height, 32, CImage::createAlphaChannel);
+                for (int y = 0; y < height; ++y) {
+                    for (int x = 0; x < height; ++x) {
+                        BYTE* dst = static_cast<BYTE*>(mirrored.GetPixelAddress(x, y));
+                        const int sourceX = 9 * height + height - 1 - x;
+                        if (bpp == 32) {
+                            memcpy(dst, image.GetPixelAddress(sourceX, row + y), 4);
+                        } else {
+                            const COLORREF colour = image.GetPixel(sourceX, row + y);
+                            dst[0] = GetBValue(colour); dst[1] = GetGValue(colour);
+                            dst[2] = GetRValue(colour); dst[3] = 255;
+                        }
+                    }
+                }
+                while (list.GetImageCount() <= 52) list.Add(CBitmap::FromHandle(mirrored), nullptr);
+            };
+            appendBackwardStep(*imageList, imageOffset);
+#endif
 
             if (!createCustomizeButtons) {
                 m_pDisabledButtonsImages->Add(CBitmap::FromHandle(dynamicToolbarDisabled), nullptr);
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+                appendBackwardStep(*m_pDisabledButtonsImages, imageDisabledOffset);
+#endif
                 dynamicToolbarDisabled.Destroy();
                 m_nButtonHeight = height;
 
@@ -543,6 +587,27 @@ void CPlayerToolBar::PlaceButtons(bool loadSavedLayout) {
         layoutRevision = AfxGetMyApp()->GetProfileInt(IDS_R_PLAYERTOOLBAR, L"ButtonLayoutRevision", 0);
     }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    if (loadSavedLayout && AfxGetMyApp()->GetProfileInt(IDS_R_PLAYERTOOLBAR, L"FluentTransportLayoutVersion", 0) < 1) {
+        const std::vector<int> transport = {ID_NAVIGATE_SKIPBACK, ID_PLAY_SEEKBACKWARDMED,
+            ID_PLAY_FRAMESTEP_BACK, ID_PLAY_PLAY, ID_PLAY_PAUSE, ID_PLAY_FRAMESTEP,
+            ID_PLAY_SEEKFORWARDMED, ID_NAVIGATE_SKIPFORWARD};
+        const auto previous = buttons;
+        buttons = {ID_LEFTSEPARATOR};
+        for (int id : previous) {
+            auto it = supportedSvgButtons.find(id);
+            if (it != supportedSvgButtons.end() && !it->second.positionLocked && id != ID_PLAY_STOP
+                    && std::find(transport.begin(), transport.end(), id) == transport.end()
+                    && std::find(buttons.begin(), buttons.end(), id) == buttons.end()) buttons.push_back(id);
+        }
+        buttons.insert(buttons.end(), transport.begin(), transport.end());
+        buttons.push_back(ID_DUMMYSEPARATOR); buttons.push_back(ID_VOLUME_MUTE);
+        layoutRevision = 1;
+        AfxGetMyApp()->WriteProfileVectorInt(IDS_R_PLAYERTOOLBAR, L"ButtonSequence", buttons);
+        AfxGetMyApp()->WriteProfileInt(IDS_R_PLAYERTOOLBAR, L"ButtonLayoutRevision", 1);
+        AfxGetMyApp()->WriteProfileInt(IDS_R_PLAYERTOOLBAR, L"FluentTransportLayoutVersion", 1);
+    }
+#endif
     addButton(ID_LEFTSEPARATOR);
 
     if (layoutRevision == 0 && IsValidButtonLayout(buttons, 0)) {
@@ -566,6 +631,15 @@ void CPlayerToolBar::PlaceButtons(bool loadSavedLayout) {
             }
         }
     } else {
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+        addButton(ID_NAVIGATE_SKIPBACK);
+        addButton(ID_PLAY_SEEKBACKWARDMED);
+        addButton(ID_PLAY_FRAMESTEP_BACK);
+        addButton(ID_PLAY_PLAY); addButton(ID_PLAY_PAUSE);
+        addButton(ID_PLAY_FRAMESTEP);
+        addButton(ID_PLAY_SEEKFORWARDMED);
+        addButton(ID_NAVIGATE_SKIPFORWARD);
+#else
         addButton(ID_PLAY_PLAY);
         addButton(ID_PLAY_PAUSE);
         addButton(ID_PLAY_STOP);
@@ -574,6 +648,7 @@ void CPlayerToolBar::PlaceButtons(bool loadSavedLayout) {
         addButton(ID_PLAY_INCRATE);
         addButton(ID_NAVIGATE_SKIPFORWARD);
         addButton(ID_PLAY_FRAMESTEP);
+#endif
     }
 
     addButton(ID_DUMMYSEPARATOR);
@@ -633,6 +708,17 @@ void CPlayerToolBar::ArrangeControls() {
     dummySeparatorIndex = volumeButtonIndex - 1;
     flexibleSpaceIndex = dummySeparatorIndex - 1;
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    if (AppIsThemeLoaded()) {
+        for (UINT id : {ID_PLAY_PLAY, ID_PLAY_PAUSE}) {
+            if (GetToolBarCtrl().CommandToIndex(id) >= 0) {
+                TBBUTTONINFO info = {sizeof(info)}; info.dwMask = TBIF_SIZE;
+                info.cx = static_cast<WORD>(std::max(m_nButtonHeight + 7, m_pMainFrame->m_dpi.ScaleX(48)));
+                GetToolBarCtrl().SetButtonInfo(id, &info);
+            }
+        }
+    }
+#endif
     // Calculate total width of visible buttons
     int dynamicButtonsWidth = 0;
     for (int i = 1; i < dummySeparatorIndex; i++) {  // Start at 1 (skip left separator), stop before dummy separator
@@ -668,6 +754,28 @@ void CPlayerToolBar::ArrangeControls() {
                 int centerOffset = availableSeparatorSpace / 2;
                 leftSpacing = std::max(0, centerOffset);
                 rightSpacing = groupSpacing;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+                if (AppIsThemeLoaded()) {
+                    int beforePlay = 0, playWidth = 0;
+                    for (int i = 1; i < dummySeparatorIndex; ++i) {
+                        const UINT id = GetItemID(i);
+                        if (GetToolBarCtrl().GetState(id) & TBSTATE_HIDDEN) continue;
+                        CRect button; GetItemRect(i, button);
+                        if (id == ID_PLAY_PLAY || id == ID_PLAY_PAUSE) { playWidth = button.Width(); break; }
+                        beforePlay += button.Width();
+                    }
+                    if (playWidth > 0) {
+                        CRect frame; m_pMainFrame->GetClientRect(frame);
+                        CPoint middle(frame.CenterPoint().x, 0);
+                        m_pMainFrame->ClientToScreen(&middle); ScreenToClient(&middle);
+                        const int available = totalAvailableSpace - totalContentWidth - groupSpacing;
+                        leftSpacing = std::clamp(middle.x - beforePlay - playWidth / 2, 0, std::max(0, available - groupSpacing));
+                        // Keep volume at the right edge. If the window is too
+                        // narrow, native controls form a compact row without overlap.
+                        rightSpacing = std::max(groupSpacing, available - leftSpacing);
+                    }
+                }
+#endif
             }
             break;
         case 2: // Right alignment
@@ -759,7 +867,13 @@ int CPlayerToolBar::GetMinWidth() const
 
     int groupSpacing = CalculateGroupSpacing(m_nButtonHeight + TOOLBAR_BUTTON_HORIZONTAL_PADDING);
 
-    return buttonCount * (m_nButtonHeight + 1 + TOOLBAR_BUTTON_HORIZONTAL_PADDING) + 2 * groupSpacing + m_volumeCtrlSize;
+    int width = buttonCount * (m_nButtonHeight + 1 + TOOLBAR_BUTTON_HORIZONTAL_PADDING) + 2 * groupSpacing + m_volumeCtrlSize;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    if (AppIsThemeLoaded() && GetToolBarCtrl().CommandToIndex(ID_PLAY_PLAY) >= 0) {
+        width += std::max(0, m_pMainFrame->m_dpi.ScaleX(48) - m_nButtonHeight - 7);
+    }
+#endif
+    return width;
 }
 
 void CPlayerToolBar::SetVolume(int volume)
@@ -846,6 +960,37 @@ void drawButtonBG(NMCUSTOMDRAW nmcd, COLORREF c)
     dc.Detach();
 }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+void CPlayerToolBar::DrawTransportButton(const NMCUSTOMDRAW& draw)
+{
+    CRect rect(draw.rc);
+    CDC* dc = CDC::FromHandle(draw.hdc);
+    dc->FillSolidRect(rect, CMPCTheme::PlayerBGColor);
+    Gdiplus::Graphics graphics(draw.hdc);
+    graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+    const bool disabled = (draw.uItemState & CDIS_DISABLED) != 0;
+    const bool hot = (draw.uItemState & CDIS_HOT) != 0;
+    const bool pressed = (draw.uItemState & CDIS_SELECTED) != 0;
+    const float diameter = float(std::min(rect.Width() - 6, rect.Height() - 4)) - (pressed ? 1.0f : 0.0f);
+    const float x = float(rect.CenterPoint().x), y = float(rect.CenterPoint().y);
+    Gdiplus::Pen ring(disabled ? Gdiplus::Color(255, 55, 75, 85)
+        : hot ? Gdiplus::Color(255, 65, 190, 255) : Gdiplus::Color(255, 0, 160, 232),
+        float(m_pMainFrame->m_dpi.ScaleY(3)));
+    graphics.DrawEllipse(&ring, x - diameter / 2, y - diameter / 2, diameter, diameter);
+    const BYTE brightness = disabled ? 100 : hot ? 255 : 240;
+    Gdiplus::SolidBrush ink(Gdiplus::Color(255, brightness, brightness, brightness));
+    if (draw.dwItemSpec == ID_PLAY_PAUSE) {
+        const float width = diameter * 0.09f, height = diameter * 0.46f;
+        graphics.FillRectangle(&ink, x - diameter * 0.17f, y - height / 2, width, height);
+        graphics.FillRectangle(&ink, x + diameter * 0.08f, y - height / 2, width, height);
+    } else {
+        Gdiplus::PointF triangle[] = {{x - diameter * 0.12f, y - diameter * 0.23f},
+            {x + diameter * 0.25f, y}, {x - diameter * 0.12f, y + diameter * 0.23f}};
+        graphics.FillPolygon(&ink, triangle, 3);
+    }
+}
+#endif
+
 void CPlayerToolBar::OnCustomDraw(NMHDR* pNMHDR, LRESULT* pResult)
 {
     LPNMTBCUSTOMDRAW pTBCD = reinterpret_cast<LPNMTBCUSTOMDRAW>(pNMHDR);
@@ -876,6 +1021,14 @@ void CPlayerToolBar::OnCustomDraw(NMHDR* pNMHDR, LRESULT* pResult)
         lr |= CDRF_NOTIFYITEMDRAW | CDRF_NOTIFYPOSTPAINT;
         break;
         case CDDS_ITEMPREPAINT:
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+            if (AppIsThemeLoaded() && m_transportGraphicsToken
+                    && (pTBCD->nmcd.dwItemSpec == ID_PLAY_PLAY || pTBCD->nmcd.dwItemSpec == ID_PLAY_PAUSE)) {
+                DrawTransportButton(pTBCD->nmcd);
+                lr = CDRF_SKIPDEFAULT;
+                break;
+            }
+#endif
             lr |= CDRF_NOTIFYPOSTPAINT | TBCDRF_NOOFFSET;
             {
                 if (AppIsThemeLoaded()) {
