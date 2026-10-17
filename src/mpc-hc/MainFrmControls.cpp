@@ -447,7 +447,11 @@ void CMainFrameControls::UpdateToolbarsVisibility()
         // hide completely
         mask.hide(maskAll);
     } else if (bCanAutoHide) {
-        if (m_pMainFrame->m_wndSeekBar.DraggingThumb() || m_pMainFrame->m_bTBDropdownActive) {
+        if (m_pMainFrame->m_wndSeekBar.DraggingThumb() || m_pMainFrame->m_bTBDropdownActive
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+                || m_pMainFrame->m_wndToolBar.VolumeFlyoutActive()
+#endif
+                ) {
             // show bottom while dragging the seekbar thumb
             mask.show(DOCK_BOTTOM);
         } else {
@@ -767,6 +771,9 @@ void CMainFrameControls::UpdateToolbarsVisibility()
         m_pMainFrame->RecalcLayout();
     }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    m_pMainFrame->m_wndToolBar.UpdateVolumeFlyout();
+#endif
     st.bLastCanAutoHideToolbars = bCanAutoHide;
     st.bLastCanAutoHidePanels = bCanAutoHide && bCanHideDockedPanels;
     st.bLastHaveExclusiveSeekbar = bExclSeekbar;

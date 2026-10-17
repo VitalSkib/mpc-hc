@@ -23,6 +23,7 @@
 #include "CMPCThemeToolTipCtrl.h"
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
 #include "NativeThumbAnimation.h"
+#include <functional>
 #endif
 
 // CVolumeCtrl
@@ -52,6 +53,10 @@ public:
     bool Create(CWnd* pParentWnd);
     void IncreaseVolume(), DecreaseVolume();
     void SetPosInternal(int pos);
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    std::function<void()> flyoutActivity;
+    void HideFlyoutFeedback();
+#endif
 #ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
     bool m_overlayInput = false;
     bool OverlayDragging() const { return m_bDrag; }

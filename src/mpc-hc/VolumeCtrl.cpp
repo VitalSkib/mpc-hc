@@ -560,6 +560,7 @@ void CVolumeCtrl::OnMouseMove(UINT nFlags, CPoint point)
     TRACKMOUSEEVENT track = {sizeof(track), TME_LEAVE, m_hWnd, 0};
     ::TrackMouseEvent(&track);
     UpdateVolumeTip(true);
+    if (flyoutActivity) flyoutActivity();
 #endif
 
     if (AppIsThemeLoaded() && modernStyle && m_bDrag) {
@@ -590,6 +591,9 @@ void CVolumeCtrl::OnLButtonUp(UINT nFlags, CPoint point)
         checkHover(point);
         CSliderCtrl::OnLButtonUp(nFlags, point);
     }
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    if (flyoutActivity) flyoutActivity();
+#endif
 }
 
 
@@ -600,10 +604,19 @@ void CVolumeCtrl::OnMouseLeave()
     if (!m_bDrag) UpdateVolumeTip(false);
 #endif
     CSliderCtrl::OnMouseLeave();
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    if (flyoutActivity) flyoutActivity();
+#endif
 }
 
 
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+void CVolumeCtrl::HideFlyoutFeedback()
+{
+    if (::GetCapture() == m_hWnd) ::ReleaseCapture();
+    UpdateVolumeTip(false);
+}
+
 CRect CVolumeCtrl::FluentThumbRect()
 {
     CRect channel; getCustomChannelRect(channel);

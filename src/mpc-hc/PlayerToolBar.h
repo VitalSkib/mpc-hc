@@ -28,6 +28,17 @@
 #include <optional>
 
 class CMainFrame;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+// A container for the existing native volume slider, not a second control.
+class CNativeVolumeFlyout final : public CWnd
+{
+public:
+    CVolumeCtrl* slider = nullptr;
+    std::function<void()> activity;
+protected:
+    LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam) override;
+};
+#endif
 
 class CPlayerToolBar : public CToolBar, public CMPCThemeUtil
 {
@@ -62,7 +73,12 @@ private:
     void DrawTransportButton(const NMCUSTOMDRAW& draw);
     static bool IsTransportButton(UINT id);
     void NormalizeTransportLayout();
-    bool ArrangeTransportControls(const CRect& client, int top, int bottom);
+    bool ArrangeTransportControls(const CRect& client);
+    void HideVolumeFlyout();
+    void DrawVolumeButton(const NMCUSTOMDRAW& draw);
+    CNativeVolumeFlyout m_volumeFlyout;
+    bool m_updatingVolumeFlyout = false;
+    int m_volumeGlyphState = -1;
     std::vector<UINT> m_overflowButtons;
     bool m_arrangingTransport = false;
     afx_msg BOOL OnOverflowButton(UINT id);
@@ -128,6 +144,12 @@ public:
     TBBUTTON GetStandardButton(int cmdid);
     void LoadButtonStrings();
     void ArrangeControls();
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    bool VolumeFlyoutActive() const;
+    void UpdateVolumeFlyout(bool allowOpen = false);
+    afx_msg void OnMouseLeave();
+    afx_msg void OnShowWindow(BOOL show, UINT status);
+#endif
     void ToolbarChange();
     void ToolBarReset();
 
