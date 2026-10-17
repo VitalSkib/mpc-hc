@@ -529,7 +529,8 @@ BOOL CPlayerToolBar::Create(CWnd* pParentWnd)
         m_volumeFlyout.slider = &m_volctrl;
         m_volumeFlyout.activity = [this] { UpdateVolumeFlyout(); };
         m_volctrl.SetParent(&m_volumeFlyout);
-        ::SetLayeredWindowAttributes(m_volumeFlyout.GetSafeHwnd(), 0, 230, LWA_ALPHA);
+        m_volctrl.showValueInFlyout = true;
+        ::SetLayeredWindowAttributes(m_volumeFlyout.GetSafeHwnd(), 0, 204, LWA_ALPHA);
     }
     m_volctrl.flyoutActivity = [this] { UpdateVolumeFlyout(); };
     if (!m_volumeFlyout.GetSafeHwnd()) m_volctrl.ShowWindow(SW_HIDE);
@@ -701,12 +702,27 @@ LRESULT CNativeVolumeFlyout::WindowProc(UINT message, WPARAM wParam, LPARAM lPar
         // The native slider's reflected handler still applies settings and
         // forwards to the original frame's audio/OSD handler exactly once.
         slider->HScroll(LOWORD(wParam), HIWORD(wParam));
+        Invalidate(FALSE); // repaint the value from the same native slider
         return 0;
     }
     if (message == WM_ERASEBKGND) return TRUE;
     if (message == WM_PAINT) {
         CPaintDC dc(this); CRect rect; GetClientRect(rect);
         dc.FillSolidRect(rect, CMPCTheme::PlayerBGColor);
+        if (slider) {
+            if (!m_valueFont.GetSafeHandle() || m_valueFontHeight != valueFontHeight) {
+                m_valueFont.DeleteObject();
+                LOGFONT font = {}; font.lfHeight = -valueFontHeight; font.lfWeight = FW_NORMAL;
+                wcscpy_s(font.lfFaceName, L"Segoe UI");
+                m_valueFont.CreateFontIndirect(&font); m_valueFontHeight = valueFontHeight;
+            }
+            CRect value(rect); value.right -= valueInset; value.left = value.right - valueWidth;
+            CString text; text.Format(L"%d%%", slider->GetPos());
+            CFont* old = dc.SelectObject(&m_valueFont);
+            dc.SetBkMode(TRANSPARENT); dc.SetTextColor(CMPCTheme::TextFGColor);
+            dc.DrawText(text, value, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+            dc.SelectObject(old);
+        }
         return 0;
     }
     if (message == WM_MOUSEMOVE) {
@@ -759,11 +775,14 @@ void CPlayerToolBar::UpdateVolumeFlyout(bool allowOpen)
     if (!allowOpen || !mute.PtInRect(cursor)) return;
     m_pMainFrame->ScreenToClient(mute);
     CRect frame; m_pMainFrame->GetClientRect(frame);
-    const int width = m_pMainFrame->m_dpi.ScaleX(144), height = m_pMainFrame->m_dpi.ScaleY(36);
+    const int width = m_pMainFrame->m_dpi.ScaleX(184), height = m_pMainFrame->m_dpi.ScaleY(36);
+    m_volumeFlyout.valueWidth = m_pMainFrame->m_dpi.ScaleX(36);
+    m_volumeFlyout.valueInset = m_pMainFrame->m_dpi.ScaleX(6);
+    m_volumeFlyout.valueFontHeight = m_pMainFrame->m_dpi.ScaleY(13);
     const int inset = m_pMainFrame->m_dpi.ScaleX(6);
     const int x = std::clamp<int>(mute.right - width, frame.left, std::max<int>(frame.left, frame.right - width));
     const int y = std::max<int>(frame.top, mute.top - height);
-    m_volctrl.MoveWindow(inset, 0, width - 2 * inset, height);
+    m_volctrl.MoveWindow(inset, 0, width - 2 * inset - m_volumeFlyout.valueWidth, height);
     m_volctrl.ShowWindow(SW_SHOWNA);
     m_volumeFlyout.SetWindowPos(&wndTop, x, y, width, height, SWP_NOACTIVATE | SWP_SHOWWINDOW);
     const int corner = m_pMainFrame->m_dpi.ScaleX(8);
@@ -855,6 +874,9 @@ bool CPlayerToolBar::ArrangeTransportControls(const CRect& client)
     if (m_arrangingTransport) return true;
     m_arrangingTransport = true;
     auto& tb = GetToolBarCtrl();
+    // CToolBar owns a deferred button layout after SetSizes/image changes.
+    // Use its public accessor before reading common-control rectangles.
+    if (tb.GetButtonCount() > 0) { CRect rect; GetItemRect(0, rect); }
     HideVolumeFlyout();
     if (AppIsThemeLoaded()) {
         for (UINT id : {ID_PLAY_PLAY, ID_PLAY_PAUSE}) {
@@ -874,9 +896,9 @@ bool CPlayerToolBar::ArrangeTransportControls(const CRect& client)
     m_overflowButtons.clear();
     tb.HideButton(ID_TRANSPORT_OVERFLOW, FALSE);
     const auto widthOf = [&](UINT id) {
-        CRect rect; const int index = tb.CommandToIndex(id);
+        CRect rect(0, 0, 0, 0); const int index = tb.CommandToIndex(id);
         if (index < 0 || (tb.GetState(id) & TBSTATE_HIDDEN)) return 0;
-        tb.GetItemRect(index, rect); return static_cast<int>(rect.Width());
+        GetItemRect(index, rect); return static_cast<int>(rect.Width());
     };
     int core = 0, beforePlay = 0, play = 0;
     for (UINT id : transportButtons) {
@@ -965,12 +987,21 @@ void CPlayerToolBar::OnUpdateOverflowButton(CCmdUI* ui)
 
 void CPlayerToolBar::SetSeparatorWidth(int buttonIndex, int width) {
     UINT buttonId = GetItemID(buttonIndex);
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    // Update the real separator without scheduling another MFC layout that
+    // could subsequently replace the per-button play/pause width.
+    TBBUTTONINFO info = {sizeof(info)}; info.dwMask = TBIF_SIZE;
+    info.cx = static_cast<WORD>(std::max(0, width));
+    GetToolBarCtrl().SetButtonInfo(buttonId, &info);
+    GetToolBarCtrl().HideButton(buttonId, width == 0);
+#else
     if (width == 0) {
         GetToolBarCtrl().HideButton(buttonId, TRUE);
     } else {
         SetButtonInfo(buttonIndex, buttonId, TBBS_SEPARATOR, width);
         GetToolBarCtrl().HideButton(buttonId, FALSE);
     }
+#endif
 }
 
 int CPlayerToolBar::CalculateGroupSpacing(int volumeButtonWidth) const {
@@ -1450,7 +1481,7 @@ void CPlayerToolBar::OnSize(UINT nType, int cx, int cy)
 
 void CPlayerToolBar::OnInitialUpdate()
 {
-    //ArrangeControls();
+    ArrangeControls();
 }
 
 BOOL CPlayerToolBar::OnVolumeMute(UINT nID)

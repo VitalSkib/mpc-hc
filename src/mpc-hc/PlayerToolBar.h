@@ -35,6 +35,10 @@ class CNativeVolumeFlyout final : public CWnd
 public:
     CVolumeCtrl* slider = nullptr;
     std::function<void()> activity;
+    int valueWidth = 36, valueInset = 6, valueFontHeight = 13;
+private:
+    CFont m_valueFont;
+    int m_valueFontHeight = 0;
 protected:
     LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam) override;
 };

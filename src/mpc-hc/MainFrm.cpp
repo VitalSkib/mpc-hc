@@ -1746,6 +1746,11 @@ void CMainFrame::RecalcLayout(BOOL bNotify)
         r |= CRect(r.TopLeft(), CSize(min));
         MoveWindow(r);
     }
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    // OnSize may run inside the deferred placement transaction. Arrange once
+    // more with final frame/bar bounds, including the first media auto-size.
+    if (m_wndToolBar.GetSafeHwnd()) m_wndToolBar.ArrangeControls();
+#endif
     OSDBarSetPos();
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
     m_wndView.UpdateNativeDecoration();

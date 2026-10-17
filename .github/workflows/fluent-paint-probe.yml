@@ -23,6 +23,15 @@ jobs:
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.ATLMFC -property installationPath
           if (-not $vs) { throw 'Visual C++ ATL/MFC is missing from this runner.' }
+          $mfcToolbarSource = Get-ChildItem "$vs/VC/Tools/MSVC/*/atlmfc/src/mfc/bartool.cpp" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($mfcToolbarSource) {
+            $mfcLines = Get-Content -LiteralPath $mfcToolbarSource.FullName
+            $mfcRectAccessor = $mfcLines | Select-String '^void CToolBar::GetItemRect\('
+            if ($mfcRectAccessor) {
+              Write-Output 'Native MFC rectangle accessor (deferred-layout verification):'
+              $mfcLines | Select-Object -Skip ($mfcRectAccessor[0].LineNumber - 1) -First 16
+            }
+          }
           $sdk = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Include" -Directory |
             Where-Object Name -Match '^10\.0\.\d+\.0$' |
             Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
@@ -80,7 +89,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-diagnostics
-          path: |
-            bin/logs/**
-          if-no-files-found: ignore
-          retention-days: 7
+          path:

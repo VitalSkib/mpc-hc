@@ -629,6 +629,7 @@ CRect CVolumeCtrl::FluentThumbRect()
 void CVolumeCtrl::UpdateVolumeTip(bool visible)
 {
     if (!m_volumeTip.GetSafeHwnd()) return;
+    visible = visible && !showValueInFlyout;
     TOOLINFO ti = {sizeof(ti)};
     ti.uFlags = TTF_TRACK | TTF_IDISHWND | TTF_ABSOLUTE;
     ti.hwnd = m_hWnd; ti.uId = (UINT_PTR)m_hWnd;
