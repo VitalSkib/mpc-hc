@@ -60,6 +60,13 @@ private:
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
     ULONG_PTR m_transportGraphicsToken = 0;
     void DrawTransportButton(const NMCUSTOMDRAW& draw);
+    static bool IsTransportButton(UINT id);
+    void NormalizeTransportLayout();
+    bool ArrangeTransportControls(const CRect& client, int top, int bottom);
+    std::vector<UINT> m_overflowButtons;
+    bool m_arrangingTransport = false;
+    afx_msg BOOL OnOverflowButton(UINT id);
+    afx_msg void OnUpdateOverflowButton(CCmdUI* ui);
 #endif
     int m_nButtonHeight;
     std::unique_ptr<CImageList> m_pButtonsImages;
@@ -101,7 +108,13 @@ public:
     void MakeImageList(bool createCustomizeButtons, int buttonSize, std::unique_ptr<CImageList> &imageList);
     LPCWSTR GetStringFromID(int idCommand);
     const std::map<WORD, svgButtonInfo> GetSupportedSvgButtons() {
-        return supportedSvgButtons;
+        auto buttons = supportedSvgButtons;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+        for (auto& [id, info] : buttons) {
+            if (IsTransportButton(id)) info.positionLocked = LOCK_LEFT;
+        }
+#endif
+        return buttons;
     }
     std::unique_ptr<CImageList>& GetCustomizeButtonImages() {
         return m_pCustomizeButtonImages;
