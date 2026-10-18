@@ -869,9 +869,18 @@ bool CPlayerToolBar::DrawThemeIcon(Gdiplus::Graphics& graphics, const CRect& rec
         0,0,brightness,0,0, 0,0,0,!atlas && disabled ? 0.5f : 1.0f,0, 0,0,0,0,1};
     Gdiplus::ImageAttributes attributes;
     attributes.SetColorMatrix(&matrix);
-    const Gdiplus::Rect destination(rect.CenterPoint().x - size / 2, rect.CenterPoint().y - size / 2, size, size);
-    return graphics.DrawImage(&bitmap, destination, atlas ? column * size : 0,
-        atlas ? row * size : 0, size, size, Gdiplus::UnitPixel, &attributes) == Gdiplus::Ok;
+    // Raster pixels are centred at (size - 1) / 2, whereas the vector ring is
+    // centred on the native button point. Integer placement shifts even-sized
+    // Play/Pause artwork half a pixel up/left. Keep the existing size and align
+    // its raster centre to the ring; odd sizes already land on integer pixels.
+    const bool transport = column == 0 || column == 1;
+    const float left = transport ? float(rect.CenterPoint().x) + 0.5f - float(size) * 0.5f
+        : float(rect.CenterPoint().x - size / 2);
+    const float top = transport ? float(rect.CenterPoint().y) + 0.5f - float(size) * 0.5f
+        : float(rect.CenterPoint().y - size / 2);
+    const Gdiplus::RectF destination(left, top, float(size), float(size));
+    return graphics.DrawImage(&bitmap, destination, float(atlas ? column * size : 0),
+        float(atlas ? row * size : 0), float(size), float(size), Gdiplus::UnitPixel, &attributes) == Gdiplus::Ok;
 }
 
 bool CPlayerToolBar::RouteTransparentButtonInput(MSG* message)
