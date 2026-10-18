@@ -70,6 +70,9 @@ jobs:
             'Native toolbar artwork selection, state backgrounds, input and commands remain unchanged.',
             'The empty seekbar is already thin/transparent before opening media.',
             'Portable settings are included; native controls auto-hide after 4 seconds.',
+            'Title font test: [Settings] FluentTitleSemibold=1 (default) or 0 for Regular; restart to compare.',
+            'Both title variants use 16px scaled by DPI, opaque white text and GDI+.',
+            'Close hover uses opaque #C42B1C with a white glyph.',
             'Source: https://github.com/VitalSkib/mpc-hc/tree/fluent-hover-ui') |
             Set-Content -LiteralPath "$testDir/README.txt" -Encoding utf8
           Copy-Item -LiteralPath COPYING.txt -Destination "$testDir/COPYING.txt"

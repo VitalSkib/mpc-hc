@@ -2,6 +2,7 @@
 #pragma once
 #include <gdiplus.h>
 #include <functional>
+#include <cmath>
 #include "CMPCThemeToolTipCtrl.h"
 #ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
 #include "../DSUtil/GeometryDiagnostics.h"
@@ -29,7 +30,9 @@ class CNativeControlsDecoration final : public CWnd
         const CRect& rect = m_buttons[button];
         const bool hot = m_hot == button;
         if (hot) {
-            Gdiplus::SolidBrush background(Gdiplus::Color(m_pressed == button ? 60 : 40, 255, 255, 255));
+            const Gdiplus::Color fill = button == 2 ? Gdiplus::Color(255, 196, 43, 28)
+                : Gdiplus::Color(m_pressed == button ? 60 : 40, 255, 255, 255);
+            Gdiplus::SolidBrush background(fill);
             graphics.FillRectangle(&background, rect.left, rect.top, rect.Width(), rect.Height());
         }
         Gdiplus::Pen pen(Gdiplus::Color(hot ? 255 : 210, 255, 255, 255), float(std::max(1, Scale(1))));
@@ -73,14 +76,20 @@ class CNativeControlsDecoration final : public CWnd
             if (m_header) {
                 graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
                 graphics.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAliasGridFit);
-                Gdiplus::Font font(L"Segoe UI", float(Scale(16)), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
-                Gdiplus::SolidBrush text(Gdiplus::Color(240, 255, 255, 255));
+                Gdiplus::FontFamily requested(semiboldTitle ? L"Segoe UI Semibold" : L"Segoe UI");
+                Gdiplus::FontFamily fallback(L"Segoe UI");
+                Gdiplus::Font font(requested.GetLastStatus() == Gdiplus::Ok ? &requested : &fallback,
+                    float(Scale(16)), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+                Gdiplus::SolidBrush text(Gdiplus::Color(255, 255, 255, 255));
                 Gdiplus::StringFormat format;
-                format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+                format.SetLineAlignment(Gdiplus::StringAlignmentNear);
                 format.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap);
                 format.SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
-                const Gdiplus::RectF title(float(Scale(16)), 0,
-                    float(std::max<LONG>(0, m_buttons[0].left - Scale(24))), float(height));
+                // Avoid fractional vertical centring of the layout rectangle.
+                // Keep the same font size and smoothing for a weight-only A/B.
+                const float top = std::max(0.0f, std::floor((float(height) - font.GetHeight(&graphics)) * 0.5f + 0.5f));
+                const Gdiplus::RectF title(float(Scale(16)), top,
+                    float(std::max<LONG>(0, m_buttons[0].left - Scale(24))), float(height) - top);
                 graphics.DrawString(m_title, -1, &font, title, &format, &text);
                 for (int button = 0; button < 3; ++button) DrawWindowButton(graphics, button);
             }
@@ -146,6 +155,7 @@ class CNativeControlsDecoration final : public CWnd
 
 public:
     std::function<void(int)> windowCommand;
+    bool semiboldTitle = true;
     CNativeControlsDecoration() {
         Gdiplus::GdiplusStartupInput input;
         Gdiplus::GdiplusStartup(&m_graphics, &input, nullptr);

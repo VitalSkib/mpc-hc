@@ -36,6 +36,7 @@ CChildView::CChildView(CMainFrame* pMainFrame)
     , m_bFirstMedia(true)
 {
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    m_nativeHeader.semiboldTitle = AfxGetApp()->GetProfileInt(L"Settings", L"FluentTitleSemibold", 1) != 0;
     m_nativeHeader.windowCommand = [this](int button) {
         if (button == 0) m_pMainFrame->PostMessage(WM_SYSCOMMAND, SC_MINIMIZE);
         else if (button == 1) {
