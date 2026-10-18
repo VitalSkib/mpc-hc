@@ -47,6 +47,8 @@ class CMainFrame;
 // forwards child-originated messages to its own parent (the playlist bar).
 class CPlaylistListFrame : public CWnd
 {
+public:
+    bool nativeSurface = false;
 protected:
     afx_msg void OnNcPaint();
     LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam) override;
