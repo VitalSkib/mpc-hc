@@ -19,8 +19,8 @@ bool CNativePlaylistPopup::Create(CWnd* owner, CPlayerPlaylistBar* bar)
 
 void CNativePlaylistPopup::ConfigureMaterial()
 {
-    if (!AfxGetApp()->GetProfileInt(L"ToolBars\\Playlist", L"PopupAcrylic", TRUE)) return;
-    const DWORD material = 3; // DWMSBT_TRANSIENTWINDOW, Windows 11 22H2+
+    if (!AfxGetApp()->GetProfileInt(L"ToolBars\\Playlist", L"PopupMica", TRUE)) return;
+    const DWORD material = 2; // DWMSBT_MAINWINDOW: default Mica, Windows 11 22H2+
     if (FAILED(DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(38), &material, sizeof(material)))) return;
     const MARGINS glass = {-1, -1, -1, -1};
     if (SUCCEEDED(DwmExtendFrameIntoClientArea(m_hWnd, &glass)) && SUCCEEDED(BufferedPaintInit())) {
@@ -28,7 +28,7 @@ void CNativePlaylistPopup::ConfigureMaterial()
         // Keep the original GDI list opaque at its text/selection pixels only.
         m_bar->m_listFrame.ModifyStyleEx(0, WS_EX_LAYERED);
         if (::SetLayeredWindowAttributes(m_bar->m_listFrame.m_hWnd, SurfaceColor(), 255, LWA_COLORKEY)) {
-            m_acrylic = true;
+            m_material = true;
             return;
         }
         m_bar->m_listFrame.ModifyStyleEx(WS_EX_LAYERED, 0);
@@ -111,13 +111,15 @@ DROPEFFECT CNativePlaylistPopup::OnDropAccept(COleDataObject* data, DWORD keys, 
 LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
 {
     if (!m_bar) return __super::WindowProc(message, wParam, lParam);
-    if (m_acrylic && message >= WM_MOUSEFIRST && message <= WM_MOUSELAST) {
+    if (m_material && message >= WM_MOUSEFIRST && message <= WM_MOUSELAST) {
         MSG input = {}; input.hwnd = m_hWnd; input.message = message;
         input.wParam = wParam; input.lParam = lParam; ::GetCursorPos(&input.pt);
         if (m_bar->RouteNativePresentationInput(&input)) return 0;
     }
     switch (message) {
-    case WM_NCCALCSIZE: return 0; // keep the system resize loop, without a system frame
+    case WM_NCCALCSIZE: return wParam ? WVR_REDRAW : 0;
+    case WM_NCPAINT: return 0; // DWM owns the rounded border; no classic sizing-frame paint
+    case WM_NCACTIVATE: return DefWindowProc(message, wParam, -1);
     case WM_NCHITTEST: {
         CPoint point(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)); ScreenToClient(&point);
         return point.x >= 0 && point.x < MulDiv(6, m_dpi, 96) ? HTLEFT : HTCLIENT;
@@ -141,17 +143,20 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
         m_width = MulDiv(width, 96, m_dpi);
         return TRUE;
     }
-    case WM_EXITSIZEMOVE:
+    case WM_EXITSIZEMOVE: {
+        CRect finalRect; GetWindowRect(finalRect);
+        m_width = MulDiv(finalRect.Width(), 96, m_dpi);
         m_resizing = false;
         AfxGetApp()->WriteProfileInt(L"ToolBars\\Playlist", L"PopupWidth", m_width);
         if (m_bar->nativePopupActivity) m_bar->nativePopupActivity();
         return 0;
+    }
     case WM_NCLBUTTONDBLCLK: return 0;
     case WM_ERASEBKGND: return 1;
     case WM_PAINT: {
         CPaintDC paint(this); CRect client; GetClientRect(client);
         HDC memory = nullptr; HPAINTBUFFER buffer = nullptr;
-        if (m_acrylic) {
+        if (m_material) {
             BP_PAINTPARAMS params = {}; params.cbSize = sizeof(params); params.dwFlags = BPPF_ERASE;
             buffer = BeginBufferedPaint(paint.GetSafeHdc(), client, BPBF_TOPDOWNDIB, &params, &memory);
         }

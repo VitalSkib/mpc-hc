@@ -283,7 +283,14 @@ LRESULT CALLBACK CPlayerPlaylistBar::NativeListProcedure(HWND window, UINT messa
 {
     auto bar = reinterpret_cast<CPlayerPlaylistBar*>(data);
     if (message == WM_NCDESTROY) ::RemoveWindowSubclass(window, NativeListProcedure, id);
-    else if (message == WM_MOUSEMOVE || message == WM_MOUSELEAVE) {
+    else if (message == WM_ERASEBKGND && bar->UsesNativePopup() && wparam) {
+        // The themed list's EraseBkgnd hardcodes ContentBGColor below the rows.
+        // Paint this popup's actual background/key instead, including the empty area.
+        RECT rect; ::GetClientRect(window, &rect);
+        HBRUSH brush = ::CreateSolidBrush(CNativePlaylistPopup::SurfaceColor());
+        ::FillRect(reinterpret_cast<HDC>(wparam), &rect, brush); ::DeleteObject(brush);
+        return TRUE;
+    } else if (message == WM_MOUSEMOVE || message == WM_MOUSELEAVE) {
         bar->UpdateNativeHover();
         if (bar->UsesNativePopup() && bar->nativePopupActivity) bar->nativePopupActivity();
         if (message == WM_MOUSEMOVE && (bar->UsesNativePopup() || bar->m_nativeDock.Active())) {
@@ -297,7 +304,7 @@ LRESULT CALLBACK CPlayerPlaylistBar::NativeListProcedure(HWND window, UINT messa
 
 bool CPlayerPlaylistBar::RouteNativePresentationInput(MSG* message)
 {
-    const bool popup = UsesNativePopup() && m_nativePopup.AcrylicActive();
+    const bool popup = UsesNativePopup() && m_nativePopup.MaterialActive();
     if (!(m_nativeDock.Active() || popup) || !(popup ? m_nativePopup.IsWindowVisible() : IsWindowVisible()) || ::GetCapture()
             || message->hwnd == m_hWnd || ::IsChild(m_hWnd, message->hwnd)
             || (popup && ::IsChild(m_nativePopup.m_hWnd, message->hwnd))) return false;
@@ -2233,10 +2240,9 @@ void CPlayerPlaylistBar::ScaleFont()
         lf.lfHeight = -m_pMainFrame->m_dpi.ScaleY(14);
         lf.lfWeight = FW_SEMIBOLD; lf.lfQuality = CLEARTYPE_QUALITY;
         wcscpy_s(lf.lfFaceName, L"Segoe UI");
-        m_list.SetImageList(nullptr, LVSIL_SMALL);
-        m_fakeImageList.DeleteImageList();
-        m_fakeImageList.Create(1, m_pMainFrame->m_dpi.ScaleY(32), ILC_COLOR4, 1, 1);
-        m_list.SetImageList(&m_fakeImageList, LVSIL_SMALL);
+        m_numberFont.DeleteObject();
+        LOGFONT numberFont = lf; numberFont.lfWeight = FW_BOLD;
+        m_numberFont.CreateFontIndirect(&numberFont);
     }
 #endif
     //lf.lfHeight = m_pMainFrame->m_dpi.ScaleSystemToOverrideY(lf.lfHeight);
@@ -2244,6 +2250,9 @@ void CPlayerPlaylistBar::ScaleFont()
     m_font.DeleteObject();
     if (m_font.CreateFontIndirect(&lf)) {
         m_list.SetFont(&m_font);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        if (UsesNativePopup()) m_list.ForceRowHeightRecalc();
+#endif
     }
 
     CDC* pDC = m_list.GetDC();
@@ -2428,7 +2437,7 @@ void CPlayerPlaylistBar::OnMeasureItem(int nIDCtl, LPMEASUREITEMSTRUCT lpMeasure
     __super::OnMeasureItem(nIDCtl, lpMeasureItemStruct);
     lpMeasureItemStruct->itemHeight = m_pMainFrame->m_dpi.CalculateListCtrlItemHeight((CListCtrl*)&m_list);
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-    if (UsesNativePopup()) lpMeasureItemStruct->itemHeight = m_pMainFrame->m_dpi.ScaleY(34);
+    if (UsesNativePopup()) lpMeasureItemStruct->itemHeight = m_pMainFrame->m_dpi.ScaleY(36);
 #endif
 #if 0
     if (createdWindow) {
@@ -2525,7 +2534,15 @@ void CPlayerPlaylistBar::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruc
 
     fmt.Format(_T("[%%0%dd]"), (int)log10(0.1 + m_pl.GetCount()) + 1);
     num.Format(fmt, nItem + 1);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (UsesNativePopup()) num.Format(L"%d.", nItem + 1);
+    CFont* numberMeasureFont = nullptr;
+    if (UsesNativePopup() && m_numberFont.GetSafeHandle()) numberMeasureFont = pDC->SelectObject(&m_numberFont);
+#endif
     CSize numWidth = pDC->GetTextExtent(num) + pDC->GetTextExtent(L"w");
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (numberMeasureFont) pDC->SelectObject(numberMeasureFont);
+#endif
 
     COLORREF bgColor, contentBGColor;
 
@@ -2563,7 +2580,7 @@ void CPlayerPlaylistBar::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruc
             pDC->SelectObject(oldPen); pDC->SelectObject(oldBrush);
         }
         if (itemSelected) {
-            const int pillWidth = m_pMainFrame->m_dpi.ScaleX(3), pillHeight = m_pMainFrame->m_dpi.ScaleY(14);
+            const int pillWidth = m_pMainFrame->m_dpi.ScaleX(3), pillHeight = m_pMainFrame->m_dpi.ScaleY(15);
             CRect pill(CPoint(rcItem.left, rcItem.CenterPoint().y - pillHeight/2), CSize(pillWidth, pillHeight));
             CBrush accent(RGB(76, 194, 255)); CBrush* oldBrush = pDC->SelectObject(&accent);
             CPen* oldPen = static_cast<CPen*>(pDC->SelectStockObject(NULL_PEN));
@@ -2662,6 +2679,9 @@ void CPlayerPlaylistBar::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruc
         pDC->SetTextColor(sequenceColor);
     }
     pDC->SetBkColor(win11Style ? bgColor : contentBGColor);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (UsesNativePopup() && m_numberFont.GetSafeHandle()) pDC->SelectObject(&m_numberFont);
+#endif
     pDC->TextOut(rcItem.left + dpi3 + numOffset, (rcItem.top + rcItem.bottom - filesize.cy) / 2, num);
 
 

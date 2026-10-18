@@ -9,7 +9,7 @@ class CNativePlaylistPopup : public CWnd, public CDropClient {
     ULONGLONG m_revealUntil = 0;
     CPoint m_requestPoint = CPoint(0, 0);
     bool m_resizing = false, m_closeHot = false, m_closePressed = false;
-    bool m_acrylic = false, m_bufferedPaint = false, m_systemBorder = false;
+    bool m_material = false, m_bufferedPaint = false, m_systemBorder = false;
     CFont m_titleFont;
     CRect CloseRect() const;
     void Position();
@@ -21,7 +21,7 @@ public:
     static COLORREF SelectionColor() { return RGB(76, 76, 76); }
     bool Create(CWnd* owner, CPlayerPlaylistBar* bar);
     void ConfigureMaterial();
-    bool AcrylicActive() const { return m_acrylic; }
+    bool MaterialActive() const { return m_material; }
     bool Resizing() const { return m_resizing; }
     void RequestOpen();
     void Refresh(const CRect& band, bool show, int dpi, bool autoHide);

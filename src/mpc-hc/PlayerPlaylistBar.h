@@ -77,7 +77,7 @@ private:
     int inlineEditItem;
     CMPCThemeInlineEdit m_edit;
 
-    CFont m_font;
+    CFont m_font, m_numberFont;
     void ScaleFont();
 
     CImageList m_fakeImageList;
