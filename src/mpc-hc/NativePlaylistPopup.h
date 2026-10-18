@@ -9,7 +9,10 @@ class CNativePlaylistPopup : public CWnd, public CDropClient {
     ULONGLONG m_revealUntil = 0;
     CPoint m_requestPoint = CPoint(0, 0);
     bool m_resizing = false, m_closeHot = false, m_closePressed = false;
-    bool m_systemBorder = false;
+    bool m_systemBorder = false, m_translucent = false;
+    CSize m_regionSize = CSize(0, 0);
+    int m_regionDpi = 0;
+    void UpdateRoundedRegion();
     CFont m_titleFont;
     ULONG_PTR m_graphicsToken = 0;
     CRect CloseRect() const;

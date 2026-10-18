@@ -2546,7 +2546,11 @@ void CPlayerPlaylistBar::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruc
     CDC* pDC = CDC::FromHandle(lpDrawItemStruct->hDC);
     int oldDC = pDC->SaveDC();
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-    if (UsesNativePopup()) pDC->SetBkMode(TRANSPARENT);
+    if (UsesNativePopup()) {
+        pDC->SetBkMode(TRANSPARENT);
+        // Native owner draw may supply a playing-item font; always use our Semibold.
+        if (m_font.GetSafeHandle()) pDC->SelectObject(&m_font);
+    }
 #endif
 
     CString fmt, file, num;
