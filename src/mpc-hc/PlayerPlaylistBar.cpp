@@ -2183,7 +2183,7 @@ void CPlayerPlaylistBar::SavePlaylist(bool can_delay /* = false*/)
 void CPlayerPlaylistBar::SetListBkColor()
 {
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-    if (UsesNativePopup()) { m_list.SetBkColor(CMPCTheme::MenuBGColor); return; }
+    if (UsesNativePopup()) { m_list.SetBkColor(CNativePlaylistPopup::SurfaceColor()); return; }
 #endif
     if (AppIsThemeLoaded() && CMPCTheme::isWindows11Style) {
         m_list.SetBkColor(CMPCTheme::ContentBGColor); //the area below the items, which light mode leaves to the native list
@@ -2231,7 +2231,7 @@ void CPlayerPlaylistBar::ScaleFont()
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
     if (UsesNativePopup()) {
         lf.lfHeight = -m_pMainFrame->m_dpi.ScaleY(14);
-        lf.lfWeight = FW_NORMAL; lf.lfQuality = CLEARTYPE_QUALITY;
+        lf.lfWeight = FW_SEMIBOLD; lf.lfQuality = CLEARTYPE_QUALITY;
         wcscpy_s(lf.lfFaceName, L"Segoe UI");
         m_list.SetImageList(nullptr, LVSIL_SMALL);
         m_fakeImageList.DeleteImageList();
@@ -2535,7 +2535,7 @@ void CPlayerPlaylistBar::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruc
     if (themedList) {
         contentBGColor = CMPCTheme::ContentBGColor;
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-        if (UsesNativePopup()) contentBGColor = CMPCTheme::MenuBGColor;
+        if (UsesNativePopup()) contentBGColor = CNativePlaylistPopup::SurfaceColor();
 #endif
     } else {
         contentBGColor = GetSysColor(COLOR_WINDOW);
@@ -2552,7 +2552,7 @@ void CPlayerPlaylistBar::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruc
 
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
     if (UsesNativePopup()) {
-        bgColor = (itemSelected || rowHighlighted) ? CMPCTheme::MenuSelectedColor : contentBGColor;
+        bgColor = (itemSelected || rowHighlighted) ? CNativePlaylistPopup::SelectionColor() : contentBGColor;
         pDC->FillSolidRect(rcItem, contentBGColor);
         if (itemSelected || rowHighlighted) {
             CRect tile(rcItem); tile.DeflateRect(0, m_pMainFrame->m_dpi.ScaleY(2));

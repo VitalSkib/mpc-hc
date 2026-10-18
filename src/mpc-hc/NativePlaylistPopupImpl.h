@@ -10,6 +10,8 @@ bool CNativePlaylistPopup::Create(CWnd* owner, CPlayerPlaylistBar* bar)
     if (!CreateEx(WS_EX_TOOLWINDOW, AfxRegisterWndClass(CS_DBLCLKS, ::LoadCursor(nullptr, IDC_ARROW)),
             L"Playlist", WS_POPUP | WS_THICKFRAME | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, CRect(0, 0, 320, 200), owner, 0)) return false;
     const DWORD corners = 2; const BOOL dark = TRUE;
+    const COLORREF border = BorderColor();
+    m_systemBorder = SUCCEEDED(DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(34), &border, sizeof(border)));
     DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(33), &corners, sizeof(corners));
     DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(20), &dark, sizeof(dark));
     return true;
@@ -25,7 +27,7 @@ void CNativePlaylistPopup::ConfigureMaterial()
         m_bufferedPaint = true;
         // Keep the original GDI list opaque at its text/selection pixels only.
         m_bar->m_listFrame.ModifyStyleEx(0, WS_EX_LAYERED);
-        if (::SetLayeredWindowAttributes(m_bar->m_listFrame.m_hWnd, CMPCTheme::MenuBGColor, 255, LWA_COLORKEY)) {
+        if (::SetLayeredWindowAttributes(m_bar->m_listFrame.m_hWnd, SurfaceColor(), 255, LWA_COLORKEY)) {
             m_acrylic = true;
             return;
         }
@@ -154,12 +156,12 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
             buffer = BeginBufferedPaint(paint.GetSafeHdc(), client, BPBF_TOPDOWNDIB, &params, &memory);
         }
         CDC& dc = buffer ? *CDC::FromHandle(memory) : static_cast<CDC&>(paint);
-        dc.FillSolidRect(client, buffer ? RGB(0, 0, 0) : CMPCTheme::MenuBGColor);
+        dc.FillSolidRect(client, buffer ? RGB(0, 0, 0) : SurfaceColor());
         CRect header(client); header.bottom = std::min<LONG>(client.bottom, MulDiv(32, m_dpi, 96));
-        if (buffer) dc.FillSolidRect(header, CMPCTheme::MenuBGColor);
-        CBrush border(CMPCTheme::MenuSeparatorColor); dc.FrameRect(client, &border);
+        if (buffer) dc.FillSolidRect(header, SurfaceColor());
+        CBrush border(BorderColor()); if (!m_systemBorder) dc.FrameRect(client, &border);
         CRect close = CloseRect();
-        if (m_closeHot) dc.FillSolidRect(close, CMPCTheme::MenuSelectedColor);
+        if (m_closeHot) dc.FillSolidRect(close, SelectionColor());
         dc.SetBkMode(TRANSPARENT); dc.SetTextColor(RGB(210, 210, 210));
         CFont* old = dc.SelectObject(m_titleFont.GetSafeHandle() ? &m_titleFont : &m_bar->m_font);
         CRect title(client); title.left += MulDiv(12, m_dpi, 96); title.right = close.left; title.bottom = close.bottom;
@@ -175,7 +177,7 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
             BufferedPaintSetAlpha(buffer, header, 255);
             const CRect edges[] = {CRect(0, 0, 1, client.bottom), CRect(client.right-1, 0, client.right, client.bottom),
                 CRect(0, client.bottom-1, client.right, client.bottom)};
-            for (const auto& edge : edges) BufferedPaintSetAlpha(buffer, edge, 255);
+            if (!m_systemBorder) for (const auto& edge : edges) BufferedPaintSetAlpha(buffer, edge, 255);
             EndBufferedPaint(buffer, TRUE);
         }
         return 0;

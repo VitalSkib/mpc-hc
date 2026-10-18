@@ -9,13 +9,16 @@ class CNativePlaylistPopup : public CWnd, public CDropClient {
     ULONGLONG m_revealUntil = 0;
     CPoint m_requestPoint = CPoint(0, 0);
     bool m_resizing = false, m_closeHot = false, m_closePressed = false;
-    bool m_acrylic = false, m_bufferedPaint = false;
+    bool m_acrylic = false, m_bufferedPaint = false, m_systemBorder = false;
     CFont m_titleFont;
     CRect CloseRect() const;
     void Position();
     LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam) override;
     BOOL PreTranslateMessage(MSG* message) override;
 public:
+    static COLORREF SurfaceColor() { return RGB(64, 64, 64); }
+    static COLORREF BorderColor() { return RGB(69, 69, 69); }
+    static COLORREF SelectionColor() { return RGB(76, 76, 76); }
     bool Create(CWnd* owner, CPlayerPlaylistBar* bar);
     void ConfigureMaterial();
     bool AcrylicActive() const { return m_acrylic; }
