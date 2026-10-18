@@ -6,6 +6,8 @@ class CNativePlaylistPopup : public CWnd, public CDropClient {
     CPlayerPlaylistBar* m_bar = nullptr;
     CRect m_band = CRect(0, 0, 0, 0);
     int m_dpi = 96, m_width = 320;
+    ULONGLONG m_revealUntil = 0;
+    CPoint m_requestPoint = CPoint(0, 0);
     bool m_resizing = false, m_closeHot = false, m_closePressed = false;
     CRect CloseRect() const;
     void Position();
@@ -13,7 +15,8 @@ class CNativePlaylistPopup : public CWnd, public CDropClient {
     BOOL PreTranslateMessage(MSG* message) override;
 public:
     bool Create(CWnd* owner, CPlayerPlaylistBar* bar);
-    void Refresh(const CRect& band, bool show, int dpi);
+    void RequestOpen();
+    void Refresh(const CRect& band, bool show, int dpi, bool autoHide);
     void OnDropFiles(CAtlList<CStringW>& files, DROPEFFECT effect) override;
     DROPEFFECT OnDropAccept(COleDataObject* data, DWORD keys, CPoint point) override;
 };

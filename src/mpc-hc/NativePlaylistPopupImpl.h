@@ -29,14 +29,34 @@ void CNativePlaylistPopup::Position()
     const int width = std::clamp(MulDiv(m_width, m_dpi, 96), minimum, maximum);
     CRect rect(m_band.right - width, m_band.top, m_band.right, m_band.bottom), before;
     GetWindowRect(before);
-    if (rect != before) SetWindowPos(nullptr, rect.left, rect.top, rect.Width(), rect.Height(), SWP_NOACTIVATE | SWP_NOZORDER);
+    if (rect != before) SetWindowPos(nullptr, rect.left, rect.top, rect.Width(), rect.Height(), SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOCOPYBITS);
 }
 
-void CNativePlaylistPopup::Refresh(const CRect& band, bool show, int dpi)
+void CNativePlaylistPopup::RequestOpen()
+{
+    ::GetCursorPos(&m_requestPoint);
+    m_revealUntil = GetTickCount64() + std::max(250u, AfxGetAppSettings().uHideFullscreenControlsDelay);
+}
+
+void CNativePlaylistPopup::Refresh(const CRect& band, bool show, int dpi, bool autoHide)
 {
     m_band = band; m_dpi = dpi;
-    if (!show || band.IsRectEmpty()) { if (IsWindowVisible()) ShowWindow(SW_HIDE); return; }
+    m_band.right = std::max(m_band.left, m_band.right - 1); // one physical pixel inside the view
+    if (!show || m_band.IsRectEmpty()) { if (IsWindowVisible()) ShowWindow(SW_HIDE); return; }
     Position();
+    if (autoHide) {
+        CPoint cursor; ::GetCursorPos(&cursor);
+        if (cursor != m_requestPoint || GetTickCount64() >= m_revealUntil) m_revealUntil = 0;
+        CRect bounds; GetWindowRect(bounds);
+        const HWND target = ::GetAncestor(::WindowFromPoint(cursor), GA_ROOT);
+        const HWND owner = ::GetWindow(m_hWnd, GW_OWNER);
+        CRect hotZone(bounds); hotZone.right = band.right;
+        const bool hovered = hotZone.PtInRect(cursor) && (target == m_hWnd || target == owner);
+        if (!hovered && !m_bar->NativePopupInputActive() && !m_revealUntil) {
+            if (IsWindowVisible()) ShowWindow(SW_HIDE);
+            return;
+        }
+    }
     if (!IsWindowVisible()) SetWindowPos(&wndTop, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
 }
 
@@ -145,7 +165,12 @@ bool CPlayerPlaylistBar::NativePopupInputActive() const
 void CPlayerPlaylistBar::RefreshNativePopup(const CRect& band, bool show, int dpi)
 {
     if (!UsesNativePopup()) return;
-    const bool hiddenFullscreen = m_pMainFrame->IsFullScreenMode() && AfxGetAppSettings().bHidePlaylistFullScreen;
-    m_nativePopup.Refresh(band, show && m_nativePopupSelected && !hiddenFullscreen, dpi);
+    const auto& settings = AfxGetAppSettings();
+    const bool fullscreen = m_pMainFrame->IsFullScreenMode();
+    const bool neverShow = fullscreen && settings.bHideFullscreenControls
+        && settings.eHideFullscreenControlsPolicy == CAppSettings::HideFullscreenControlsPolicy::SHOW_NEVER;
+    const bool hiddenFullscreen = fullscreen && settings.bHidePlaylistFullScreen;
+    const bool autoHide = settings.bHideFullscreenControls && (fullscreen || settings.bHideWindowedControls);
+    m_nativePopup.Refresh(band, show && m_nativePopupSelected && !hiddenFullscreen && !neverShow, dpi, autoHide);
     UpdateNativeHover();
 }

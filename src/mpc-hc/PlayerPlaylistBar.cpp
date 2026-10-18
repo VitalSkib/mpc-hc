@@ -285,6 +285,7 @@ LRESULT CALLBACK CPlayerPlaylistBar::NativeListProcedure(HWND window, UINT messa
     if (message == WM_NCDESTROY) ::RemoveWindowSubclass(window, NativeListProcedure, id);
     else if (message == WM_MOUSEMOVE || message == WM_MOUSELEAVE) {
         bar->UpdateNativeHover();
+        if (bar->UsesNativePopup() && bar->nativePopupActivity) bar->nativePopupActivity();
         if (message == WM_MOUSEMOVE && (bar->UsesNativePopup() || bar->m_nativeDock.Active())) {
             TRACKMOUSEEVENT track = {sizeof(track), TME_LEAVE, window, 0}; ::TrackMouseEvent(&track);
         }
@@ -2296,7 +2297,12 @@ void CPlayerPlaylistBar::ResizeListColumn()
         m_list.SetColumnWidth(COL_TIME, std::max(0, std::min(m_nTimeColWidth, width - m_list.GetColumnWidth(COL_NAME))));
         m_list.SetRedraw(TRUE);
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-        if (UsesNativePopup()) { m_list.Invalidate(FALSE); m_nativePopup.Invalidate(FALSE); }
+        if (UsesNativePopup()) {
+            // WM_SETREDRAW deferred both layout and erase. Commit the native child
+            // windows now, rather than leave uncovered pixels until mouse-up.
+            m_nativePopup.RedrawWindow(nullptr, nullptr,
+                RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+        }
 #endif
 
         Invalidate();

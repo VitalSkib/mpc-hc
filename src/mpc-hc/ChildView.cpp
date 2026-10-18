@@ -232,7 +232,7 @@ void CChildView::UpdateNativeDecoration()
     ClientToScreen(playlistBand);
     if (playlist.UsesNativePopup()) {
         playlist.nativePopupActivity = [this]() { m_pMainFrame->m_controls.UpdateToolbarsVisibility(); };
-        playlist.RefreshNativePopup(playlistBand, mediaLoaded && nativeVisible, dpi);
+        playlist.RefreshNativePopup(playlistBand, mediaLoaded, dpi);
     }
     const bool playlistTransparent = playlist.PrepareNativePresentation(!playlist.UsesNativePopup() && videoLoaded && AppIsThemeLoaded()
         && !playlist.IsFloating() && m_pMainFrame->m_controls.ToolbarsCoverVideo(), playlistBand);

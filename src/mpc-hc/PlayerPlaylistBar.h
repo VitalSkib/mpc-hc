@@ -96,7 +96,10 @@ private:
 public:
     bool UsesNativePopup() const { return m_nativePopup.GetSafeHwnd() != nullptr; }
     bool NativePopupSelected() const { return m_nativePopupSelected; }
-    void ToggleNativePopup() { m_nativePopupSelected = !m_nativePopupSelected; }
+    void ToggleNativePopup() {
+        m_nativePopupSelected = !m_nativePopupSelected;
+        if (m_nativePopupSelected) m_nativePopup.RequestOpen();
+    }
     bool NativePopupInputActive() const;
     void RefreshNativePopup(const CRect& band, bool show, int dpi);
     std::function<void()> nativePopupActivity;
