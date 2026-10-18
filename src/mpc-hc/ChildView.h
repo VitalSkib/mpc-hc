@@ -53,6 +53,9 @@ class CChildView : public CMouseWndWithArtView
 public:
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
     void UpdateNativeDecoration();
+    bool IsNativeHeaderWindow(HWND window) const {
+        return window && window == m_nativeHeader.GetSafeHwnd();
+    }
 #endif
 #ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
     void UpdateFluentControls();

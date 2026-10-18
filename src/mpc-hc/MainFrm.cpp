@@ -16256,6 +16256,11 @@ void CMainFrame::OpenSetupVideo()
     m_pVW->put_MessageDrain((OAHWND)m_pVideoWnd->m_hWnd);
 
     for (CWnd* pWnd = m_pVideoWnd->GetWindow(GW_CHILD); pWnd; pWnd = pWnd->GetNextWindow()) {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        // Disable renderer children as before, but keep the interactive window
+        // command header enabled so it receives hover and button input.
+        if (m_wndView.IsNativeHeaderWindow(pWnd->GetSafeHwnd())) continue;
+#endif
         // 1. lets WM_SETCURSOR through (not needed as of now)
         // 2. allows CMouse::CursorOnWindow() to work with m_pVideoWnd
         pWnd->EnableWindow(FALSE);

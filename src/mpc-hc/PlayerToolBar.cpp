@@ -38,6 +38,8 @@
 #include "stb/stb_image.h"
 #include "stb/stb_image_resize2.h"
 
+void drawButtonBG(NMCUSTOMDRAW nmcd, COLORREF c);
+
 // CPlayerToolBar
 /*
 Each toolbar image contains 4 rows of 26 buttons.
@@ -807,7 +809,8 @@ void CPlayerToolBar::DrawVolumeButton(const NMCUSTOMDRAW& draw)
 {
     CRect rect(draw.rc); CDC* dc = CDC::FromHandle(draw.hdc);
     const bool hot = (draw.uItemState & (CDIS_HOT | CDIS_SELECTED)) != 0;
-    dc->FillSolidRect(rect, hot ? CMPCTheme::PlayerButtonHotColor : CMPCTheme::PlayerBGColor);
+    dc->FillSolidRect(rect, CMPCTheme::PlayerBGColor);
+    if (hot) drawButtonBG(draw, CMPCTheme::PlayerButtonHotColor);
     Gdiplus::Graphics graphics(draw.hdc);
     graphics.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAliasGridFit);
     Gdiplus::FontFamily fluent(L"Segoe Fluent Icons"), fallback(L"Segoe MDL2 Assets");
@@ -1358,6 +1361,14 @@ void drawButtonBG(NMCUSTOMDRAW nmcd, COLORREF c)
     dc.Attach(nmcd.hdc);
     CRect br;
     br.CopyRect(&nmcd.rc);
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    // Only the painted backdrop is square. Native button rectangles, hit
+    // testing, command states and icon/image selection remain unchanged.
+    const int side = std::min(br.Width(), br.Height());
+    const CPoint centre = br.CenterPoint();
+    br.SetRect(centre.x - side / 2, centre.y - side / 2,
+        centre.x - side / 2 + side, centre.y - side / 2 + side);
+#endif
     //adipose: remove the below code.  it is no longer necessary due to TBCDRF_NOOFFSET
     //and redesigning toolbar icons to be centered vs the old MFC style of "upper left" alignment
     //br.DeflateRect(0, 0, 1, 1); //we aren't offsetting button when pressed, so try to center better
@@ -1447,7 +1458,8 @@ void CPlayerToolBar::OnCustomDraw(NMHDR* pNMHDR, LRESULT* pResult)
                 CRect rect(draw.rc);
                 CDC* dc = CDC::FromHandle(draw.hdc);
                 const bool hot = (draw.uItemState & (CDIS_HOT | CDIS_SELECTED)) != 0;
-                dc->FillSolidRect(rect, hot ? CMPCTheme::PlayerButtonHotColor : CMPCTheme::PlayerBGColor);
+                dc->FillSolidRect(rect, CMPCTheme::PlayerBGColor);
+                if (hot) drawButtonBG(draw, CMPCTheme::PlayerButtonHotColor);
                 const int half = m_pMainFrame->m_dpi.ScaleX(7);
                 const int spacing = m_pMainFrame->m_dpi.ScaleY(4);
                 CPen pen(PS_SOLID, std::max(1, m_pMainFrame->m_dpi.ScaleY(1)), hot ? RGB(255,255,255) : RGB(220,220,220));
@@ -1471,9 +1483,16 @@ void CPlayerToolBar::OnCustomDraw(NMHDR* pNMHDR, LRESULT* pResult)
                 if (AppIsThemeLoaded()) {
                     lr |= TBCDRF_NOBACKGROUND;
                     
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+                    // Preserve TBSTATE_CHECKED and native state-dependent icons;
+                    // checked commands do not have a persistent backdrop.
+                    CDC::FromHandle(pTBCD->nmcd.hdc)->FillSolidRect(&pTBCD->nmcd.rc, CMPCTheme::PlayerBGColor);
+                    if (pTBCD->nmcd.uItemState & CDIS_SELECTED) { //pressed
+#else
                     if (pTBCD->nmcd.uItemState & CDIS_CHECKED) {
                         drawButtonBG(pTBCD->nmcd, CMPCTheme::PlayerButtonCheckedColor);
                     } else if (pTBCD->nmcd.uItemState & CDIS_SELECTED) { //pressed
+#endif
                         drawButtonBG(pTBCD->nmcd, CMPCTheme::PlayerButtonClickedColor);
                     } else if (pTBCD->nmcd.uItemState & CDIS_HOT) {
                         drawButtonBG(pTBCD->nmcd, CMPCTheme::PlayerButtonHotColor);
