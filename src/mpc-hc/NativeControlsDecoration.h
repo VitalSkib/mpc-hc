@@ -43,7 +43,8 @@ class CNativeControlsDecoration final : public CWnd
             shape.AddArc(left, top + side - diameter, diameter, diameter, 90, 90);
             shape.CloseFigure(); graphics.FillPath(&background, &shape);
         }
-        const int iconSize = Scale(22);
+        // 66% ink coverage gives the previous 12px glyph span at 100% DPI.
+        const int iconSize = Scale(18);
         const CRect artwork(rect.CenterPoint().x - iconSize / 2, rect.CenterPoint().y - iconSize / 2,
             rect.CenterPoint().x - iconSize / 2 + iconSize, rect.CenterPoint().y - iconSize / 2 + iconSize);
         const LPCWSTR resource = button == 0 ? L"minimize" : button == 2 ? L"close"

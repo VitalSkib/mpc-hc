@@ -838,10 +838,15 @@ bool CPlayerToolBar::DrawThemeIcon(Gdiplus::Graphics& graphics, const CRect& rec
             for (const auto& root : roots) {
                 CStringW path = PathUtils::CombinePaths(root, L"toolbars");
                 path = PathUtils::CombinePaths(path, theme);
-                path = PathUtils::CombinePaths(path, L"extra");
-                path = PathUtils::CombinePaths(path, CStringW(name) + L".svg");
-                if (SUCCEEDED(SVGImage::Load(path, *image, float(size) / 100.0f))
-                        && image->GetWidth() == size && image->GetHeight() == size) { loaded = true; break; }
+                const CStringW filename = CStringW(name) + L".svg";
+                // Flat theme directory first; retain compatibility with the first test package.
+                const CStringW candidates[] = {PathUtils::CombinePaths(path, filename),
+                    PathUtils::CombinePaths(PathUtils::CombinePaths(path, L"extra"), filename)};
+                for (const auto& candidate : candidates) {
+                    if (SUCCEEDED(SVGImage::Load(candidate, *image, float(size) / 100.0f))
+                            && image->GetWidth() == size && image->GetHeight() == size) { loaded = true; break; }
+                }
+                if (loaded) break;
             }
         }
         if (!loaded && column >= 0) {
@@ -1496,7 +1501,7 @@ void CPlayerToolBar::DrawTransportButton(const NMCUSTOMDRAW& draw)
     const bool pressed = (draw.uItemState & CDIS_SELECTED) != 0;
     const float diameter = float(std::min(rect.Width() - 6, rect.Height() - 4)) - (pressed ? 1.0f : 0.0f);
     const float x = float(rect.CenterPoint().x), y = float(rect.CenterPoint().y);
-    BYTE shade = disabled ? 16 : pressed ? 40 : hot ? 32 : 24;
+    BYTE shade = disabled ? 16 : pressed ? 58 : hot ? 72 : 24;
     if (RGB(shade, shade, shade) == CMPCTheme::PlayerBGColor) ++shade;
     // A flat circular face also keeps the whole main button clickable: unlike
     // the keyed backdrop, the area inside the ring must not pass input to video.
@@ -1508,9 +1513,12 @@ void CPlayerToolBar::DrawTransportButton(const NMCUSTOMDRAW& draw)
     graphics.DrawEllipse(&ring, x - diameter / 2, y - diameter / 2, diameter, diameter);
     const BYTE brightness = disabled ? 100 : hot ? 255 : 240;
     Gdiplus::SolidBrush ink(Gdiplus::Color(255, brightness, brightness, brightness));
-    const int iconSize = std::max(1, int(diameter * 0.95f));
-    CRect artwork(int(x) - iconSize / 2, int(y) - iconSize / 2,
-        int(x) - iconSize / 2 + iconSize, int(y) - iconSize / 2 + iconSize);
+    // The atlas glyph occupies 66% of its cell. Match the previous ink height
+    // (46% of ring diameter), rather than fitting its entire canvas to the ring.
+    const int iconSize = std::max(1, int(diameter * (0.46f / 0.66f) + 0.5f));
+    const int iconX = int(x + (draw.dwItemSpec == ID_PLAY_PAUSE ? 0.0f : diameter * 0.05f) + 0.5f);
+    CRect artwork(iconX - iconSize / 2, int(y) - iconSize / 2,
+        iconX - iconSize / 2 + iconSize, int(y) - iconSize / 2 + iconSize);
     if (DrawThemeIcon(graphics, artwork, draw.dwItemSpec == ID_PLAY_PAUSE ? L"pause" : L"play", hot, disabled)) return;
     if (draw.dwItemSpec == ID_PLAY_PAUSE) {
         const float width = diameter * 0.09f, height = diameter * 0.46f;
