@@ -22,46 +22,19 @@ bool CNativePlaylistPopup::Create(CWnd* owner, CPlayerPlaylistBar* bar)
 
 void CNativePlaylistPopup::ConfigureSurface()
 {
-    // Opaque GDI children: no keyed surfaces, material, or transparent-input routing.
     const DWORD none = 1;
     const MARGINS solid = {};
     DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(38), &none, sizeof(none));
     DwmExtendFrameIntoClientArea(m_hWnd, &solid);
-    m_bar->m_list.SetExtendedStyle(m_bar->m_list.GetExtendedStyle() & ~LVS_EX_DOUBLEBUFFER);
-    const int opacity = std::clamp<int>(AfxGetApp()->GetProfileInt(L"ToolBars\\Playlist", L"PopupOpacity", 245), 64, 255);
-    if (opacity < 255) {
-        ModifyStyleEx(0, WS_EX_LAYERED);
-        m_translucent = !!::SetLayeredWindowAttributes(m_hWnd, 0, static_cast<BYTE>(opacity), LWA_ALPHA);
-        if (!m_translucent) ModifyStyleEx(WS_EX_LAYERED, 0);
-        else {
-            m_systemBorder = false; // layered windows use our explicit 8-DIP outline
-            UpdateRoundedRegion();
-            if (AfxGetApp()->GetProfileInt(L"ToolBars\\Playlist", L"PopupBlur", TRUE)) {
-                // Optional Windows accent blur; resolve dynamically, with alpha-only fallback.
-                struct AccentPolicy { int state, flags; DWORD color; int animation; };
-                struct CompositionData { int attribute; void* data; SIZE_T size; };
-                using SetComposition = BOOL (WINAPI*)(HWND, CompositionData*);
-                const auto setComposition = reinterpret_cast<SetComposition>(
-                    ::GetProcAddress(::GetModuleHandleW(L"user32.dll"), "SetWindowCompositionAttribute"));
-                if (setComposition) {
-                    AccentPolicy accent = {3, 0, 0, 0}; // ACCENT_ENABLE_BLURBEHIND
-                    CompositionData data = {19, &accent, sizeof(accent)};
-                    setComposition(m_hWnd, &data);
-                }
-            }
-        }
+    // Restore the separately composed list surface from 5b9b3e9. Keep it fully
+    // opaque: no material, color key, whole-popup alpha, or transparent hit testing.
+    m_bar->m_listFrame.ModifyStyleEx(0, WS_EX_LAYERED);
+    if (::SetLayeredWindowAttributes(m_bar->m_listFrame.m_hWnd, 0, 255, LWA_ALPHA)) {
+        ModifyStyle(WS_CLIPCHILDREN, 0);
+    } else {
+        m_bar->m_listFrame.ModifyStyleEx(WS_EX_LAYERED, 0);
     }
-}
-
-void CNativePlaylistPopup::UpdateRoundedRegion()
-{
-    if (!m_translucent) return;
-    CRect rect; GetWindowRect(rect);
-    if (m_regionSize == rect.Size() && m_regionDpi == m_dpi) return;
-    m_regionSize = rect.Size(); m_regionDpi = m_dpi;
-    const int diameter = MulDiv(16, m_dpi, 96);
-    HRGN region = ::CreateRoundRectRgn(0, 0, rect.Width() + 1, rect.Height() + 1, diameter, diameter);
-    if (region && !::SetWindowRgn(m_hWnd, region, FALSE)) ::DeleteObject(region);
+    m_bar->m_list.SetExtendedStyle(m_bar->m_list.GetExtendedStyle() & ~LVS_EX_DOUBLEBUFFER);
 }
 
 CRect CNativePlaylistPopup::CloseRect() const
@@ -137,26 +110,6 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
 {
     if (!m_bar) return __super::WindowProc(message, wParam, lParam);
     switch (message) {
-    case WM_WINDOWPOSCHANGING: {
-        auto position = reinterpret_cast<WINDOWPOS*>(lParam);
-        if (!(position->flags & SWP_NOSIZE)) position->flags |= SWP_NOCOPYBITS;
-        if (m_resizing && !m_band.IsRectEmpty() && !(position->flags & SWP_NOSIZE)) {
-            position->flags &= ~SWP_NOMOVE;
-            position->x = m_band.right - position->cx;
-            position->y = m_band.top;
-        }
-        break;
-    }
-    case WM_WINDOWPOSCHANGED: {
-        const LRESULT result = __super::WindowProc(message, wParam, lParam);
-        auto position = reinterpret_cast<WINDOWPOS*>(lParam);
-        if (!(position->flags & SWP_NOSIZE)) {
-            UpdateRoundedRegion();
-            // Commit the complete child hierarchy before presenting this new size.
-            RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
-        }
-        return result;
-    }
     case WM_NCCALCSIZE: return wParam ? WVR_REDRAW : 0;
     case WM_NCPAINT: return 0; // DWM owns the rounded border; no classic sizing-frame paint
     case WM_NCACTIVATE: return DefWindowProc(message, wParam, -1);
@@ -199,21 +152,7 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
         dc.FillSolidRect(client, SurfaceColor());
         CRect header(client); header.bottom = std::min<LONG>(client.bottom, MulDiv(32, m_dpi, 96));
         dc.FillSolidRect(0, header.bottom - 1, client.Width(), 1, BorderColor());
-        if (!m_systemBorder) {
-            Gdiplus::Graphics graphics(dc.GetSafeHdc());
-            graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
-            const Gdiplus::REAL d = static_cast<Gdiplus::REAL>(MulDiv(16, m_dpi, 96));
-            const Gdiplus::REAL w = static_cast<Gdiplus::REAL>(client.Width() - 1);
-            const Gdiplus::REAL h = static_cast<Gdiplus::REAL>(client.Height() - 1);
-            Gdiplus::GraphicsPath outline;
-            outline.AddArc(0.5f, 0.5f, d, d, 180.0f, 90.0f);
-            outline.AddArc(w - d + 0.5f, 0.5f, d, d, 270.0f, 90.0f);
-            outline.AddArc(w - d + 0.5f, h - d + 0.5f, d, d, 0.0f, 90.0f);
-            outline.AddArc(0.5f, h - d + 0.5f, d, d, 90.0f, 90.0f);
-            outline.CloseFigure();
-            Gdiplus::Pen border(Gdiplus::Color(255, 60, 60, 60), 1.0f);
-            graphics.DrawPath(&border, &outline);
-        }
+        CBrush border(BorderColor()); if (!m_systemBorder) dc.FrameRect(client, &border);
         CRect close = CloseRect();
         if (m_closeHot) dc.FillSolidRect(close, SelectionColor());
         dc.SetBkMode(TRANSPARENT); dc.SetTextColor(RGB(210, 210, 210));
@@ -229,10 +168,10 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
         dc.SelectObject(previous);
         return 0;
     }
-    case WM_SIZE: {
+    case WM_SIZE:
         m_bar->ResizeListColumn();
+        Invalidate(FALSE); // original 5b9b3e9 header repaint; investigate separately
         return 0;
-    }
     case WM_SETCURSOR: {
         POINT point; ::GetCursorPos(&point); ScreenToClient(&point);
         if (point.x < MulDiv(6, m_dpi, 96)) { ::SetCursor(::LoadCursor(nullptr, IDC_SIZEWE)); return TRUE; }
