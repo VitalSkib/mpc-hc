@@ -107,9 +107,9 @@ int CMPCThemeToolTipCtrl::OnCreate(LPCREATESTRUCT lpCreateStruct)
     }
 
 #ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
-    // Windows 11 small rounded corners; unsupported systems retain native geometry.
-    const DWORD roundSmall = 3;
-    DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(33), &roundSmall, sizeof(roundSmall));
+    // Windows 11 rounded corners; unsupported systems retain native geometry.
+    const DWORD roundCorners = 2; // DWMWCP_ROUND
+    DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(33), &roundCorners, sizeof(roundCorners));
 #endif
     return 0;
 }
