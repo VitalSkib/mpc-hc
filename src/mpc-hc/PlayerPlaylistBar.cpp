@@ -2337,6 +2337,13 @@ void CPlayerPlaylistBar::ResizeListColumn()
         if (batchRedraw) m_list.SetRedraw(TRUE);
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
         if (UsesNativePopup()) {
+            const int offset = m_list.GetScrollPos(SB_HORZ);
+            if (offset) m_list.Scroll(CSize(-offset, 0));
+            m_list.RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE);
+        }
+#endif
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        if (UsesNativePopup()) {
             // Invalidate the complete resized child hierarchy. The native sizing
             // loop paints after the window-position transaction has completed.
             m_nativePopup.RedrawWindow(nullptr, nullptr,
@@ -2599,10 +2606,18 @@ void CPlayerPlaylistBar::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruc
         if (itemSelected) {
             const int pillWidth = m_pMainFrame->m_dpi.ScaleX(3), pillHeight = m_pMainFrame->m_dpi.ScaleY(15);
             CRect pill(CPoint(rcItem.left, rcItem.CenterPoint().y - pillHeight/2), CSize(pillWidth, pillHeight));
-            CBrush accent(RGB(76, 194, 255)); CBrush* oldBrush = pDC->SelectObject(&accent);
-            CPen* oldPen = static_cast<CPen*>(pDC->SelectStockObject(NULL_PEN));
-            pDC->RoundRect(pill, CPoint(pillWidth, pillWidth));
-            pDC->SelectObject(oldPen); pDC->SelectObject(oldBrush);
+            Gdiplus::Graphics graphics(pDC->GetSafeHdc());
+            graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+            const Gdiplus::REAL x = static_cast<Gdiplus::REAL>(pill.left);
+            const Gdiplus::REAL y = static_cast<Gdiplus::REAL>(pill.top);
+            const Gdiplus::REAL w = static_cast<Gdiplus::REAL>(pill.Width());
+            const Gdiplus::REAL h = static_cast<Gdiplus::REAL>(pill.Height());
+            Gdiplus::GraphicsPath path;
+            path.AddArc(x, y, w, w, 180.0f, 180.0f);
+            path.AddArc(x, y + h - w, w, w, 0.0f, 180.0f);
+            path.CloseFigure();
+            Gdiplus::SolidBrush accent(Gdiplus::Color(255, 76, 194, 255));
+            graphics.FillPath(&accent, &path);
         }
     } else
 #endif

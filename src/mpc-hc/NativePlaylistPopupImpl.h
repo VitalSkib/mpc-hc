@@ -2,6 +2,7 @@
 #pragma once
 #include <dwmapi.h>
 #include <uxtheme.h>
+#include <gdiplus.h>
 
 bool CNativePlaylistPopup::Create(CWnd* owner, CPlayerPlaylistBar* bar)
 {
@@ -9,6 +10,8 @@ bool CNativePlaylistPopup::Create(CWnd* owner, CPlayerPlaylistBar* bar)
     m_width = std::clamp<int>(AfxGetApp()->GetProfileInt(L"ToolBars\\Playlist", L"PopupWidth", 320), 120, 1200);
     if (!CreateEx(WS_EX_TOOLWINDOW, AfxRegisterWndClass(CS_DBLCLKS, ::LoadCursor(nullptr, IDC_ARROW)),
             L"Playlist", WS_POPUP | WS_THICKFRAME | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, CRect(0, 0, 320, 200), owner, 0)) return false;
+    Gdiplus::GdiplusStartupInput graphicsStartup;
+    Gdiplus::GdiplusStartup(&m_graphicsToken, &graphicsStartup, nullptr);
     const DWORD corners = 2; const BOOL dark = TRUE;
     const COLORREF border = BorderColor();
     m_systemBorder = SUCCEEDED(DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(34), &border, sizeof(border)));
@@ -28,6 +31,9 @@ void CNativePlaylistPopup::ConfigureMaterial()
         // Keep the original GDI list opaque at its text/selection pixels only.
         m_bar->m_listFrame.ModifyStyleEx(0, WS_EX_LAYERED);
         if (::SetLayeredWindowAttributes(m_bar->m_listFrame.m_hWnd, SurfaceColor(), 255, LWA_COLORKEY)) {
+            // The material must also be initialized underneath the keyed child.
+            ModifyStyle(WS_CLIPCHILDREN, 0);
+            m_bar->m_list.SetExtendedStyle(m_bar->m_list.GetExtendedStyle() & ~LVS_EX_DOUBLEBUFFER);
             m_material = true;
             return;
         }
@@ -187,7 +193,10 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
         }
         return 0;
     }
-    case WM_SIZE: m_bar->ResizeListColumn(); return 0;
+    case WM_SIZE:
+        m_bar->ResizeListColumn();
+        Invalidate(FALSE); // header and close button move with the same size transaction
+        return 0;
     case WM_SETCURSOR: {
         POINT point; ::GetCursorPos(&point); ScreenToClient(&point);
         if (point.x < MulDiv(6, m_dpi, 96)) { ::SetCursor(::LoadCursor(nullptr, IDC_SIZEWE)); return TRUE; }
@@ -218,6 +227,7 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
         if (m_bar->nativePopupActivity) m_bar->nativePopupActivity();
         return 0;
     case WM_NCDESTROY:
+        if (m_graphicsToken) { Gdiplus::GdiplusShutdown(m_graphicsToken); m_graphicsToken = 0; }
         if (m_bufferedPaint) { BufferedPaintUnInit(); m_bufferedPaint = false; }
         break;
     case WM_CAPTURECHANGED: m_closePressed = false; break;

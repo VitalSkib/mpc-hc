@@ -11,6 +11,7 @@ class CNativePlaylistPopup : public CWnd, public CDropClient {
     bool m_resizing = false, m_closeHot = false, m_closePressed = false;
     bool m_material = false, m_bufferedPaint = false, m_systemBorder = false;
     CFont m_titleFont;
+    ULONG_PTR m_graphicsToken = 0;
     CRect CloseRect() const;
     void Position();
     LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam) override;
