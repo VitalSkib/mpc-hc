@@ -169,6 +169,41 @@ BOOL CPlayerPlaylistBar::PreCreateWindow(CREATESTRUCT& cs)
     return TRUE;
 }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+bool CPlayerPlaylistBar::RouteNativePresentationInput(MSG* message)
+{
+    if (!m_nativeDock.Active() || !IsWindowVisible() || ::GetCapture()
+            || message->hwnd == m_hWnd || ::IsChild(m_hWnd, message->hwnd)) return false;
+    const UINT event = message->message;
+    if (event != WM_MOUSEMOVE && event != WM_LBUTTONDOWN && event != WM_LBUTTONUP
+            && event != WM_LBUTTONDBLCLK && event != WM_RBUTTONDOWN && event != WM_RBUTTONUP
+            && event != WM_MOUSEWHEEL) return false;
+    CRect bounds; GetWindowRect(bounds);
+    if (!bounds.PtInRect(message->pt)) return false;
+    HWND target = m_hWnd;
+    while (true) {
+        POINT point = message->pt; ::ScreenToClient(target, &point);
+        RECT client; ::GetClientRect(target, &client);
+        if (!::PtInRect(&client, point)) break;
+        HWND child = ::ChildWindowFromPointEx(target, point, CWP_SKIPINVISIBLE | CWP_SKIPDISABLED);
+        if (!child || child == target) break;
+        target = child;
+    }
+    const LRESULT hit = ::SendMessage(target, WM_NCHITTEST, 0, MAKELPARAM(message->pt.x, message->pt.y));
+    if (event == WM_MOUSEWHEEL) ::SendMessage(target, event, message->wParam, message->lParam);
+    else if (hit == HTCLIENT) {
+        POINT point = message->pt; ::ScreenToClient(target, &point);
+        ::SendMessage(target, event, message->wParam, MAKELPARAM(point.x, point.y));
+    } else {
+        UINT nonclient = event == WM_MOUSEMOVE ? WM_NCMOUSEMOVE : event == WM_LBUTTONDOWN ? WM_NCLBUTTONDOWN
+            : event == WM_LBUTTONUP ? WM_NCLBUTTONUP : event == WM_LBUTTONDBLCLK ? WM_NCLBUTTONDBLCLK
+            : event == WM_RBUTTONDOWN ? WM_NCRBUTTONDOWN : WM_NCRBUTTONUP;
+        ::SendMessage(target, nonclient, hit, MAKELPARAM(message->pt.x, message->pt.y));
+    }
+    return true;
+}
+#endif
+
 BOOL CPlayerPlaylistBar::PreTranslateMessage(MSG* pMsg)
 {
     if (IsWindow(pMsg->hwnd) && IsVisible() && pMsg->message >= WM_KEYFIRST && pMsg->message <= WM_KEYLAST) {
@@ -2095,6 +2130,9 @@ void CPlayerPlaylistBar::ResizeListColumn()
 
 void CPlayerPlaylistBar::OnDestroy()
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    m_nativeDock.Reset();
+#endif
     m_dropTarget.Revoke();
     __super::OnDestroy();
 }

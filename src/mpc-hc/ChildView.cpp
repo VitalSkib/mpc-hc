@@ -94,6 +94,9 @@ void CChildView::TraceGeometry(const char* tag)
     GeometryDiagnostics::Record("ui.info", m_pMainFrame->m_wndInfoBar.GetSafeHwnd());
     GeometryDiagnostics::Record("ui.stats", m_pMainFrame->m_wndStatsBar.GetSafeHwnd());
     GeometryDiagnostics::Record("ui.status", m_pMainFrame->m_wndStatusBar.GetSafeHwnd());
+    GeometryDiagnostics::Record("ui.playlist", m_pMainFrame->m_wndPlaylistBar.GetSafeHwnd());
+    if (m_pMainFrame->m_wndPlaylistBar.GetSafeHwnd())
+        GeometryDiagnostics::Record("ui.playlist-dock", ::GetParent(m_pMainFrame->m_wndPlaylistBar.m_hWnd));
 }
 #endif
 
@@ -140,6 +143,9 @@ BOOL CChildView::PreCreateWindow(CREATESTRUCT& cs)
 BOOL CChildView::PreTranslateMessage(MSG* pMsg)
 {
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (m_pMainFrame->m_wndPlaylistBar.RouteNativePresentationInput(pMsg)) return TRUE;
+#endif
     if (m_pMainFrame->m_wndToolBar.RouteTransparentButtonInput(pMsg)) return TRUE;
     // Keyed toolbar pixels can route movement to the video beneath them.
     // Recognize the complete native mute-button rectangle, not just its ink.
@@ -195,6 +201,7 @@ void CChildView::UpdateNativeDecoration()
         && !m_pMainFrame->IsIconic() && !m_pMainFrame->HasDedicatedFSVideoWindow();
     const bool nativeVisible = m_pMainFrame->m_controls.ToolbarsCoverVideo() && height > 0;
     if (!available || view.IsRectEmpty()) {
+        m_pMainFrame->m_wndPlaylistBar.PrepareNativePresentation(false);
         m_nativeHeader.Hide(); m_nativeBackdrop.Hide(); return;
     }
     CString title; m_pMainFrame->GetWindowText(title);
@@ -209,13 +216,36 @@ void CChildView::UpdateNativeDecoration()
     const int dpi = m_pMainFrame->m_dpi.ScaleY(96);
     CRect bottom(view); bottom.top = std::max(view.top, view.bottom - int(height));
     const bool bottomVisible = nativeVisible && (videoLoaded || m_pMainFrame->IsStatusBarForcedForMessage());
-    if (bottomVisible) m_nativeBackdrop.Refresh(this, bottom, false, CString(), dpi);
-    else m_nativeBackdrop.Hide();
+    auto& playlist = m_pMainFrame->m_wndPlaylistBar;
+    CRect playlistArea(0, 0, 0, 0);
+    const bool playlistVisible = playlist.GetSafeHwnd() && playlist.IsWindowVisible() && !playlist.IsFloating();
+    const bool playlistTransparent = playlist.PrepareNativePresentation(videoLoaded && AppIsThemeLoaded()
+        && playlistVisible && m_pMainFrame->m_controls.ToolbarsCoverVideo());
+    if (playlistVisible) {
+        playlist.GetParent()->GetWindowRect(playlistArea);
+        ScreenToClient(playlistArea);
+        playlistArea.IntersectRect(playlistArea, view);
+    }
     CRect top(view);
-    top.bottom = std::min(bottomVisible ? bottom.top : view.bottom, view.top + m_pMainFrame->m_dpi.ScaleY(40));
-    // An empty/loading window must remain closable without showing playback
-    // controls. Once media is loaded, all decoration follows native visibility.
-    if (!mediaLoaded || nativeVisible) m_nativeHeader.Refresh(this, top, true,
+    const int headerHeight = m_pMainFrame->m_dpi.ScaleY(40);
+    if (!playlistArea.IsRectEmpty()) {
+        // Window commands remain in the unobscured video area, like before.
+        if (playlistArea.Width() >= view.Width()) {
+            if (playlistArea.top <= view.top) top.top = playlistArea.bottom;
+        } else if (playlistArea.top < view.top + headerHeight) {
+            if (playlistArea.left <= view.left) top.left = playlistArea.right;
+            else if (playlistArea.right >= view.right) top.right = playlistArea.left;
+        }
+    }
+    top.bottom = std::min(bottomVisible ? bottom.top : view.bottom, top.top + headerHeight);
+    const bool headerVisible = !mediaLoaded || nativeVisible;
+    m_nativeBackdrop.shadedAreas.clear();
+    if (bottomVisible) m_nativeBackdrop.shadedAreas.push_back(bottom);
+    if (playlistTransparent && !playlistArea.IsRectEmpty()) m_nativeBackdrop.shadedAreas.push_back(playlistArea);
+    m_nativeBackdrop.headerExclusion = headerVisible ? top : CRect(0, 0, 0, 0);
+    if (!m_nativeBackdrop.shadedAreas.empty()) m_nativeBackdrop.Refresh(this, view, false, CString(), dpi);
+    else m_nativeBackdrop.Hide();
+    if (headerVisible) m_nativeHeader.Refresh(this, top, true,
         mediaLoaded ? title : CString(), dpi, m_pMainFrame->IsFullScreenMode() || m_pMainFrame->IsZoomed());
     else m_nativeHeader.Hide();
 }
@@ -341,19 +371,28 @@ void CChildView::OnWindowPosChanging(WINDOWPOS* position)
         position->x + position->cx, position->y + position->cy};
 #endif
     if (m_pMainFrame->m_nativeVideoLayout && !(position->flags & SWP_NOSIZE)) {
-        unsigned overlap = 0;
+        unsigned top = 0, left = 0, right = 0, bottom = 0;
+        unsigned toolbarHeight = 0;
         if (!m_pMainFrame->HasDedicatedFSVideoWindow()
                 && m_pMainFrame->m_controls.ToolbarsCoverVideo()) {
-            overlap = m_pMainFrame->m_controls.GetVisibleToolbarsHeight();
+            toolbarHeight = m_pMainFrame->m_controls.GetVisibleToolbarsHeight();
+            bottom = toolbarHeight;
+            const auto& playlist = m_pMainFrame->m_wndPlaylistBar;
+            const bool playlistVisible = playlist.GetSafeHwnd() && playlist.IsWindowVisible()
+                && !playlist.IsFloating() && m_pMainFrame->GetLoadState() == MLS::LOADED;
+            if (m_pMainFrame->m_controls.PanelsCoverVideo() || playlistVisible) {
+                m_pMainFrame->m_controls.GetVisibleDockZones(top, left, right, bottom);
+            }
         }
-        // Expand the actual renderer HWND, not just its presentation rectangle.
-        // The native sibling bars keep their layout, commands and input.
-        position->cy += overlap;
-        m_pMainFrame->m_nativeToolbarOverlapHeight = overlap;
-        if (overlap) {
-            // The expanded view shares the toolbar rectangles. Keep the real
-            // sibling controls above it in this same native layout transaction.
-            // HWND_BOTTOM affects only siblings, never the main player window.
+        // Extend the real video HWND across dock zones in this native layout
+        // transaction, before WM_SIZE updates the renderer. No stale strip is
+        // left beneath full-width controls when a side panel consumes width.
+        position->x -= left; position->y -= top;
+        position->cx += left + right; position->cy += top + bottom;
+        m_pMainFrame->m_nativeToolbarOverlapHeight = toolbarHeight;
+        m_pMainFrame->m_nativeDockOverlap = CRect(left, top, right, bottom);
+        if (left || top) position->flags &= ~SWP_NOMOVE;
+        if (left || top || right || bottom) {
             position->hwndInsertAfter = HWND_BOTTOM;
             position->flags &= ~SWP_NOZORDER;
         }

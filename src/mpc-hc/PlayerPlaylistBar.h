@@ -32,6 +32,9 @@
 #include "YoutubeDL.h"
 #include "AppSettings.h"
 #include "CMPCThemeInlineEdit.h"
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+#include "NativePlaylistPresentation.h"
+#endif
 
 
 class OpenMediaData;
@@ -78,6 +81,13 @@ private:
     CImageList m_fakeImageList;
     CPlaylistListFrame m_listFrame;
     CPlayerListCtrl m_list;
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    NativePlaylistPresentation::DockSurface m_nativeDock;
+public:
+    bool PrepareNativePresentation(bool enabled) { return m_nativeDock.Update(*this, enabled); }
+    bool RouteNativePresentationInput(MSG* message);
+private:
+#endif
 
     int m_initialWindowDPI = 0;
     bool createdWindow;

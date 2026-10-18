@@ -2037,14 +2037,13 @@ void CMainFrame::OnSizingFixWndToVideo(UINT nSide, LPRECT lpRect, bool bCtrl)
         if (!bToolbarsOnVideo) {
             uBottom -= m_controls.GetVisibleToolbarsHeight();
         }
-        controlsSize.cx -= uLeft + uRight;
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-        // The view already occupies the toolbar part of the bottom dock zone,
-        // including when PanelsCoverVideo is enabled (always true in fullscreen).
-        if (bToolbarsOnVideo) {
-            uBottom -= std::min(uBottom, m_nativeToolbarOverlapHeight);
-        }
+        uLeft -= std::min(uLeft, unsigned(m_nativeDockOverlap.left));
+        uTop -= std::min(uTop, unsigned(m_nativeDockOverlap.top));
+        uRight -= std::min(uRight, unsigned(m_nativeDockOverlap.right));
+        uBottom -= std::min(uBottom, unsigned(m_nativeDockOverlap.bottom));
 #endif
+        controlsSize.cx -= uLeft + uRight;
         controlsSize.cy -= uTop + uBottom;
     } else if (bToolbarsOnVideo) {
         unsigned uncoveredHeight = m_controls.GetVisibleToolbarsHeight();
@@ -13758,9 +13757,10 @@ void CMainFrame::MoveVideoWindow(bool fShowStats/* = false*/, bool bSetStoppedVi
                 uBottom -= m_controls.GetVisibleToolbarsHeight();
             }
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-            if (bToolbarsOnVideo) {
-                uBottom -= std::min(uBottom, m_nativeToolbarOverlapHeight);
-            }
+            uLeft -= std::min(uLeft, unsigned(m_nativeDockOverlap.left));
+            uTop -= std::min(uTop, unsigned(m_nativeDockOverlap.top));
+            uRight -= std::min(uRight, unsigned(m_nativeDockOverlap.right));
+            uBottom -= std::min(uBottom, unsigned(m_nativeDockOverlap.bottom));
 #endif
             windowRect.InflateRect(uLeft, uTop, uRight, uBottom);
         } else if (bToolbarsOnVideo) {

@@ -397,6 +397,7 @@ private:
     // Only native frame layout may extend the view underneath overlay toolbars.
     bool m_nativeVideoLayout = false;
     unsigned m_nativeToolbarOverlapHeight = 0;
+    CRect m_nativeDockOverlap = CRect(0, 0, 0, 0);
 #endif
 
     CRect m_lastWindowRect;

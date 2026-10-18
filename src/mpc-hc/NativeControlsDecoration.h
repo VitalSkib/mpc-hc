@@ -3,6 +3,7 @@
 #include <gdiplus.h>
 #include <functional>
 #include <cmath>
+#include <vector>
 #include "CMPCThemeToolTipCtrl.h"
 #ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
 #include "../DSUtil/GeometryDiagnostics.h"
@@ -14,6 +15,8 @@ class CNativeControlsDecoration final : public CWnd
     bool m_header = false, m_restore = false;
     int m_hot = -1, m_pressed = -1;
     CString m_title;
+    std::vector<CRect> m_paintedAreas;
+    CRect m_paintedExclusion = CRect(0, 0, 0, 0);
     int m_scale = 96;
     CRect m_buttons[3] = {CRect(0, 0, 0, 0), CRect(0, 0, 0, 0), CRect(0, 0, 0, 0)};
     HRESULT m_lastDraw = S_OK;
@@ -87,7 +90,21 @@ class CNativeControlsDecoration final : public CWnd
             Gdiplus::Bitmap surface(width, height, width * 4, PixelFormat32bppPARGB,
                 static_cast<BYTE*>(pixels));
             Gdiplus::Graphics graphics(&surface);
-            graphics.Clear(Gdiplus::Color(128, 0, 0, 0));
+            graphics.Clear(Gdiplus::Color(0, 0, 0, 0));
+            if (m_header) graphics.Clear(Gdiplus::Color(128, 0, 0, 0));
+            else {
+                // Union all shaded areas before filling once. Intersections
+                // retain 50% opacity instead of accumulating another layer.
+                Gdiplus::Region region;
+                region.MakeEmpty();
+                for (const auto& area : shadedAreas) {
+                    region.Union(Gdiplus::Rect(area.left, area.top, area.Width(), area.Height()));
+                }
+                if (!headerExclusion.IsRectEmpty()) region.Exclude(Gdiplus::Rect(headerExclusion.left,
+                    headerExclusion.top, headerExclusion.Width(), headerExclusion.Height()));
+                Gdiplus::SolidBrush shade(Gdiplus::Color(128, 0, 0, 0));
+                graphics.FillRegion(&shade, &region);
+            }
             if (m_header) {
                 graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
                 graphics.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAliasGridFit);
@@ -172,6 +189,8 @@ public:
     std::function<bool(Gdiplus::Graphics&, const CRect&, LPCWSTR, bool)> customIcon;
     std::function<void(int)> windowCommand;
     bool semiboldTitle = true;
+    std::vector<CRect> shadedAreas;
+    CRect headerExclusion = CRect(0, 0, 0, 0);
     CNativeControlsDecoration() {
         Gdiplus::GdiplusStartupInput input;
         Gdiplus::GdiplusStartup(&m_graphics, &input, nullptr);
@@ -205,9 +224,11 @@ public:
             }
         }
         CRect current; GetWindowRect(current); view->ScreenToClient(current);
-        const bool changed = current != rectangle || m_title != title || m_scale != dpi || m_restore != restore || !(GetStyle() & WS_VISIBLE);
+        const bool changed = current != rectangle || m_title != title || m_scale != dpi || m_restore != restore
+            || m_paintedAreas != shadedAreas || m_paintedExclusion != headerExclusion || !(GetStyle() & WS_VISIBLE);
         if (!changed) return;
         m_title = title; m_scale = dpi; m_restore = restore;
+        m_paintedAreas = shadedAreas; m_paintedExclusion = headerExclusion;
         const int side = std::min(Scale(40), rectangle.Height());
         for (int button = 0; button < 3; ++button) {
             const int right = rectangle.Width() - (2 - button) * side;
