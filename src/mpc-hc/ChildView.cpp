@@ -204,6 +204,8 @@ void CChildView::UpdateNativeDecoration()
     const bool nativeVisible = m_pMainFrame->m_controls.ToolbarsCoverVideo() && height > 0;
     if (!available || view.IsRectEmpty()) {
         m_pMainFrame->m_wndPlaylistBar.PrepareNativePresentation(false);
+        if (m_pMainFrame->m_wndPlaylistBar.UsesNativePopup())
+            m_pMainFrame->m_wndPlaylistBar.RefreshNativePopup(CRect(0, 0, 0, 0), false, 96);
         m_nativeHeader.Hide(); m_nativeBackdrop.Hide(); return;
     }
     CString title; m_pMainFrame->GetWindowText(title);
@@ -228,7 +230,11 @@ void CChildView::UpdateNativeDecoration()
     const unsigned footerHeight = std::max(height, m_pMainFrame->m_controls.GetToolbarsHeight());
     playlistBand.bottom = std::max(playlistBand.top, LONG(view.bottom - int(footerHeight)));
     ClientToScreen(playlistBand);
-    const bool playlistTransparent = playlist.PrepareNativePresentation(videoLoaded && AppIsThemeLoaded()
+    if (playlist.UsesNativePopup()) {
+        playlist.nativePopupActivity = [this]() { m_pMainFrame->m_controls.UpdateToolbarsVisibility(); };
+        playlist.RefreshNativePopup(playlistBand, mediaLoaded && nativeVisible, dpi);
+    }
+    const bool playlistTransparent = playlist.PrepareNativePresentation(!playlist.UsesNativePopup() && videoLoaded && AppIsThemeLoaded()
         && !playlist.IsFloating() && m_pMainFrame->m_controls.ToolbarsCoverVideo(), playlistBand);
     if (playlistVisible) {
         if (playlistTransparent) playlistArea = playlist.GetNativePresentationRect();
