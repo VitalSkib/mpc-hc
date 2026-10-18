@@ -70,6 +70,15 @@ void CPlaylistListFrame::OnNcPaint()
 
 LRESULT CPlaylistListFrame::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (message == WM_ERASEBKGND && wParam && (GetExStyle() & WS_EX_LAYERED)) {
+        // The native list is briefly hidden by WM_SETREDRAW during layout.
+        // Its container must clear to the same key, never an uninitialized black surface.
+        CRect rect; GetClientRect(rect);
+        CDC::FromHandle(reinterpret_cast<HDC>(wParam))->FillSolidRect(rect, CNativePlaylistPopup::SurfaceColor());
+        return TRUE;
+    }
+#endif
     if (CWnd* pBar = GetParent()) {
         switch (message) {
         case WM_NOTIFY:
@@ -2539,7 +2548,11 @@ void CPlayerPlaylistBar::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruc
     CFont* numberMeasureFont = nullptr;
     if (UsesNativePopup() && m_numberFont.GetSafeHandle()) numberMeasureFont = pDC->SelectObject(&m_numberFont);
 #endif
-    CSize numWidth = pDC->GetTextExtent(num) + pDC->GetTextExtent(L"w");
+    CString numberColumn(num);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (UsesNativePopup()) numberColumn.Format(L"%d.", static_cast<int>(m_pl.GetCount()));
+#endif
+    CSize numWidth = pDC->GetTextExtent(numberColumn) + pDC->GetTextExtent(L"w");
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
     if (numberMeasureFont) pDC->SelectObject(numberMeasureFont);
 #endif
