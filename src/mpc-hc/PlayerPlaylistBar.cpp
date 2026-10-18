@@ -139,6 +139,9 @@ BOOL CPlayerPlaylistBar::Create(CWnd* pParentWnd, UINT defDockBarID)
         CRect(0, 0, 100, 100), &m_listFrame, IDC_PLAYLIST);
 
     m_list.SetExtendedStyle(m_list.GetExtendedStyle() | LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    ::SetWindowSubclass(m_list.m_hWnd, NativeListProcedure, reinterpret_cast<UINT_PTR>(this), reinterpret_cast<DWORD_PTR>(this));
+#endif
     SetListBkColor();
 
     // The column titles don't have to be translated since they aren't displayed anyway
@@ -170,6 +173,95 @@ BOOL CPlayerPlaylistBar::PreCreateWindow(CREATESTRUCT& cs)
 }
 
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+bool CPlayerPlaylistBar::PrepareNativePresentation(bool enabled)
+{
+    if (!GetSafeHwnd()) return false;
+    const bool active = m_nativeDock.Update(*this, enabled);
+    const int dockId = GetParent() ? GetParent()->GetDlgCtrlID() : 0;
+    const bool side = active && (dockId == AFX_IDW_DOCKBAR_LEFT || dockId == AFX_IDW_DOCKBAR_RIGHT);
+    const int top = side ? m_pMainFrame->m_dpi.ScaleY(40) : 0;
+    const unsigned selected = m_pMainFrame->m_controls.GetToolbarsHeight();
+    const unsigned visible = m_pMainFrame->m_controls.GetVisibleToolbarsHeight();
+    const int bottom = side ? int(selected - std::min(selected, visible)) : 0;
+    if (top != m_nativeTopInset || bottom != m_nativeBottomInset) {
+        m_nativeTopInset = top; m_nativeBottomInset = bottom;
+        // Recalculate native client/nonclient areas, without moving the docked bar
+        // or feeding a shorter outer size back into MFC's docking negotiation.
+        SetWindowPos(nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        ResizeListColumn();
+    }
+    CRect bounds; GetWindowRect(bounds);
+    CRect clip(0, std::min(top, bounds.Height()), bounds.Width(), std::max(top, bounds.Height() - bottom));
+    clip.bottom = std::min(clip.bottom, bounds.Height());
+    if (side) {
+        if (!m_nativeClipped || clip != m_nativeClip) {
+            HRGN region = ::CreateRectRgnIndirect(&clip);
+            if (region) {
+                if (::SetWindowRgn(m_hWnd, region, TRUE)) { m_nativeClip = clip; m_nativeClipped = true; }
+                else ::DeleteObject(region);
+            }
+        }
+    } else if (m_nativeClipped) {
+        ::SetWindowRgn(m_hWnd, nullptr, TRUE); m_nativeClip.SetRectEmpty(); m_nativeClipped = false;
+    }
+    UpdateNativeHover();
+    return active;
+}
+
+CRect CPlayerPlaylistBar::GetNativePresentationRect() const
+{
+    CRect rect; GetWindowRect(rect);
+    if (m_nativeClipped) {
+        const CPoint origin = rect.TopLeft(); rect = m_nativeClip; rect.OffsetRect(origin);
+    }
+    return rect;
+}
+
+void CPlayerPlaylistBar::NcCalcClient(LPRECT rect, UINT dockId)
+{
+    __super::NcCalcClient(rect, dockId);
+    if (!m_nativeDock.Active()) return;
+    rect->top = std::min(rect->bottom, rect->top + m_nativeTopInset);
+    rect->bottom = std::max(rect->top, rect->bottom - m_nativeBottomInset);
+    if (m_nativeTopInset && HasGripper()) {
+        CRect close = m_biHide.GetRect(); close.OffsetRect(0, m_nativeTopInset);
+        m_biHide.Move(close.TopLeft());
+    }
+}
+
+void CPlayerPlaylistBar::UpdateNativeHover()
+{
+    if (!::IsWindow(m_list.GetSafeHwnd())) { m_nativeHotItem = -1; return; }
+    int hot = -1;
+    POINT cursor;
+    if (m_nativeDock.Active() && IsWindowVisible() && ::GetCursorPos(&cursor)
+            && GetNativePresentationRect().PtInRect(cursor)) {
+        m_list.ScreenToClient(&cursor);
+        UINT flags = 0; hot = m_list.HitTest(cursor, &flags);
+        if (!(flags & LVHT_ONITEM)) hot = -1;
+    }
+    if (hot == m_nativeHotItem) return;
+    const int previous = m_nativeHotItem; m_nativeHotItem = hot;
+    if (previous >= 0 && previous < m_list.GetItemCount()) m_list.RedrawItems(previous, previous);
+    if (hot >= 0) m_list.RedrawItems(hot, hot);
+}
+
+LRESULT CALLBACK CPlayerPlaylistBar::NativeListProcedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam,
+    UINT_PTR id, DWORD_PTR data)
+{
+    auto bar = reinterpret_cast<CPlayerPlaylistBar*>(data);
+    if (message == WM_NCDESTROY) ::RemoveWindowSubclass(window, NativeListProcedure, id);
+    else if (message == WM_MOUSEMOVE || message == WM_MOUSELEAVE) {
+        bar->UpdateNativeHover();
+        if (message == WM_MOUSEMOVE && bar->m_nativeDock.Active()) {
+            TRACKMOUSEEVENT track = {sizeof(track), TME_LEAVE, window, 0}; ::TrackMouseEvent(&track);
+        }
+    }
+    const LRESULT result = ::DefSubclassProc(window, message, wparam, lparam);
+    if (message == WM_MOUSEWHEEL || message == WM_VSCROLL || message == WM_HSCROLL) bar->UpdateNativeHover();
+    return result;
+}
+
 bool CPlayerPlaylistBar::RouteNativePresentationInput(MSG* message)
 {
     if (!m_nativeDock.Active() || !IsWindowVisible() || ::GetCapture()
@@ -178,7 +270,7 @@ bool CPlayerPlaylistBar::RouteNativePresentationInput(MSG* message)
     if (event != WM_MOUSEMOVE && event != WM_LBUTTONDOWN && event != WM_LBUTTONUP
             && event != WM_LBUTTONDBLCLK && event != WM_RBUTTONDOWN && event != WM_RBUTTONUP
             && event != WM_MOUSEWHEEL) return false;
-    CRect bounds; GetWindowRect(bounds);
+    const CRect bounds = GetNativePresentationRect();
     if (!bounds.PtInRect(message->pt)) return false;
     HWND target = m_hWnd;
     while (true) {
@@ -206,6 +298,9 @@ bool CPlayerPlaylistBar::RouteNativePresentationInput(MSG* message)
 
 BOOL CPlayerPlaylistBar::PreTranslateMessage(MSG* pMsg)
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (pMsg->message == WM_MOUSEMOVE || pMsg->message == WM_MOUSELEAVE) UpdateNativeHover();
+#endif
     if (IsWindow(pMsg->hwnd) && IsVisible() && pMsg->message >= WM_KEYFIRST && pMsg->message <= WM_KEYLAST) {
         if (GetKeyState(VK_MENU) & 0x8000) {
             if (TranslateAccelerator(m_pMainFrame->GetSafeHwnd(), m_pMainFrame->GetDefaultAccelerator(), pMsg)) {
@@ -2307,6 +2402,10 @@ void CPlayerPlaylistBar::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruc
     }
     bool itemPlaying = pos == m_pl.GetPos();
     bool itemSelected = !!m_list.GetItemState(nItem, LVIS_SELECTED);
+    bool rowHighlighted = itemSelected;
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (m_nativeDock.Active()) rowHighlighted = nItem == m_nativeHotItem;
+#endif
     CPlaylistItem& pli = m_pl.GetAt(pos);
 
     CDC* pDC = CDC::FromHandle(lpDrawItemStruct->hDC);
@@ -2340,7 +2439,7 @@ void CPlayerPlaylistBar::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruc
 
     if (win11Style) {
         //fluent list selection: a neutral fill across the whole row, with an accent indicator at the left edge
-        bgColor = itemSelected ? CMPCTheme::PlaylistSelectedColor : contentBGColor;
+        bgColor = rowHighlighted ? CMPCTheme::PlaylistSelectedColor : contentBGColor;
         FillRect(pDC->m_hDC, rcItem, CBrush(bgColor));
         if (itemSelected) {
             int pillWidth = m_pMainFrame->m_dpi.ScaleX(3);
@@ -2353,7 +2452,7 @@ void CPlayerPlaylistBar::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruc
             pDC->SelectObject(oldPen);
             pDC->SelectObject(oldBrush);
         }
-    } else if (itemSelected) {
+    } else if (rowHighlighted) {
         if (AppNeedsThemedControls()) {
             bgColor = CMPCTheme::ContentSelectedColor;
         } else {

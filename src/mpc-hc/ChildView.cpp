@@ -144,6 +144,8 @@ BOOL CChildView::PreTranslateMessage(MSG* pMsg)
 {
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (pMsg->message == WM_MOUSEMOVE || pMsg->message == WM_MOUSELEAVE)
+        m_pMainFrame->m_wndPlaylistBar.UpdateNativeHover();
     if (m_pMainFrame->m_wndPlaylistBar.RouteNativePresentationInput(pMsg)) return TRUE;
 #endif
     if (m_pMainFrame->m_wndToolBar.RouteTransparentButtonInput(pMsg)) return TRUE;
@@ -222,7 +224,8 @@ void CChildView::UpdateNativeDecoration()
     const bool playlistTransparent = playlist.PrepareNativePresentation(videoLoaded && AppIsThemeLoaded()
         && playlistVisible && m_pMainFrame->m_controls.ToolbarsCoverVideo());
     if (playlistVisible) {
-        playlist.GetParent()->GetWindowRect(playlistArea);
+        if (playlistTransparent) playlistArea = playlist.GetNativePresentationRect();
+        else playlist.GetParent()->GetWindowRect(playlistArea);
         ScreenToClient(playlistArea);
         playlistArea.IntersectRect(playlistArea, view);
     }

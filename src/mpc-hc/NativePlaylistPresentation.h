@@ -20,7 +20,13 @@ class DockSurface {
                     if (!::IsWindowVisible(child)) continue;
                     RECT childRect; ::GetWindowRect(child, &childRect);
                     ::MapWindowPoints(nullptr, window, reinterpret_cast<POINT*>(&childRect), 2);
-                    ::ExcludeClipRect(dc, childRect.left, childRect.top, childRect.right, childRect.bottom);
+                    HRGN region = ::CreateRectRgn(0, 0, 0, 0);
+                    if (region && ::GetWindowRgn(child, region) != ERROR) {
+                        // A clipped playlist no longer covers the caption/footer bands.
+                        ::OffsetRgn(region, childRect.left, childRect.top);
+                        ::ExtSelectClipRgn(dc, region, RGN_DIFF);
+                    } else ::ExcludeClipRect(dc, childRect.left, childRect.top, childRect.right, childRect.bottom);
+                    if (region) ::DeleteObject(region);
                 }
                 RECT rect; ::GetClientRect(window, &rect);
                 HBRUSH brush = ::CreateSolidBrush(CMPCTheme::ContentBGColor);

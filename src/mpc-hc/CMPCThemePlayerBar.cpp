@@ -116,6 +116,13 @@ void CMPCThemePlayerBar::NcPaintGripper(CDC* pDC, CRect rcClient)   //derived fr
         return;
     }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (NativePlaylistPresentation::Active(m_hWnd)) {
+        // Keep the native close button and drag hit area; omit the opaque dotted artwork.
+        paintHideButton(pDC, m_biHide);
+        return;
+    }
+#endif
     CRect gripper = rcClient;
     CRect rcbtn = m_biHide.GetRect();
     BOOL bHorz = IsHorzDocked();

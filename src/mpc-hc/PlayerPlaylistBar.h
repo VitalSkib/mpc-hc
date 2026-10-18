@@ -83,8 +83,16 @@ private:
     CPlayerListCtrl m_list;
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
     NativePlaylistPresentation::DockSurface m_nativeDock;
+    int m_nativeHotItem = -1, m_nativeTopInset = 0, m_nativeBottomInset = 0;
+    CRect m_nativeClip = CRect(0, 0, 0, 0);
+    bool m_nativeClipped = false;
+    static LRESULT CALLBACK NativeListProcedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam,
+        UINT_PTR id, DWORD_PTR data);
 public:
-    bool PrepareNativePresentation(bool enabled) { return m_nativeDock.Update(*this, enabled); }
+    bool PrepareNativePresentation(bool enabled);
+    CRect GetNativePresentationRect() const;
+    void UpdateNativeHover();
+    void NcCalcClient(LPRECT rect, UINT dockId) override;
     bool RouteNativePresentationInput(MSG* message);
 private:
 #endif
