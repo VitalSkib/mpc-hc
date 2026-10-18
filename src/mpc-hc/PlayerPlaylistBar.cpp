@@ -313,18 +313,17 @@ LRESULT CALLBACK CPlayerPlaylistBar::NativeListProcedure(HWND window, UINT messa
 
 bool CPlayerPlaylistBar::RouteNativePresentationInput(MSG* message)
 {
-    const bool popup = UsesNativePopup() && m_nativePopup.MaterialActive();
-    if (!(m_nativeDock.Active() || popup) || !(popup ? m_nativePopup.IsWindowVisible() : IsWindowVisible()) || ::GetCapture()
-            || message->hwnd == m_hWnd || ::IsChild(m_hWnd, message->hwnd)
-            || (popup && ::IsChild(m_nativePopup.m_hWnd, message->hwnd))) return false;
+    // Only the legacy transparent dock needs geometry-based input routing.
+    if (!m_nativeDock.Active() || !IsWindowVisible() || ::GetCapture()
+            || message->hwnd == m_hWnd || ::IsChild(m_hWnd, message->hwnd)) return false;
     const UINT event = message->message;
     if (event != WM_MOUSEMOVE && event != WM_LBUTTONDOWN && event != WM_LBUTTONUP
             && event != WM_LBUTTONDBLCLK && event != WM_RBUTTONDOWN && event != WM_RBUTTONUP
             && event != WM_MOUSEWHEEL) return false;
     CRect bounds;
-    if (popup) m_nativePopup.GetWindowRect(bounds); else bounds = GetNativePresentationRect();
+    bounds = GetNativePresentationRect();
     if (!bounds.PtInRect(message->pt)) return false;
-    HWND target = popup ? m_nativePopup.m_hWnd : m_hWnd;
+    HWND target = m_hWnd;
     while (true) {
         POINT point = message->pt; ::ScreenToClient(target, &point);
         RECT client; ::GetClientRect(target, &client);
@@ -391,7 +390,7 @@ void CPlayerPlaylistBar::LoadState(CFrameWnd* pParent)
         pParent->ShowControlBar(this, FALSE, TRUE);
         m_listFrame.ModifyStyleEx(WS_EX_CLIENTEDGE | WS_EX_DLGMODALFRAME, 0, SWP_FRAMECHANGED);
         m_listFrame.SetParent(&m_nativePopup);
-        m_nativePopup.ConfigureMaterial();
+        m_nativePopup.ConfigureSurface();
         ScaleFont();
         SetListBkColor();
         m_dropTarget.Revoke();
@@ -2457,7 +2456,7 @@ void CPlayerPlaylistBar::OnMeasureItem(int nIDCtl, LPMEASUREITEMSTRUCT lpMeasure
     __super::OnMeasureItem(nIDCtl, lpMeasureItemStruct);
     lpMeasureItemStruct->itemHeight = m_pMainFrame->m_dpi.CalculateListCtrlItemHeight((CListCtrl*)&m_list);
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-    if (UsesNativePopup()) lpMeasureItemStruct->itemHeight = m_pMainFrame->m_dpi.ScaleY(36);
+    if (UsesNativePopup()) lpMeasureItemStruct->itemHeight = m_pMainFrame->m_dpi.ScaleY(35) + 2 * m_pMainFrame->m_dpi.ScaleY(2);
 #endif
 #if 0
     if (createdWindow) {
@@ -2597,11 +2596,21 @@ void CPlayerPlaylistBar::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruc
         pDC->FillSolidRect(rcItem, contentBGColor);
         if (itemSelected || rowHighlighted) {
             CRect tile(rcItem); tile.DeflateRect(0, m_pMainFrame->m_dpi.ScaleY(2));
-            CBrush fill(bgColor); CBrush* oldBrush = pDC->SelectObject(&fill);
-            CPen* oldPen = static_cast<CPen*>(pDC->SelectStockObject(NULL_PEN));
-            const int diameter = m_pMainFrame->m_dpi.ScaleY(8);
-            pDC->RoundRect(tile, CPoint(diameter, diameter));
-            pDC->SelectObject(oldPen); pDC->SelectObject(oldBrush);
+            Gdiplus::Graphics graphics(pDC->GetSafeHdc());
+            graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+            const Gdiplus::REAL x = static_cast<Gdiplus::REAL>(tile.left);
+            const Gdiplus::REAL y = static_cast<Gdiplus::REAL>(tile.top);
+            const Gdiplus::REAL w = static_cast<Gdiplus::REAL>(tile.Width());
+            const Gdiplus::REAL h = static_cast<Gdiplus::REAL>(tile.Height());
+            const Gdiplus::REAL diameter = static_cast<Gdiplus::REAL>(m_pMainFrame->m_dpi.ScaleY(12));
+            Gdiplus::GraphicsPath path;
+            path.AddArc(x, y, diameter, diameter, 180.0f, 90.0f);
+            path.AddArc(x + w - diameter, y, diameter, diameter, 270.0f, 90.0f);
+            path.AddArc(x + w - diameter, y + h - diameter, diameter, diameter, 0.0f, 90.0f);
+            path.AddArc(x, y + h - diameter, diameter, diameter, 90.0f, 90.0f);
+            path.CloseFigure();
+            Gdiplus::SolidBrush fill(Gdiplus::Color(255, 56, 56, 56));
+            graphics.FillPath(&fill, &path);
         }
         if (itemSelected) {
             const int pillWidth = m_pMainFrame->m_dpi.ScaleX(3), pillHeight = m_pMainFrame->m_dpi.ScaleY(15);

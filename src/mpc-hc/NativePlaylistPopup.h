@@ -9,7 +9,7 @@ class CNativePlaylistPopup : public CWnd, public CDropClient {
     ULONGLONG m_revealUntil = 0;
     CPoint m_requestPoint = CPoint(0, 0);
     bool m_resizing = false, m_closeHot = false, m_closePressed = false;
-    bool m_material = false, m_bufferedPaint = false, m_systemBorder = false;
+    bool m_systemBorder = false;
     CFont m_titleFont;
     ULONG_PTR m_graphicsToken = 0;
     CRect CloseRect() const;
@@ -17,12 +17,12 @@ class CNativePlaylistPopup : public CWnd, public CDropClient {
     LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam) override;
     BOOL PreTranslateMessage(MSG* message) override;
 public:
-    static COLORREF SurfaceColor() { return RGB(64, 64, 64); }
-    static COLORREF BorderColor() { return RGB(69, 69, 69); }
-    static COLORREF SelectionColor() { return RGB(76, 76, 76); }
+    static COLORREF SurfaceColor() { return RGB(43, 43, 43); }
+    static COLORREF BorderColor() { return RGB(60, 60, 60); }
+    static COLORREF SelectionColor() { return RGB(56, 56, 56); }
     bool Create(CWnd* owner, CPlayerPlaylistBar* bar);
-    void ConfigureMaterial();
-    bool MaterialActive() const { return m_material; }
+    void ConfigureSurface();
+
     bool Resizing() const { return m_resizing; }
     void RequestOpen();
     void Refresh(const CRect& band, bool show, int dpi, bool autoHide);

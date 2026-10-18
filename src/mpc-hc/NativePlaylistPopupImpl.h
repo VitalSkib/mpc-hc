@@ -1,7 +1,7 @@
 /* Native list flyout implementation, included by PlayerPlaylistBar.cpp. GPLv3+. */
 #pragma once
 #include <dwmapi.h>
-#include <uxtheme.h>
+
 #include <gdiplus.h>
 
 bool CNativePlaylistPopup::Create(CWnd* owner, CPlayerPlaylistBar* bar)
@@ -20,29 +20,14 @@ bool CNativePlaylistPopup::Create(CWnd* owner, CPlayerPlaylistBar* bar)
     return true;
 }
 
-void CNativePlaylistPopup::ConfigureMaterial()
+void CNativePlaylistPopup::ConfigureSurface()
 {
-    if (!AfxGetApp()->GetProfileInt(L"ToolBars\\Playlist", L"PopupMica", TRUE)) return;
-    const DWORD material = 2; // DWMSBT_MAINWINDOW: default Mica, Windows 11 22H2+
-    if (FAILED(DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(38), &material, sizeof(material)))) return;
-    const MARGINS glass = {-1, -1, -1, -1};
-    if (SUCCEEDED(DwmExtendFrameIntoClientArea(m_hWnd, &glass)) && SUCCEEDED(BufferedPaintInit())) {
-        m_bufferedPaint = true;
-        // Keep the original GDI list opaque at its text/selection pixels only.
-        m_bar->m_listFrame.ModifyStyleEx(0, WS_EX_LAYERED);
-        if (::SetLayeredWindowAttributes(m_bar->m_listFrame.m_hWnd, SurfaceColor(), 255, LWA_COLORKEY)) {
-            // The material must also be initialized underneath the keyed child.
-            ModifyStyle(WS_CLIPCHILDREN, 0);
-            m_bar->m_list.SetExtendedStyle(m_bar->m_list.GetExtendedStyle() & ~LVS_EX_DOUBLEBUFFER);
-            m_material = true;
-            return;
-        }
-        m_bar->m_listFrame.ModifyStyleEx(WS_EX_LAYERED, 0);
-        BufferedPaintUnInit(); m_bufferedPaint = false;
-    }
-    const DWORD none = 1; const MARGINS solid = {};
+    // Opaque GDI children: no keyed surfaces, material, or transparent-input routing.
+    const DWORD none = 1;
+    const MARGINS solid = {};
     DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(38), &none, sizeof(none));
     DwmExtendFrameIntoClientArea(m_hWnd, &solid);
+    m_bar->m_list.SetExtendedStyle(m_bar->m_list.GetExtendedStyle() & ~LVS_EX_DOUBLEBUFFER);
 }
 
 CRect CNativePlaylistPopup::CloseRect() const
@@ -117,11 +102,6 @@ DROPEFFECT CNativePlaylistPopup::OnDropAccept(COleDataObject* data, DWORD keys, 
 LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
 {
     if (!m_bar) return __super::WindowProc(message, wParam, lParam);
-    if (m_material && message >= WM_MOUSEFIRST && message <= WM_MOUSELAST) {
-        MSG input = {}; input.hwnd = m_hWnd; input.message = message;
-        input.wParam = wParam; input.lParam = lParam; ::GetCursorPos(&input.pt);
-        if (m_bar->RouteNativePresentationInput(&input)) return 0;
-    }
     switch (message) {
     case WM_NCCALCSIZE: return wParam ? WVR_REDRAW : 0;
     case WM_NCPAINT: return 0; // DWM owns the rounded border; no classic sizing-frame paint
@@ -161,15 +141,10 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
     case WM_ERASEBKGND: return 1;
     case WM_PAINT: {
         CPaintDC paint(this); CRect client; GetClientRect(client);
-        HDC memory = nullptr; HPAINTBUFFER buffer = nullptr;
-        if (m_material) {
-            BP_PAINTPARAMS params = {}; params.cbSize = sizeof(params); params.dwFlags = BPPF_ERASE;
-            buffer = BeginBufferedPaint(paint.GetSafeHdc(), client, BPBF_TOPDOWNDIB, &params, &memory);
-        }
-        CDC& dc = buffer ? *CDC::FromHandle(memory) : static_cast<CDC&>(paint);
-        dc.FillSolidRect(client, buffer ? RGB(0, 0, 0) : SurfaceColor());
+        CDC& dc = paint;
+        dc.FillSolidRect(client, SurfaceColor());
         CRect header(client); header.bottom = std::min<LONG>(client.bottom, MulDiv(32, m_dpi, 96));
-        if (buffer) dc.FillSolidRect(header, SurfaceColor());
+        dc.FillSolidRect(0, header.bottom - 1, client.Width(), 1, BorderColor());
         CBrush border(BorderColor()); if (!m_systemBorder) dc.FrameRect(client, &border);
         CRect close = CloseRect();
         if (m_closeHot) dc.FillSolidRect(close, SelectionColor());
@@ -184,19 +159,17 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
         dc.MoveTo(center.x-half, center.y-half); dc.LineTo(center.x+half+1, center.y+half+1);
         dc.MoveTo(center.x+half, center.y-half); dc.LineTo(center.x-half-1, center.y+half+1);
         dc.SelectObject(previous);
-        if (buffer) {
-            BufferedPaintSetAlpha(buffer, header, 255);
-            const CRect edges[] = {CRect(0, 0, 1, client.bottom), CRect(client.right-1, 0, client.right, client.bottom),
-                CRect(0, client.bottom-1, client.right, client.bottom)};
-            if (!m_systemBorder) for (const auto& edge : edges) BufferedPaintSetAlpha(buffer, edge, 255);
-            EndBufferedPaint(buffer, TRUE);
-        }
         return 0;
     }
-    case WM_SIZE:
+    case WM_SIZE: {
         m_bar->ResizeListColumn();
-        Invalidate(FALSE); // header and close button move with the same size transaction
+        // Paint the small header during the native resize transaction, rather than
+        // letting queued WM_PAINT leave its old close-button position visible.
+        CRect header; GetClientRect(header);
+        header.bottom = std::min<LONG>(header.bottom, MulDiv(32, m_dpi, 96));
+        RedrawWindow(header, nullptr, RDW_INVALIDATE | RDW_UPDATENOW | RDW_NOCHILDREN);
         return 0;
+    }
     case WM_SETCURSOR: {
         POINT point; ::GetCursorPos(&point); ScreenToClient(&point);
         if (point.x < MulDiv(6, m_dpi, 96)) { ::SetCursor(::LoadCursor(nullptr, IDC_SIZEWE)); return TRUE; }
@@ -228,7 +201,6 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
         return 0;
     case WM_NCDESTROY:
         if (m_graphicsToken) { Gdiplus::GdiplusShutdown(m_graphicsToken); m_graphicsToken = 0; }
-        if (m_bufferedPaint) { BufferedPaintUnInit(); m_bufferedPaint = false; }
         break;
     case WM_CAPTURECHANGED: m_closePressed = false; break;
     case WM_MOUSELEAVE:
