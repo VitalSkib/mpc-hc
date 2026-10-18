@@ -31,10 +31,24 @@ class CNativeControlsDecoration final : public CWnd
         const bool hot = m_hot == button;
         if (hot) {
             const Gdiplus::Color fill = button == 2 ? Gdiplus::Color(255, 196, 43, 28)
-                : Gdiplus::Color(m_pressed == button ? 60 : 40, 255, 255, 255);
+                : Gdiplus::Color(m_pressed == button ? 65 : 85, 255, 255, 255);
             Gdiplus::SolidBrush background(fill);
-            graphics.FillRectangle(&background, rect.left, rect.top, rect.Width(), rect.Height());
+            const int side = std::min({rect.Width(), rect.Height(), Scale(36)});
+            const float left = float(rect.CenterPoint().x - side / 2), top = float(rect.CenterPoint().y - side / 2);
+            const float diameter = float(Scale(10));
+            Gdiplus::GraphicsPath shape;
+            shape.AddArc(left, top, diameter, diameter, 180, 90);
+            shape.AddArc(left + side - diameter, top, diameter, diameter, 270, 90);
+            shape.AddArc(left + side - diameter, top + side - diameter, diameter, diameter, 0, 90);
+            shape.AddArc(left, top + side - diameter, diameter, diameter, 90, 90);
+            shape.CloseFigure(); graphics.FillPath(&background, &shape);
         }
+        const int iconSize = Scale(22);
+        const CRect artwork(rect.CenterPoint().x - iconSize / 2, rect.CenterPoint().y - iconSize / 2,
+            rect.CenterPoint().x - iconSize / 2 + iconSize, rect.CenterPoint().y - iconSize / 2 + iconSize);
+        const LPCWSTR resource = button == 0 ? L"minimize" : button == 2 ? L"close"
+            : m_restore ? L"restore" : L"maximize";
+        if (customIcon && customIcon(graphics, artwork, resource, hot)) return;
         Gdiplus::Pen pen(Gdiplus::Color(hot ? 255 : 210, 255, 255, 255), float(std::max(1, Scale(1))));
         const float x = float(rect.CenterPoint().x), y = float(rect.CenterPoint().y);
         const float radius = float(Scale(6));
@@ -154,6 +168,7 @@ class CNativeControlsDecoration final : public CWnd
     }
 
 public:
+    std::function<bool(Gdiplus::Graphics&, const CRect&, LPCWSTR, bool)> customIcon;
     std::function<void(int)> windowCommand;
     bool semiboldTitle = true;
     CNativeControlsDecoration() {

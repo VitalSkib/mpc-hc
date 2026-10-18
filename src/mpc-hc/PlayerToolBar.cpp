@@ -229,6 +229,9 @@ bool CPlayerToolBar::LoadExternalToolBar(CImage& image, float svgscale, CStringW
 }
 
 void CPlayerToolBar::MakeImageList(bool createCustomizeButtons, int buttonSize, std::unique_ptr<CImageList> &imageList) {
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    if (!createCustomizeButtons) m_themeIcons.clear();
+#endif
     auto& s = AfxGetAppSettings();
 
     // We are currently not aware of any cases where the scale factors are different
@@ -567,9 +570,9 @@ int CPlayerToolBar::FirstMovableButtonIndex(const std::vector<int>& buttons, int
 }
 
 bool CPlayerToolBar::IsValidButtonLayout(const std::vector<int>& buttons, int layoutRevision) {
-    // Revision 0: [leftsep, play, pause, stop, ...movable..., dummysep, volume] — min 6 entries
-    //             (older still, without the left separator)                    — min 5 entries
-    // Revision 1+: [leftsep, ...movable..., dummysep, volume]                   — min 3 entries
+    // Revision 0: [leftsep, play, pause, stop, ...movable..., dummysep, volume] â€” min 6 entries
+    //             (older still, without the left separator)                    â€” min 5 entries
+    // Revision 1+: [leftsep, ...movable..., dummysep, volume]                   â€” min 3 entries
     //              (the movable part may be empty, the user can remove every button)
     int start = FirstMovableButtonIndex(buttons, layoutRevision);
     if (layoutRevision == 0 && (int)buttons.size() < start + 2) return false;
@@ -805,6 +808,90 @@ void CPlayerToolBar::OnShowWindow(BOOL show, UINT status)
     __super::OnShowWindow(show, status);
 }
 
+// Artwork cache only: commands, button state and native toolbar input are unchanged.
+bool CPlayerToolBar::DrawThemeIcon(Gdiplus::Graphics& graphics, const CRect& rect,
+    LPCWSTR name, bool hot, bool disabled)
+{
+    auto& settings = AfxGetAppSettings();
+    const CString theme = settings.nToolbarType > 0 ? settings.strToolbarName : CString();
+    if (theme != m_iconTheme) { m_themeIcons.clear(); m_iconTheme = theme; }
+    int column = -1;
+    bool alternate = false;
+    if (!wcscmp(name, L"play")) column = 0;
+    else if (!wcscmp(name, L"pause")) column = 1;
+    else if (!wcscmp(name, L"close")) column = 19;
+    else if (!wcscmp(name, L"volume-high")) column = 24;
+    else if (!wcscmp(name, L"volume-low")) { column = 24; alternate = true; }
+    else if (!wcscmp(name, L"volume-muted")) column = 25;
+    const int size = std::max(1, std::min(rect.Width(), rect.Height()));
+    const bool volumeArtwork = wcsncmp(name, L"volume-", 7) == 0;
+    std::wstring key = column >= 0 && !volumeArtwork ? L"atlas" : name;
+    key += L":" + std::to_wstring(size);
+    auto found = m_themeIcons.find(key);
+    if (found == m_themeIcons.end()) {
+        auto image = std::make_unique<CImage>();
+        bool loaded = false;
+        if (!theme.IsEmpty() && (column < 0 || volumeArtwork)) {
+            std::vector<CStringW> roots{PathUtils::GetProgramPath()};
+            CStringW appData;
+            if (AfxGetMyApp()->GetAppDataPath(appData)) roots.push_back(appData);
+            for (const auto& root : roots) {
+                CStringW path = PathUtils::CombinePaths(root, L"toolbars");
+                path = PathUtils::CombinePaths(path, theme);
+                path = PathUtils::CombinePaths(path, L"extra");
+                path = PathUtils::CombinePaths(path, CStringW(name) + L".svg");
+                if (SUCCEEDED(SVGImage::Load(path, *image, float(size) / 100.0f))
+                        && image->GetWidth() == size && image->GetHeight() == size) { loaded = true; break; }
+            }
+        }
+        if (!loaded && column >= 0) {
+            loaded = LoadExternalToolBar(*image, float(size) / 32.0f, L"32");
+            if (!loaded) loaded = SUCCEEDED(SVGImage::Load(IDF_SVG_BUTTONS32, *image, float(size) / 32.0f));
+            loaded = loaded && image->GetWidth() == 26 * size && image->GetHeight() == 4 * size;
+        }
+        if (!loaded || image->GetBPP() != 32) image.reset();
+        found = m_themeIcons.emplace(key, std::move(image)).first;
+    }
+    if (!found->second) return false;
+    auto& image = *found->second;
+    Gdiplus::Bitmap bitmap(image.GetWidth(), image.GetHeight(), image.GetPitch(),
+        PixelFormat32bppARGB, static_cast<BYTE*>(image.GetBits()));
+    const bool atlas = image.GetWidth() == 26 * size;
+    int row = CMPCTheme::EffectiveThemeMode() == CMPCTheme::ModernThemeMode::DARK ? 2 : 0;
+    if (disabled || alternate) ++row;
+    const float brightness = hot ? 1.275f : 1.0f;
+    Gdiplus::ColorMatrix matrix = {brightness,0,0,0,0, 0,brightness,0,0,0,
+        0,0,brightness,0,0, 0,0,0,!atlas && disabled ? 0.5f : 1.0f,0, 0,0,0,0,1};
+    Gdiplus::ImageAttributes attributes;
+    attributes.SetColorMatrix(&matrix);
+    const Gdiplus::Rect destination(rect.CenterPoint().x - size / 2, rect.CenterPoint().y - size / 2, size, size);
+    return graphics.DrawImage(&bitmap, destination, atlas ? column * size : 0,
+        atlas ? row * size : 0, size, size, Gdiplus::UnitPixel, &attributes) == Gdiplus::Ok;
+}
+
+bool CPlayerToolBar::RouteTransparentButtonInput(MSG* message)
+{
+    if (!GetSafeHwnd() || !IsWindowVisible() || !IsWindowEnabled()
+            || message->hwnd == m_hWnd || ::IsChild(m_hWnd, message->hwnd)
+            || (::GetCapture() && ::GetCapture() != m_hWnd)) return false;
+    switch (message->message) {
+        case WM_MOUSEMOVE: case WM_LBUTTONDOWN: case WM_LBUTTONUP:
+        case WM_LBUTTONDBLCLK: case WM_RBUTTONDOWN: case WM_RBUTTONUP: break;
+        default: return false;
+    }
+    CPoint point(message->pt);
+    ScreenToClient(&point);
+    CRect client; GetClientRect(client);
+    if (!client.PtInRect(point)) return false;
+    const int index = GetToolBarCtrl().HitTest(&point);
+    if (index < 0 || (GetButtonStyle(index) & TBBS_SEPARATOR)) return false;
+    // Never let a disabled button's transparent pixels toggle video playback.
+    if (!(GetButtonStyle(index) & TBBS_DISABLED)) {
+        SendMessage(message->message, message->wParam, MAKELPARAM(point.x, point.y));
+    }
+    return true;
+}
+
 void CPlayerToolBar::DrawVolumeButton(const NMCUSTOMDRAW& draw)
 {
     CRect rect(draw.rc); CDC* dc = CDC::FromHandle(draw.hdc);
@@ -817,6 +904,12 @@ void CPlayerToolBar::DrawVolumeButton(const NMCUSTOMDRAW& draw)
     Gdiplus::Font font(fluent.GetLastStatus() == Gdiplus::Ok ? &fluent : &fallback,
         float(m_nButtonHeight), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
     const int volume = m_volctrl.GetPos();
+    const LPCWSTR resource = IsMuted() || volume <= 0 ? L"volume-muted"
+        : volume <= 33 ? L"volume-low" : volume <= 66 ? L"volume-medium" : L"volume-high";
+    const int iconSize = m_nButtonHeight;
+    const CRect artwork(rect.CenterPoint().x - iconSize / 2, rect.CenterPoint().y - iconSize / 2,
+        rect.CenterPoint().x - iconSize / 2 + iconSize, rect.CenterPoint().y - iconSize / 2 + iconSize);
+    if (DrawThemeIcon(graphics, artwork, resource, hot, (draw.uItemState & CDIS_DISABLED) != 0)) return;
     const WCHAR glyph = IsMuted() || volume <= 0 ? 0xE74F : volume <= 33 ? 0xE993 : volume <= 66 ? 0xE994 : 0xE995;
     Gdiplus::StringFormat format(Gdiplus::StringFormat::GenericTypographic());
     format.SetAlignment(Gdiplus::StringAlignmentCenter); format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
@@ -1362,12 +1455,20 @@ void drawButtonBG(NMCUSTOMDRAW nmcd, COLORREF c)
     CRect br;
     br.CopyRect(&nmcd.rc);
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-    // Only the painted backdrop is square. Native button rectangles, hit
-    // testing, command states and icon/image selection remain unchanged.
-    const int side = std::min(br.Width(), br.Height());
+    const int dpi = ::GetDeviceCaps(nmcd.hdc, LOGPIXELSX);
+    const int side = std::min({br.Width(), br.Height(), MulDiv(36, dpi, 96)});
     const CPoint centre = br.CenterPoint();
     br.SetRect(centre.x - side / 2, centre.y - side / 2,
         centre.x - side / 2 + side, centre.y - side / 2 + side);
+    const int shade = c == CMPCTheme::PlayerButtonClickedColor ? 58 : 72;
+    CBrush background(RGB(shade, shade, shade));
+    const auto oldBrush = dc.SelectObject(&background);
+    const HGDIOBJ oldPen = ::SelectObject(dc.GetSafeHdc(), ::GetStockObject(NULL_PEN));
+    const int corner = MulDiv(10, dpi, 96); // 5 logical pixels radius.
+    dc.RoundRect(br, CPoint(corner, corner));
+    ::SelectObject(dc.GetSafeHdc(), oldPen); dc.SelectObject(oldBrush);
+    dc.Detach();
+    return;
 #endif
     //adipose: remove the below code.  it is no longer necessary due to TBCDRF_NOOFFSET
     //and redesigning toolbar icons to be centered vs the old MFC style of "upper left" alignment
@@ -1407,6 +1508,10 @@ void CPlayerToolBar::DrawTransportButton(const NMCUSTOMDRAW& draw)
     graphics.DrawEllipse(&ring, x - diameter / 2, y - diameter / 2, diameter, diameter);
     const BYTE brightness = disabled ? 100 : hot ? 255 : 240;
     Gdiplus::SolidBrush ink(Gdiplus::Color(255, brightness, brightness, brightness));
+    const int iconSize = std::max(1, int(diameter * 0.95f));
+    CRect artwork(int(x) - iconSize / 2, int(y) - iconSize / 2,
+        int(x) - iconSize / 2 + iconSize, int(y) - iconSize / 2 + iconSize);
+    if (DrawThemeIcon(graphics, artwork, draw.dwItemSpec == ID_PLAY_PAUSE ? L"pause" : L"play", hot, disabled)) return;
     if (draw.dwItemSpec == ID_PLAY_PAUSE) {
         const float width = diameter * 0.09f, height = diameter * 0.46f;
         graphics.FillRectangle(&ink, x - diameter * 0.17f, y - height / 2, width, height);
@@ -1460,6 +1565,11 @@ void CPlayerToolBar::OnCustomDraw(NMHDR* pNMHDR, LRESULT* pResult)
                 const bool hot = (draw.uItemState & (CDIS_HOT | CDIS_SELECTED)) != 0;
                 dc->FillSolidRect(rect, CMPCTheme::PlayerBGColor);
                 if (hot) drawButtonBG(draw, CMPCTheme::PlayerButtonHotColor);
+                Gdiplus::Graphics graphics(draw.hdc);
+                const int iconSize = m_nButtonHeight;
+                CRect artwork(rect.CenterPoint().x - iconSize / 2, rect.CenterPoint().y - iconSize / 2,
+                    rect.CenterPoint().x - iconSize / 2 + iconSize, rect.CenterPoint().y - iconSize / 2 + iconSize);
+                if (DrawThemeIcon(graphics, artwork, L"overflow", hot)) { lr = CDRF_SKIPDEFAULT; break; }
                 const int half = m_pMainFrame->m_dpi.ScaleX(7);
                 const int spacing = m_pMainFrame->m_dpi.ScaleY(4);
                 CPen pen(PS_SOLID, std::max(1, m_pMainFrame->m_dpi.ScaleY(1)), hot ? RGB(255,255,255) : RGB(220,220,220));

@@ -26,6 +26,10 @@
 #include "CMPCThemeUtil.h"
 #include <atlimage.h>
 #include <optional>
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+#include <gdiplus.h>
+#include <map>
+#endif
 
 class CMainFrame;
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
@@ -74,6 +78,8 @@ private:
 
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
     ULONG_PTR m_transportGraphicsToken = 0;
+    std::map<std::wstring, std::unique_ptr<CImage>> m_themeIcons;
+    CString m_iconTheme;
     void DrawTransportButton(const NMCUSTOMDRAW& draw);
     static bool IsTransportButton(UINT id);
     void NormalizeTransportLayout();
@@ -152,6 +158,8 @@ public:
     void LoadButtonStrings();
     void ArrangeControls();
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    bool RouteTransparentButtonInput(MSG* message);
+    bool DrawThemeIcon(Gdiplus::Graphics& graphics, const CRect& rect, LPCWSTR name, bool hot, bool disabled = false);
     bool VolumeFlyoutActive() const;
     void UpdateVolumeFlyout(bool allowOpen = false);
     afx_msg void OnMouseLeave();

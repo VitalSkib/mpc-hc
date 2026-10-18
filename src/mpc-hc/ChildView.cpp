@@ -36,6 +36,9 @@ CChildView::CChildView(CMainFrame* pMainFrame)
     , m_bFirstMedia(true)
 {
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    m_nativeHeader.customIcon = [this](Gdiplus::Graphics& graphics, const CRect& rect, LPCWSTR name, bool hot) {
+        return m_pMainFrame->m_wndToolBar.DrawThemeIcon(graphics, rect, name, hot);
+    };
     m_nativeHeader.semiboldTitle = AfxGetApp()->GetProfileInt(L"Settings", L"FluentTitleSemibold", 1) != 0;
     m_nativeHeader.windowCommand = [this](int button) {
         if (button == 0) m_pMainFrame->PostMessage(WM_SYSCOMMAND, SC_MINIMIZE);
@@ -137,6 +140,7 @@ BOOL CChildView::PreCreateWindow(CREATESTRUCT& cs)
 BOOL CChildView::PreTranslateMessage(MSG* pMsg)
 {
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    if (m_pMainFrame->m_wndToolBar.RouteTransparentButtonInput(pMsg)) return TRUE;
     // Keyed toolbar pixels can route movement to the video beneath them.
     // Recognize the complete native mute-button rectangle, not just its ink.
     if (pMsg->message == WM_MOUSEMOVE) m_pMainFrame->m_wndToolBar.UpdateVolumeFlyout(true);
