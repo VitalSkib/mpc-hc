@@ -2314,8 +2314,12 @@ void CPlayerPlaylistBar::ResizeListColumn()
         CRect listR;
         m_listFrame.GetClientRect(&listR);
 
-        m_list.SetRedraw(FALSE);
-        m_list.SetColumnWidth(COL_NAME, 0);
+        bool batchRedraw = true;
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        batchRedraw = !UsesNativePopup();
+#endif
+        // WM_SETREDRAW changes WS_VISIBLE too: keep the live popup list visible.
+        if (batchRedraw) { m_list.SetRedraw(FALSE); m_list.SetColumnWidth(COL_NAME, 0); }
         m_list.MoveWindow(listR, FALSE);
         m_list.GetClientRect(r);
         int width = r.Width();
@@ -2330,7 +2334,7 @@ void CPlayerPlaylistBar::ResizeListColumn()
         // when too narrow for both, the name column stays at the list's minimum, so shrink the
         // time column to what is left, else the columns overflow into a horizontal scrollbar
         m_list.SetColumnWidth(COL_TIME, std::max(0, std::min(m_nTimeColWidth, width - m_list.GetColumnWidth(COL_NAME))));
-        m_list.SetRedraw(TRUE);
+        if (batchRedraw) m_list.SetRedraw(TRUE);
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
         if (UsesNativePopup()) {
             // Invalidate the complete resized child hierarchy. The native sizing
