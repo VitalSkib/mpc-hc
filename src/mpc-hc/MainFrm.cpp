@@ -1750,6 +1750,9 @@ void CMainFrame::RecalcLayout(BOOL bNotify)
     // OnSize may run inside the deferred placement transaction. Arrange once
     // more with final frame/bar bounds, including the first media auto-size.
     if (m_wndToolBar.GetSafeHwnd()) m_wndToolBar.ArrangeControls();
+    // A dock may change the requested pane size without changing its expanded
+    // actual size. WM_SIZE is then absent: commit the final renderer rectangle here.
+    MoveVideoWindow();
 #endif
     OSDBarSetPos();
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION

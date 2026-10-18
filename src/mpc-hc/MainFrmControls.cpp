@@ -241,6 +241,13 @@ void CMainFrameControls::LoadState()
     for (const auto& pair : m_panels) {
         auto pBar = pair.second;
         pBar->LoadState(m_pMainFrame);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        if (pair.first == Panel::PLAYLIST && !pBar->IsFloating()
+                && m_pMainFrame->GetLoadState() != MLS::LOADED && (pBar->GetStyle() & WS_VISIBLE)) {
+            m_pMainFrame->ShowControlBar(pBar, FALSE, TRUE);
+            pBar->SetAutohidden(true);
+        }
+#endif
         if (pBar->IsFloating() && pBar->IsAutohidden()) {
             pBar->SetAutohidden(false);
             bool delay = pair.first != CMainFrameControls::Panel::PLAYLIST;
@@ -407,6 +414,11 @@ void CMainFrameControls::UpdateToolbarsVisibility()
     m_pMainFrame->ScreenToClient(&clientPoint);
 
     const MLS mls = m_pMainFrame->GetLoadState();
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    const auto emptyPlaylist = [&](Panel panel) {
+        return panel == Panel::PLAYLIST && mls != MLS::LOADED && !m_panels[panel]->IsFloating();
+    };
+#endif
 
     const bool bCanAutoHide = s.bHideFullscreenControls && (mls == MLS::LOADED || m_bDelayShowNotLoaded) &&
                               (m_pMainFrame->IsFullScreenMainFrame() || s.bHideWindowedControls && !m_pMainFrame->IsFullScreenSeparate()) &&
@@ -643,7 +655,11 @@ void CMainFrameControls::UpdateToolbarsVisibility()
 
     if (!bCanHideDockedPanels) {
         for (const auto& pair : m_panels) {
-            if (pair.second->IsAutohidden()) {
+            if (pair.second->IsAutohidden()
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+                    && !emptyPlaylist(pair.first)
+#endif
+                    ) {
                 bRecalcLayout = true;
                 m_pMainFrame->ShowControlBar(pair.second, TRUE, TRUE);
                 pair.second->SetAutohidden(false);
@@ -666,6 +682,9 @@ void CMainFrameControls::UpdateToolbarsVisibility()
                 if (it != m_panelZones.end()) {
                     const auto& panels = it->second;
                     for (const auto panel : panels) {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+                        if (emptyPlaylist(panel)) continue;
+#endif
                         if (m_panels[panel]->IsAutohidden()) {
                             bRecalcLayout = true;
                             m_pMainFrame->ShowControlBar(m_panels[panel], TRUE, TRUE);
@@ -759,6 +778,14 @@ void CMainFrameControls::UpdateToolbarsVisibility()
         autohideZone(DOCK_RIGHT);
     }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    auto playlist = m_panels[Panel::PLAYLIST];
+    if (emptyPlaylist(Panel::PLAYLIST) && playlist->IsWindowVisible()) {
+        m_pMainFrame->ShowControlBar(playlist, FALSE, TRUE);
+        playlist->SetAutohidden(true);
+        bRecalcLayout = true;
+    }
+#endif
     const bool bNeedTimer = !m_zoneHideTicks.empty();
     if (bNoTimer && bNeedTimer) {
         m_pMainFrame->m_timerHider.Subscribe(CMainFrame::TimerHiderSubscriber::TOOLBARS_HIDER,

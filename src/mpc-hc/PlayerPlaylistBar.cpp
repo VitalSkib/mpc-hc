@@ -2506,6 +2506,12 @@ void CPlayerPlaylistBar::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruc
         sequenceColor = textColor;
     }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (m_nativeDock.Active() && !pli.m_fInvalid) {
+        textColor = sequenceColor = itemSelected ? RGB(76, 194, 255) : RGB(255, 255, 255);
+    }
+#endif
+
     CString time = !pli.m_fInvalid ? pli.GetLabel(1) : CString(_T("Invalid"));
     CPoint timept(rcItem.right, 0);
     if (!time.IsEmpty()) {
