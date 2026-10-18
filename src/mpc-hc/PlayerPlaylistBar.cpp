@@ -173,16 +173,16 @@ BOOL CPlayerPlaylistBar::PreCreateWindow(CREATESTRUCT& cs)
 }
 
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-bool CPlayerPlaylistBar::PrepareNativePresentation(bool enabled)
+bool CPlayerPlaylistBar::PrepareNativePresentation(bool enabled, const CRect& band)
 {
     if (!GetSafeHwnd()) return false;
     const bool active = m_nativeDock.Update(*this, enabled);
     const int dockId = GetParent() ? GetParent()->GetDlgCtrlID() : 0;
     const bool side = active && (dockId == AFX_IDW_DOCKBAR_LEFT || dockId == AFX_IDW_DOCKBAR_RIGHT);
-    const int top = side ? m_pMainFrame->m_dpi.ScaleY(40) : 0;
-    const unsigned selected = m_pMainFrame->m_controls.GetToolbarsHeight();
-    const unsigned visible = m_pMainFrame->m_controls.GetVisibleToolbarsHeight();
-    const int bottom = side ? int(selected - std::min(selected, visible)) : 0;
+    CRect bounds; GetWindowRect(bounds);
+    const int windowHeight = std::max(0, bounds.Height());
+    const int top = side ? std::clamp<int>(band.top - bounds.top, 0, windowHeight) : 0;
+    const int bottom = side ? std::clamp<int>(bounds.bottom - band.bottom, 0, windowHeight - top) : 0;
     if (top != m_nativeTopInset || bottom != m_nativeBottomInset) {
         m_nativeTopInset = top; m_nativeBottomInset = bottom;
         // Recalculate native client/nonclient areas, without moving the docked bar
@@ -190,9 +190,7 @@ bool CPlayerPlaylistBar::PrepareNativePresentation(bool enabled)
         SetWindowPos(nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
         ResizeListColumn();
     }
-    CRect bounds; GetWindowRect(bounds);
-    CRect clip(0, std::min(top, bounds.Height()), bounds.Width(), std::max(top, bounds.Height() - bottom));
-    clip.bottom = std::min(clip.bottom, bounds.Height());
+    CRect clip(0, top, bounds.Width(), windowHeight - bottom);
     if (side) {
         if (!m_nativeClipped || clip != m_nativeClip) {
             HRGN region = ::CreateRectRgnIndirect(&clip);

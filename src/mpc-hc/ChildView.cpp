@@ -221,8 +221,15 @@ void CChildView::UpdateNativeDecoration()
     auto& playlist = m_pMainFrame->m_wndPlaylistBar;
     CRect playlistArea(0, 0, 0, 0);
     const bool playlistVisible = playlist.GetSafeHwnd() && playlist.IsWindowVisible() && !playlist.IsFloating();
+    // The view owns the actual screen band, including native docking borders.
+    // Reserve the selected footer height even while its controls are hidden.
+    CRect playlistBand(view);
+    playlistBand.top = std::min(view.bottom, LONG(view.top + m_pMainFrame->m_dpi.ScaleY(40)));
+    const unsigned footerHeight = std::max(height, m_pMainFrame->m_controls.GetToolbarsHeight());
+    playlistBand.bottom = std::max(playlistBand.top, LONG(view.bottom - int(footerHeight)));
+    ClientToScreen(playlistBand);
     const bool playlistTransparent = playlist.PrepareNativePresentation(videoLoaded && AppIsThemeLoaded()
-        && playlistVisible && m_pMainFrame->m_controls.ToolbarsCoverVideo());
+        && playlistVisible && m_pMainFrame->m_controls.ToolbarsCoverVideo(), playlistBand);
     if (playlistVisible) {
         if (playlistTransparent) playlistArea = playlist.GetNativePresentationRect();
         else playlist.GetParent()->GetWindowRect(playlistArea);

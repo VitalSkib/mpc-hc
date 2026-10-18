@@ -89,7 +89,7 @@ private:
     static LRESULT CALLBACK NativeListProcedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam,
         UINT_PTR id, DWORD_PTR data);
 public:
-    bool PrepareNativePresentation(bool enabled);
+    bool PrepareNativePresentation(bool enabled, const CRect& band = CRect(0, 0, 0, 0));
     CRect GetNativePresentationRect() const;
     void UpdateNativeHover();
     void NcCalcClient(LPRECT rect, UINT dockId) override;
