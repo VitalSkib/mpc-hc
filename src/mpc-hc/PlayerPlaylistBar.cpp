@@ -202,8 +202,29 @@ bool CPlayerPlaylistBar::PrepareNativePresentation(bool enabled, const CRect& ba
     } else if (m_nativeClipped) {
         ::SetWindowRgn(m_hWnd, nullptr, TRUE); m_nativeClip.SetRectEmpty(); m_nativeClipped = false;
     }
+    if (active) m_nativeDock.ClipTo(GetNativePresentationRect());
     UpdateNativeHover();
     return active;
+}
+
+LRESULT CPlayerPlaylistBar::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
+{
+    if (m_nativeDock.Active()) {
+        // The docked overlay is fixed; retain native list input, sizing and close.
+        if (message == WM_LBUTTONDOWN || message == WM_LBUTTONDBLCLK
+                || message == WM_NCLBUTTONDBLCLK) return 0;
+        if (message == WM_NCPAINT) {
+            CWindowDC dc(this);
+            CRect window, client; GetWindowRect(window); GetClientRect(client);
+            ClientToScreen(client); client.OffsetRect(-window.TopLeft());
+            window.OffsetRect(-window.TopLeft());
+            dc.ExcludeClipRect(client);
+            dc.FillSolidRect(window, CMPCTheme::ContentBGColor);
+            if (HasGripper()) paintHideButton(&dc, m_biHide);
+            return 0;
+        }
+    }
+    return __super::WindowProc(message, wParam, lParam);
 }
 
 CRect CPlayerPlaylistBar::GetNativePresentationRect() const

@@ -229,7 +229,7 @@ void CChildView::UpdateNativeDecoration()
     playlistBand.bottom = std::max(playlistBand.top, LONG(view.bottom - int(footerHeight)));
     ClientToScreen(playlistBand);
     const bool playlistTransparent = playlist.PrepareNativePresentation(videoLoaded && AppIsThemeLoaded()
-        && playlistVisible && m_pMainFrame->m_controls.ToolbarsCoverVideo(), playlistBand);
+        && !playlist.IsFloating() && m_pMainFrame->m_controls.ToolbarsCoverVideo(), playlistBand);
     if (playlistVisible) {
         if (playlistTransparent) playlistArea = playlist.GetNativePresentationRect();
         else playlist.GetParent()->GetWindowRect(playlistArea);

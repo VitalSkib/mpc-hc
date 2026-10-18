@@ -575,7 +575,7 @@ void CMainFrameControls::UpdateToolbarsVisibility()
             if (!captured && !window.PtInRect(screenPoint) && m_pMainFrame->m_nTrackedMenuDepth == 0) {
                 // Reuse the native hider's existing checks/deadlines. Leaving
                 // the frame ends bottom-control visibility without a new timer.
-                mask.hide(DOCK_BOTTOM);
+                mask.hide(bCanHideDockedPanels ? maskAll : DOCK_BOTTOM);
             }
 #endif
             if (!captured && !hovered &&
