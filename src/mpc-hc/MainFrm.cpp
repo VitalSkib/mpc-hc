@@ -398,6 +398,7 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_UPDATE_COMMAND_UI(ID_VIEW_PLAYLIST, OnUpdateViewPlaylist)
     ON_COMMAND(ID_PLAYLIST_TOGGLE_SHUFFLE, OnPlaylistToggleShuffle)
     ON_COMMAND(ID_VIEW_EDITLISTEDITOR, OnViewEditListEditor)
+    ON_UPDATE_COMMAND_UI(ID_VIEW_EDITLISTEDITOR, OnUpdateViewEditListEditor)
     ON_COMMAND(ID_EDL_IN, OnEDLIn)
     ON_UPDATE_COMMAND_UI(ID_EDL_IN, OnUpdateEDLIn)
     ON_COMMAND(ID_EDL_OUT, OnEDLOut)
@@ -8916,12 +8917,18 @@ void CMainFrame::OnUpdateViewControlBar(CCmdUI* pCmdUI)
 
 void CMainFrame::OnViewSubresync()
 {
+    if (!CMainFrameControls::PanelEnabled(CMainFrameControls::Panel::SUBRESYNC)) return;
     m_controls.ToggleControl(CMainFrameControls::Panel::SUBRESYNC);
     AdjustStreamPosPoller(true);
 }
 
 void CMainFrame::OnUpdateViewSubresync(CCmdUI* pCmdUI)
 {
+    if (!CMainFrameControls::PanelEnabled(CMainFrameControls::Panel::SUBRESYNC)) {
+        pCmdUI->Enable(FALSE);
+        pCmdUI->SetCheck(FALSE);
+        return;
+    }
     pCmdUI->SetCheck(m_controls.ControlChecked(CMainFrameControls::Panel::SUBRESYNC));
     bool enabled = m_pCAP && m_pCurrentSubInput.pSubStream && !IsPlaybackCaptureMode();
     if (enabled) {
@@ -8969,6 +8976,7 @@ void CMainFrame::OnPlaylistToggleShuffle() {
 
 void CMainFrame::OnViewEditListEditor()
 {
+    if (!CMainFrameControls::PanelEnabled(CMainFrameControls::Panel::EDL)) return;
     CAppSettings& s = AfxGetAppSettings();
 
     if (s.fEnableEDLEditor || (AfxMessageBox(IDS_MB_SHOW_EDL_EDITOR, MB_ICONQUESTION | MB_YESNO, 0) == IDYES)) {
@@ -8977,8 +8985,15 @@ void CMainFrame::OnViewEditListEditor()
     }
 }
 
+void CMainFrame::OnUpdateViewEditListEditor(CCmdUI* pCmdUI)
+{
+    pCmdUI->Enable(CMainFrameControls::PanelEnabled(CMainFrameControls::Panel::EDL));
+    pCmdUI->SetCheck(m_controls.ControlChecked(CMainFrameControls::Panel::EDL));
+}
+
 void CMainFrame::OnEDLIn()
 {
+    if (!CMainFrameControls::PanelEnabled(CMainFrameControls::Panel::EDL)) return;
     if (AfxGetAppSettings().fEnableEDLEditor && (GetLoadState() == MLS::LOADED) && (GetPlaybackMode() == PM_FILE)) {
         REFERENCE_TIME rt;
 
@@ -8994,6 +9009,7 @@ void CMainFrame::OnUpdateEDLIn(CCmdUI* pCmdUI)
 
 void CMainFrame::OnEDLOut()
 {
+    if (!CMainFrameControls::PanelEnabled(CMainFrameControls::Panel::EDL)) return;
     if (AfxGetAppSettings().fEnableEDLEditor && (GetLoadState() == MLS::LOADED) && (GetPlaybackMode() == PM_FILE)) {
         REFERENCE_TIME rt;
 
@@ -9009,6 +9025,7 @@ void CMainFrame::OnUpdateEDLOut(CCmdUI* pCmdUI)
 
 void CMainFrame::OnEDLNewClip()
 {
+    if (!CMainFrameControls::PanelEnabled(CMainFrameControls::Panel::EDL)) return;
     if (AfxGetAppSettings().fEnableEDLEditor && (GetLoadState() == MLS::LOADED) && (GetPlaybackMode() == PM_FILE)) {
         REFERENCE_TIME rt;
 
@@ -9024,6 +9041,7 @@ void CMainFrame::OnUpdateEDLNewClip(CCmdUI* pCmdUI)
 
 void CMainFrame::OnEDLSave()
 {
+    if (!CMainFrameControls::PanelEnabled(CMainFrameControls::Panel::EDL)) return;
     if (AfxGetAppSettings().fEnableEDLEditor && (GetLoadState() == MLS::LOADED) && (GetPlaybackMode() == PM_FILE)) {
         m_wndEditListEditor.Save();
     }
@@ -9037,6 +9055,7 @@ void CMainFrame::OnUpdateEDLSave(CCmdUI* pCmdUI)
 // Navigation menu
 void CMainFrame::OnViewNavigation()
 {
+    if (!CMainFrameControls::PanelEnabled(CMainFrameControls::Panel::NAVIGATION)) return;
     const bool bHiding = m_controls.ControlChecked(CMainFrameControls::Panel::NAVIGATION);
     m_controls.ToggleControl(CMainFrameControls::Panel::NAVIGATION);
     if (!bHiding) {
@@ -9047,12 +9066,18 @@ void CMainFrame::OnViewNavigation()
 
 void CMainFrame::OnUpdateViewNavigation(CCmdUI* pCmdUI)
 {
+    if (!CMainFrameControls::PanelEnabled(CMainFrameControls::Panel::NAVIGATION)) {
+        pCmdUI->Enable(FALSE);
+        pCmdUI->SetCheck(FALSE);
+        return;
+    }
     pCmdUI->SetCheck(m_controls.ControlChecked(CMainFrameControls::Panel::NAVIGATION));
     pCmdUI->Enable(GetLoadState() == MLS::LOADED && GetPlaybackMode() == PM_DIGITAL_CAPTURE);
 }
 
 void CMainFrame::OnViewCapture()
 {
+    if (!CMainFrameControls::PanelEnabled(CMainFrameControls::Panel::CAPTURE)) return;
     const bool bHiding = m_controls.ControlChecked(CMainFrameControls::Panel::CAPTURE);
     m_controls.ToggleControl(CMainFrameControls::Panel::CAPTURE);
     AfxGetAppSettings().bHideCaptureSettings = bHiding;
@@ -9060,6 +9085,11 @@ void CMainFrame::OnViewCapture()
 
 void CMainFrame::OnUpdateViewCapture(CCmdUI* pCmdUI)
 {
+    if (!CMainFrameControls::PanelEnabled(CMainFrameControls::Panel::CAPTURE)) {
+        pCmdUI->Enable(FALSE);
+        pCmdUI->SetCheck(FALSE);
+        return;
+    }
     pCmdUI->SetCheck(m_controls.ControlChecked(CMainFrameControls::Panel::CAPTURE));
     pCmdUI->Enable(GetLoadState() == MLS::LOADED && GetPlaybackMode() == PM_ANALOG_CAPTURE);
 }

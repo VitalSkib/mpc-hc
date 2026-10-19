@@ -189,6 +189,7 @@ bool CMainFrameControls::ControlChecked(Toolbar toolbar)
 
 bool CMainFrameControls::ControlChecked(Panel panel)
 {
+    if (!PanelEnabled(panel)) return false;
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
     if (panel == Panel::PLAYLIST && m_pMainFrame->m_wndPlaylistBar.UsesNativePopup())
         return m_pMainFrame->m_wndPlaylistBar.NativePopupSelected();
@@ -209,6 +210,7 @@ void CMainFrameControls::ToggleControl(Toolbar toolbar)
 
 void CMainFrameControls::ToggleControl(Panel panel)
 {
+    if (!PanelEnabled(panel)) return;
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
     if (panel == Panel::PLAYLIST && m_pMainFrame->m_wndPlaylistBar.UsesNativePopup()) {
         m_pMainFrame->m_wndPlaylistBar.ToggleNativePopup();
@@ -253,6 +255,7 @@ void CMainFrameControls::LoadState()
     ASSERT(!m_panels.empty());
     for (const auto& pair : m_panels) {
         auto pBar = pair.second;
+        if (!PanelEnabled(pair.first)) continue; // Do not restore a saved visible/floating panel.
         pBar->LoadState(m_pMainFrame);
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
         if (pair.first == Panel::PLAYLIST && !pBar->IsFloating()
@@ -273,6 +276,7 @@ void CMainFrameControls::SaveState()
 {
     ASSERT(!m_panels.empty());
     for (const auto& pair : m_panels) {
+        if (!PanelEnabled(pair.first)) continue; // Preserve the previous native panel settings.
         pair.second->SaveState();
     }
 }

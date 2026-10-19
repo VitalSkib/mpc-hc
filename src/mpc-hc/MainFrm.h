@@ -1155,6 +1155,7 @@ public:
     afx_msg void OnPlaylistToggleShuffle();
     afx_msg void OnUpdateViewPlaylist(CCmdUI* pCmdUI);
     afx_msg void OnViewEditListEditor();
+    afx_msg void OnUpdateViewEditListEditor(CCmdUI* pCmdUI);
     afx_msg void OnEDLIn();
     afx_msg void OnUpdateEDLIn(CCmdUI* pCmdUI);
     afx_msg void OnEDLOut();

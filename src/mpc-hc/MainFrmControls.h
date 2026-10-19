@@ -73,6 +73,16 @@ public:
         NAVIGATION,
         EDL,
     };
+    // Keep unverified native dock panels dormant in the custom overlay build.
+    // Their implementation and saved state remain available to stock builds.
+    static bool PanelEnabled(Panel panel) {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        return panel != Panel::SUBRESYNC && panel != Panel::CAPTURE
+            && panel != Panel::NAVIGATION && panel != Panel::EDL;
+#else
+        return true;
+#endif
+    }
     std::map<Panel, CPlayerBar*> m_panels;
 
     bool ControlChecked(Toolbar toolbar);
