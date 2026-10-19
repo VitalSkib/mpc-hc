@@ -1,6 +1,7 @@
 /* Owned playlist flyout: native list and commands, independent video geometry. GPLv3+. */
 #pragma once
 #include "DropTarget.h"
+#include <vector>
 class CPlayerPlaylistBar;
 class CNativePlaylistPopup : public CWnd, public CDropClient {
     CPlayerPlaylistBar* m_bar = nullptr;
@@ -15,6 +16,19 @@ class CNativePlaylistPopup : public CWnd, public CDropClient {
     CRect CloseRect() const;
     void Position();
     void PaintSurface(CDC& dc);
+    CWnd m_revealWindow;
+    HDC m_revealDC = nullptr;
+    HBITMAP m_revealBitmap = nullptr, m_revealOldBitmap = nullptr;
+    DWORD* m_revealBits = nullptr;
+    std::vector<DWORD> m_revealPixels;
+    std::vector<BYTE> m_revealMask;
+    CRect m_revealRect = CRect(0, 0, 0, 0);
+    ULONGLONG m_revealStart = 0;
+    bool m_revealing = false;
+    bool BeginReveal();
+    bool DrawReveal(double progress);
+    void TickReveal();
+    void EndReveal(bool showLive);
     void Dismiss();
     void HideEnabled();
     CRect HoverRect() const;
@@ -27,6 +41,7 @@ public:
     bool Create(CWnd* owner, CPlayerPlaylistBar* bar);
     void ConfigureSurface();
 
+    bool Revealing() const { return m_revealing; }
     bool WantsReveal() const;
     void RequestOpen();
     void Refresh(const CRect& band, bool show, int dpi, bool controlsVisible);

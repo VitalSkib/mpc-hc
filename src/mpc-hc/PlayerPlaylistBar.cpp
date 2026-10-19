@@ -71,7 +71,7 @@ void CPlaylistListFrame::OnNcPaint()
 LRESULT CPlaylistListFrame::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
 {
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-    if ((message == WM_ERASEBKGND || message == WM_PRINTCLIENT) && wParam && nativeSurface) {
+    if (message == WM_ERASEBKGND && wParam && nativeSurface) {
         // The native list is briefly hidden by WM_SETREDRAW during layout.
         // Its container must clear to the same key, never an uninitialized black surface.
         CRect rect; GetClientRect(rect);
