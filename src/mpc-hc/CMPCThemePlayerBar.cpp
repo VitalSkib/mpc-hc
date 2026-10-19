@@ -5,11 +5,6 @@
 #include "MainFrm.h"
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
 #include "NativePlaylistPresentation.h"
-static bool UsesNativePlaylistStyle(CMPCThemePlayerBar* bar)
-{
-    const auto playlist = DYNAMIC_DOWNCAST(CPlayerPlaylistBar, bar);
-    return playlist && playlist->UsesNativePlaylistHost();
-}
 #endif
 
 CMPCThemePlayerBar::CMPCThemePlayerBar(CMainFrame* pMainFrame)
@@ -43,8 +38,6 @@ BOOL CMPCThemePlayerBar::OnEraseBkgnd(CDC* pDC)
             pDC->GetClipBox(&rect);
             pDC->FillSolidRect(rect.left, rect.top, rect.Width(), rect.Height(),
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-                UsesNativePlaylistStyle(this)
-                    ? CNativePlaylistPopup::SurfaceColor() :
                 NativePlaylistPresentation::Active(m_hWnd) ? CMPCTheme::ContentBGColor :
 #endif
                 CMPCTheme::WindowBGColor);
@@ -158,9 +151,7 @@ void CMPCThemePlayerBar::mpc_fillNcBG(CDC* mdc, CRect rcDraw)
         }
         mdc->FillSolidRect(rcDraw,
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-            UsesNativePlaylistStyle(this)
-                    ? CNativePlaylistPopup::SurfaceColor() :
-                NativePlaylistPresentation::Active(m_hWnd) ? CMPCTheme::ContentBGColor :
+            NativePlaylistPresentation::Active(m_hWnd) ? CMPCTheme::ContentBGColor :
 #endif
             CMPCTheme::WindowBGColor);
     } else {

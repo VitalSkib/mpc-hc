@@ -34,8 +34,6 @@
 #include "CMPCThemeInlineEdit.h"
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
 #include "NativePlaylistPresentation.h"
-#include "NativePlaylistPopup.h"
-#include <functional>
 #endif
 
 
@@ -47,8 +45,6 @@ class CMainFrame;
 // forwards child-originated messages to its own parent (the playlist bar).
 class CPlaylistListFrame : public CWnd
 {
-public:
-    bool nativeSurface = false;
 protected:
     afx_msg void OnNcPaint();
     LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam) override;
@@ -79,36 +75,23 @@ private:
     int inlineEditItem;
     CMPCThemeInlineEdit m_edit;
 
-    CFont m_font, m_numberFont;
+    CFont m_font;
     void ScaleFont();
 
     CImageList m_fakeImageList;
     CPlaylistListFrame m_listFrame;
     CPlayerListCtrl m_list;
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-    friend class CNativePlaylistPopup;
-    CNativePlaylistPopup m_nativePopup;
-    bool m_nativeHostStyle = false;
-    ULONG_PTR m_nativeHostGraphicsToken = 0;
-    bool m_nativePopupSelected = false;
     NativePlaylistPresentation::DockSurface m_nativeDock;
+    bool IsNativeResizeEdge(CPoint screenPoint) const;
+    void StartTracking(UINT hitTest, CPoint point) override;
+    void StopTracking() override;
     int m_nativeHotItem = -1, m_nativeTopInset = 0, m_nativeBottomInset = 0;
     CRect m_nativeClip = CRect(0, 0, 0, 0);
     bool m_nativeClipped = false;
     static LRESULT CALLBACK NativeListProcedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam,
         UINT_PTR id, DWORD_PTR data);
 public:
-    bool UsesNativePlaylistHost() const { return m_nativeHostStyle; }
-    bool UsesFluentPlaylistStyle() const { return m_nativeHostStyle || UsesNativePopup(); }
-    bool UsesNativePopup() const { return m_nativePopup.GetSafeHwnd() != nullptr; }
-    bool NativePopupSelected() const { return m_nativePopupSelected; }
-    void ToggleNativePopup() {
-        m_nativePopupSelected = !m_nativePopupSelected;
-        if (m_nativePopupSelected) m_nativePopup.RequestOpen();
-    }
-    bool NativePopupInputActive() const;
-    void RefreshNativePopup(const CRect& band, bool show, int dpi);
-    std::function<void()> nativePopupActivity;
     bool PrepareNativePresentation(bool enabled, const CRect& band = CRect(0, 0, 0, 0));
     CRect GetNativePresentationRect() const;
     void UpdateNativeHover();

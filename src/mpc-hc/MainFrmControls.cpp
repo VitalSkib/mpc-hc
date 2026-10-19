@@ -189,10 +189,6 @@ bool CMainFrameControls::ControlChecked(Toolbar toolbar)
 
 bool CMainFrameControls::ControlChecked(Panel panel)
 {
-#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-    if (panel == Panel::PLAYLIST && m_pMainFrame->m_wndPlaylistBar.UsesNativePopup())
-        return m_pMainFrame->m_wndPlaylistBar.NativePopupSelected();
-#endif
     auto pBar = m_panels[panel];
     return pBar->IsAutohidden() || pBar->IsWindowVisible();
 }
@@ -209,15 +205,6 @@ void CMainFrameControls::ToggleControl(Toolbar toolbar)
 
 void CMainFrameControls::ToggleControl(Panel panel)
 {
-#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-    if (panel == Panel::PLAYLIST && m_pMainFrame->m_wndPlaylistBar.UsesNativePopup()) {
-        m_pMainFrame->m_wndPlaylistBar.ToggleNativePopup();
-        LockHideZone(DOCK_BOTTOM);
-        ShowToolbarsSelection();
-        UpdateToolbarsVisibility();
-        return;
-    }
-#endif
     auto pBar = m_panels[panel];
     if (pBar->IsWindowVisible()) {
         m_pMainFrame->ShowControlBar(pBar, FALSE, FALSE);
@@ -255,7 +242,7 @@ void CMainFrameControls::LoadState()
         auto pBar = pair.second;
         pBar->LoadState(m_pMainFrame);
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-        if (pair.first == Panel::PLAYLIST && !m_pMainFrame->m_wndPlaylistBar.UsesNativePlaylistHost() && !pBar->IsFloating()
+        if (pair.first == Panel::PLAYLIST && !pBar->IsFloating()
                 && m_pMainFrame->GetLoadState() != MLS::LOADED && (pBar->GetStyle() & WS_VISIBLE)) {
             m_pMainFrame->ShowControlBar(pBar, FALSE, TRUE);
             pBar->SetAutohidden(true);
@@ -346,12 +333,6 @@ CSize CMainFrameControls::GetDockZonesMinSize(unsigned uSaneFallback)
 
 bool CMainFrameControls::PanelsCoverVideo() const
 {
-#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-    // Native-host styling test: side docks reserve their normal client space.
-    // Do not extend our renderer HWND or its destination rectangle beneath them.
-    if (m_pMainFrame->m_wndPlaylistBar.UsesNativePlaylistHost()
-            && !m_pMainFrame->IsFullScreenMainFrame()) return false;
-#endif
     const auto& s = AfxGetAppSettings();
     return m_pMainFrame->IsFullScreenMainFrame() && !m_pMainFrame->m_bIsMPCVRExclusiveMode ||
         (!m_pMainFrame->IsD3DFullScreenMode() && s.bHideWindowedControls && s.bHideFullscreenControls && s.bHideFullscreenDockedPanels &&
@@ -435,7 +416,7 @@ void CMainFrameControls::UpdateToolbarsVisibility()
     const MLS mls = m_pMainFrame->GetLoadState();
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
     const auto emptyPlaylist = [&](Panel panel) {
-        return panel == Panel::PLAYLIST && !m_pMainFrame->m_wndPlaylistBar.UsesNativePlaylistHost() && mls != MLS::LOADED && !m_panels[panel]->IsFloating();
+        return panel == Panel::PLAYLIST && mls != MLS::LOADED && !m_panels[panel]->IsFloating();
     };
 #endif
 
@@ -481,9 +462,6 @@ void CMainFrameControls::UpdateToolbarsVisibility()
         if (m_pMainFrame->m_wndSeekBar.DraggingThumb() || m_pMainFrame->m_bTBDropdownActive
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
                 || m_pMainFrame->m_wndToolBar.VolumeFlyoutActive()
-#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-                || m_pMainFrame->m_wndPlaylistBar.NativePopupInputActive()
-#endif
 #endif
                 ) {
             // show bottom while dragging the seekbar thumb
@@ -895,9 +873,6 @@ void CMainFrameControls::EnumPanelZones()
     m_panelDocks.clear();
 
     for (const auto& pair : m_panels) {
-#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-        if (pair.first == Panel::PLAYLIST && m_pMainFrame->m_wndPlaylistBar.UsesNativePopup()) continue;
-#endif
         auto& pBar = pair.second;
         if (IsWindow(pBar->m_hWnd) && (pBar->IsAutohidden() || pBar->IsWindowVisible())) {
             DockZone zone = GetPanelZone(pBar);

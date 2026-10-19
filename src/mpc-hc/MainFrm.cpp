@@ -1897,10 +1897,6 @@ void CMainFrame::OnGetMinMaxInfo(MINMAXINFO* lpMMI)
 void CMainFrame::OnMove(int x, int y)
 {
     __super::OnMove(x, y);
-#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-    if (m_wndPlaylistBar.UsesNativePopup() && m_wndView.GetSafeHwnd())
-        m_wndView.UpdateNativeDecoration();
-#endif
 
     if (m_bWasSnapped && IsZoomed()) {
         m_bWasSnapped = false;

@@ -204,8 +204,6 @@ void CChildView::UpdateNativeDecoration()
     const bool nativeVisible = m_pMainFrame->m_controls.ToolbarsCoverVideo() && height > 0;
     if (!available || view.IsRectEmpty()) {
         m_pMainFrame->m_wndPlaylistBar.PrepareNativePresentation(false);
-        if (m_pMainFrame->m_wndPlaylistBar.UsesNativePopup())
-            m_pMainFrame->m_wndPlaylistBar.RefreshNativePopup(CRect(0, 0, 0, 0), false, 96);
         m_nativeHeader.Hide(); m_nativeBackdrop.Hide(); return;
     }
     CString title; m_pMainFrame->GetWindowText(title);
@@ -230,11 +228,7 @@ void CChildView::UpdateNativeDecoration()
     const unsigned footerHeight = std::max(height, m_pMainFrame->m_controls.GetToolbarsHeight());
     playlistBand.bottom = std::max(playlistBand.top, LONG(view.bottom - int(footerHeight)));
     ClientToScreen(playlistBand);
-    if (playlist.UsesNativePopup()) {
-        playlist.nativePopupActivity = [this]() { m_pMainFrame->m_controls.UpdateToolbarsVisibility(); };
-        playlist.RefreshNativePopup(playlistBand, mediaLoaded, dpi);
-    }
-    const bool playlistTransparent = playlist.PrepareNativePresentation(!playlist.UsesNativePopup() && videoLoaded && AppIsThemeLoaded()
+    const bool playlistTransparent = playlist.PrepareNativePresentation(videoLoaded && AppIsThemeLoaded()
         && !playlist.IsFloating() && m_pMainFrame->m_controls.ToolbarsCoverVideo(), playlistBand);
     if (playlistVisible) {
         if (playlistTransparent) playlistArea = playlist.GetNativePresentationRect();
@@ -395,11 +389,7 @@ void CChildView::OnWindowPosChanging(WINDOWPOS* position)
             bottom = toolbarHeight;
             const auto& playlist = m_pMainFrame->m_wndPlaylistBar;
             const bool playlistVisible = playlist.GetSafeHwnd() && playlist.IsWindowVisible()
-                && !playlist.IsFloating() && m_pMainFrame->GetLoadState() == MLS::LOADED
-#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-                && !playlist.UsesNativePlaylistHost()
-#endif
-                ;
+                && !playlist.IsFloating() && m_pMainFrame->GetLoadState() == MLS::LOADED;
             if (m_pMainFrame->m_controls.PanelsCoverVideo() || playlistVisible) {
                 m_pMainFrame->m_controls.GetVisibleDockZones(top, left, right, bottom);
             }
