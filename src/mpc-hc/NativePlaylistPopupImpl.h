@@ -10,7 +10,7 @@ bool CNativePlaylistPopup::Create(CWnd* owner, CPlayerPlaylistBar* bar)
     m_width = std::clamp<int>(AfxGetApp()->GetProfileInt(L"ToolBars\\Playlist", L"PopupWidth", 320), 120, 1200);
     // Give the native erase path the same background as our explicit paint path.
     static const HBRUSH background = ::CreateSolidBrush(SurfaceColor());
-    if (!CreateEx(WS_EX_TOOLWINDOW, AfxRegisterWndClass(CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW, ::LoadCursor(nullptr, IDC_ARROW), background),
+    if (!CreateEx(WS_EX_TOOLWINDOW, AfxRegisterWndClass(CS_DBLCLKS, ::LoadCursor(nullptr, IDC_ARROW), background),
             L"Playlist", WS_POPUP | WS_THICKFRAME | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, CRect(0, 0, 320, 200), owner, 0)) return false;
     Gdiplus::GdiplusStartupInput graphicsStartup;
     Gdiplus::GdiplusStartup(&m_graphicsToken, &graphicsStartup, nullptr);
@@ -110,7 +110,21 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
 {
     if (!m_bar) return __super::WindowProc(message, wParam, lParam);
     switch (message) {
-    case WM_NCCALCSIZE: return 0; // full client area; normal native resize preservation
+    case WM_NCCALCSIZE: {
+        if (!wParam) return 0;
+        auto sizes = reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam);
+        const CRect next(sizes->rgrc[0]); // full-window client, without changing window bounds
+        const CRect previous(sizes->rgrc[2]);
+        const int width = std::min(next.Width(), previous.Width());
+        const int height = std::min(next.Height(), previous.Height());
+        if (width <= 0 || height <= 0) return 0;
+        // Preserve pixels at the stationary RIGHT edge. The default return of zero
+        // aligns the old image to the new left edge, visibly shifting the client
+        // surface while the DWM border has already reached its new rectangle.
+        sizes->rgrc[1] = CRect(next.right - width, next.top, next.right, next.top + height);
+        sizes->rgrc[2] = CRect(previous.right - width, previous.top, previous.right, previous.top + height);
+        return WVR_VALIDRECTS;
+    }
     case WM_NCPAINT: return 0; // DWM owns the rounded border; no classic sizing-frame paint
     case WM_NCACTIVATE: return DefWindowProc(message, wParam, -1);
     case WM_NCHITTEST: {
