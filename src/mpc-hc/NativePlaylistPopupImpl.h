@@ -52,6 +52,12 @@ void CNativePlaylistPopup::ConfigureSurface()
         DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(38), &none, sizeof(none));
         DwmExtendFrameIntoClientArea(m_hWnd, &solid);
     }
+    // Win32 requires bottom-to-top composited painting and transparent child
+    // paint ordering for alpha in descendant HWNDs. These are non-layered
+    // windows: WS_EX_TRANSPARENT here changes paint order, not a color key.
+    ModifyStyleEx(WS_EX_COMPOSITED, m_materialActive ? WS_EX_COMPOSITED : 0);
+    m_bar->m_listFrame.ModifyStyleEx(WS_EX_TRANSPARENT, m_materialActive ? WS_EX_TRANSPARENT : 0);
+    m_bar->m_list.ModifyStyleEx(WS_EX_TRANSPARENT, m_materialActive ? WS_EX_TRANSPARENT : 0);
     m_bar->m_listFrame.nativeSurface = true;
     ::SetPropW(m_bar->m_list.m_hWnd, L"MPC.FluentPlaylistScroll", reinterpret_cast<HANDLE>(1));
     // Match the upstream non-layered floating playlist and native list buffering.
