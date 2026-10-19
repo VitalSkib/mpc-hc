@@ -24,13 +24,13 @@ class CNativePlaylistPopup : public CWnd, public CDropClient {
     std::vector<BYTE> m_revealMask;
     CRect m_revealRect = CRect(0, 0, 0, 0);
     ULONGLONG m_revealStart = 0;
-    bool m_revealing = false;
-    bool BeginReveal();
+    bool m_revealing = false, m_fading = false;
+    bool BeginReveal(bool fading = false);
     bool DrawReveal(double progress);
     void TickReveal();
     void EndReveal(bool showLive);
     void Dismiss();
-    void HideEnabled();
+    void HideEnabled(bool animate = true);
     CRect HoverRect() const;
     LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam) override;
     BOOL PreTranslateMessage(MSG* message) override;
@@ -41,7 +41,7 @@ public:
     bool Create(CWnd* owner, CPlayerPlaylistBar* bar);
     void ConfigureSurface();
 
-    bool Revealing() const { return m_revealing; }
+    bool Revealing() const { return m_revealing && !m_fading; }
     bool WantsReveal() const;
     void RequestOpen();
     void Refresh(const CRect& band, bool show, int dpi, bool controlsVisible);

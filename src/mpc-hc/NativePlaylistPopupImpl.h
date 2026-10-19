@@ -51,7 +51,7 @@ void CNativePlaylistPopup::Position()
     const int insetY = std::min(gap, std::max(0, (available.Height() - 1) / 2));
     available.DeflateRect(insetX, insetY);
     const int width = std::min(MulDiv(360, m_dpi, 96), available.Width());
-    const int height = std::min(MulDiv(440, m_dpi, 96), available.Height());
+    const int height = available.Height();
     CRect rect(available.right - width, available.bottom - height, available.right, available.bottom), before;
     GetWindowRect(before);
     if (rect != before) SetWindowPos(nullptr, rect.left, rect.top, rect.Width(), rect.Height(),
@@ -78,14 +78,17 @@ bool CNativePlaylistPopup::WantsReveal() const
     return m_forceReveal || (!IsWindowVisible() && cursor != m_hiddenPoint && HoverRect().PtInRect(cursor));
 }
 
-void CNativePlaylistPopup::HideEnabled()
+void CNativePlaylistPopup::HideEnabled(bool animate)
 {
-    if (IsWindowVisible() || m_revealing) ::GetCursorPos(&m_hiddenPoint);
+    if (m_fading) { if (!animate) EndReveal(false); return; }
+    const bool visible = !!IsWindowVisible();
+    if (visible || m_revealing) ::GetCursorPos(&m_hiddenPoint);
+    m_entered = false; m_closeHot = false; m_forceReveal = false;
+    BOOL animations = TRUE;
+    ::SystemParametersInfo(SPI_GETCLIENTAREAANIMATION, 0, &animations, 0);
+    if (visible && !m_revealing && animate && animations && BeginReveal(true)) return;
     EndReveal(false);
     if (IsWindowVisible()) ShowWindow(SW_HIDE);
-    m_entered = false;
-    m_closeHot = false;
-    m_forceReveal = false;
 }
 
 void CNativePlaylistPopup::Dismiss()
@@ -106,12 +109,16 @@ void CNativePlaylistPopup::Refresh(const CRect& band, bool show, int dpi, bool c
     }
     m_dpi = dpi;
     if (!show || m_band.IsRectEmpty()) {
-        HideEnabled();
+        HideEnabled(!m_band.IsRectEmpty() && !m_bar->m_pMainFrame->IsIconic());
         KillTimer(1);
         return;
     }
     Position();
     SetTimer(1, 100, nullptr); // hover/controls observation only; no independent hide timeout
+    if (m_fading) {
+        if (!WantsReveal()) return;
+        EndReveal(false); RequestOpen();
+    }
     if (!IsWindowVisible() && !m_revealing && WantsReveal()) RequestOpen();
     if (!IsWindowVisible() && !m_forceReveal && !m_revealing) return;
     CPoint cursor; ::GetCursorPos(&cursor);
@@ -179,7 +186,7 @@ void CNativePlaylistPopup::PaintSurface(CDC& dc)
     dc.SelectObject(previous);
 }
 
-bool CNativePlaylistPopup::BeginReveal()
+bool CNativePlaylistPopup::BeginReveal(bool fading)
 {
     GetWindowRect(m_revealRect);
     const int width = m_revealRect.Width(), height = m_revealRect.Height();
@@ -263,11 +270,15 @@ bool CNativePlaylistPopup::BeginReveal()
             WS_POPUP, m_revealRect, m_bar->m_pMainFrame, 0)) {
         EndReveal(false); return false;
     }
-    m_revealing = true; m_revealStart = GetTickCount64();
+    m_revealing = true; m_fading = fading; m_revealStart = GetTickCount64();
     if (!DrawReveal(0.0)) { EndReveal(false); return false; }
     m_revealWindow.SetWindowPos(&wndTop, 0, 0, 0, 0,
         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
     if (!SetTimer(2, 15, nullptr)) { EndReveal(false); return false; }
+    if (fading) {
+        // The composed image covers the live frame before it is hidden.
+        ::DwmFlush(); ShowWindow(SW_HIDE);
+    }
     return true;
 }
 
@@ -275,7 +286,7 @@ bool CNativePlaylistPopup::DrawReveal(double progress)
 {
     const int width = m_revealRect.Width(), height = m_revealRect.Height();
     const double eased = 1.0 - std::pow(1.0 - std::clamp(progress, 0.0, 1.0), 3.0);
-    const int offset = static_cast<int>(height * (1.0 - eased));
+    const int offset = m_fading ? 0 : static_cast<int>(height * (1.0 - eased));
     ::ZeroMemory(m_revealBits, static_cast<size_t>(width) * height * sizeof(DWORD));
     for (int y = offset; y < height; ++y) for (int x = 0; x < width; ++x) {
         const size_t dest = static_cast<size_t>(y) * width + x;
@@ -290,7 +301,7 @@ bool CNativePlaylistPopup::DrawReveal(double progress)
     }
     POINT dest = m_revealRect.TopLeft(), source = {};
     SIZE size = {width, height};
-    BLENDFUNCTION blend = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+    BLENDFUNCTION blend = {AC_SRC_OVER, 0, static_cast<BYTE>(m_fading ? 255.0 * (1.0 - progress) : 255.0), AC_SRC_ALPHA};
     return !!::UpdateLayeredWindow(m_revealWindow.m_hWnd, nullptr, &dest, &size,
         m_revealDC, &source, 0, &blend, ULW_ALPHA);
 }
@@ -299,14 +310,14 @@ void CNativePlaylistPopup::TickReveal()
 {
     if (!m_revealing) return;
     CRect current; GetWindowRect(current);
-    if (current != m_revealRect) { EndReveal(true); return; }
-    const double progress = std::min(1.0, (GetTickCount64() - m_revealStart) / 160.0);
-    if (!DrawReveal(progress) || progress >= 1.0) EndReveal(true);
+    if (current != m_revealRect) { EndReveal(!m_fading); return; }
+    const double progress = std::min(1.0, (GetTickCount64() - m_revealStart) / (m_fading ? 83.0 : 160.0));
+    if (!DrawReveal(progress) || progress >= 1.0) EndReveal(!m_fading);
 }
 
 void CNativePlaylistPopup::EndReveal(bool showLive)
 {
-    KillTimer(2); m_revealing = false;
+    KillTimer(2); m_revealing = false; m_fading = false;
     if (showLive) {
         // Paint the real list while the complete image still covers it, then
         // remove the image. No partially prepared live scrollbar is exposed.
