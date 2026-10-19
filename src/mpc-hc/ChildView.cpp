@@ -395,7 +395,11 @@ void CChildView::OnWindowPosChanging(WINDOWPOS* position)
             bottom = toolbarHeight;
             const auto& playlist = m_pMainFrame->m_wndPlaylistBar;
             const bool playlistVisible = playlist.GetSafeHwnd() && playlist.IsWindowVisible()
-                && !playlist.IsFloating() && m_pMainFrame->GetLoadState() == MLS::LOADED;
+                && !playlist.IsFloating() && m_pMainFrame->GetLoadState() == MLS::LOADED
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+                && !playlist.UsesNativePlaylistHost()
+#endif
+                ;
             if (m_pMainFrame->m_controls.PanelsCoverVideo() || playlistVisible) {
                 m_pMainFrame->m_controls.GetVisibleDockZones(top, left, right, bottom);
             }

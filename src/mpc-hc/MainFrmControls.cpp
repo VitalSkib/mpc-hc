@@ -255,7 +255,7 @@ void CMainFrameControls::LoadState()
         auto pBar = pair.second;
         pBar->LoadState(m_pMainFrame);
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-        if (pair.first == Panel::PLAYLIST && !pBar->IsFloating()
+        if (pair.first == Panel::PLAYLIST && !m_pMainFrame->m_wndPlaylistBar.UsesNativePlaylistHost() && !pBar->IsFloating()
                 && m_pMainFrame->GetLoadState() != MLS::LOADED && (pBar->GetStyle() & WS_VISIBLE)) {
             m_pMainFrame->ShowControlBar(pBar, FALSE, TRUE);
             pBar->SetAutohidden(true);
@@ -429,7 +429,7 @@ void CMainFrameControls::UpdateToolbarsVisibility()
     const MLS mls = m_pMainFrame->GetLoadState();
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
     const auto emptyPlaylist = [&](Panel panel) {
-        return panel == Panel::PLAYLIST && mls != MLS::LOADED && !m_panels[panel]->IsFloating();
+        return panel == Panel::PLAYLIST && !m_pMainFrame->m_wndPlaylistBar.UsesNativePlaylistHost() && mls != MLS::LOADED && !m_panels[panel]->IsFloating();
     };
 #endif
 

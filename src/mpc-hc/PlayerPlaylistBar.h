@@ -88,6 +88,8 @@ private:
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
     friend class CNativePlaylistPopup;
     CNativePlaylistPopup m_nativePopup;
+    bool m_nativeHostStyle = false;
+    ULONG_PTR m_nativeHostGraphicsToken = 0;
     bool m_nativePopupSelected = false;
     NativePlaylistPresentation::DockSurface m_nativeDock;
     int m_nativeHotItem = -1, m_nativeTopInset = 0, m_nativeBottomInset = 0;
@@ -96,6 +98,8 @@ private:
     static LRESULT CALLBACK NativeListProcedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam,
         UINT_PTR id, DWORD_PTR data);
 public:
+    bool UsesNativePlaylistHost() const { return m_nativeHostStyle; }
+    bool UsesFluentPlaylistStyle() const { return m_nativeHostStyle || UsesNativePopup(); }
     bool UsesNativePopup() const { return m_nativePopup.GetSafeHwnd() != nullptr; }
     bool NativePopupSelected() const { return m_nativePopupSelected; }
     void ToggleNativePopup() {

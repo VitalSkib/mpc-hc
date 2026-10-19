@@ -38,6 +38,8 @@ BOOL CMPCThemePlayerBar::OnEraseBkgnd(CDC* pDC)
             pDC->GetClipBox(&rect);
             pDC->FillSolidRect(rect.left, rect.top, rect.Width(), rect.Height(),
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+                (this == &m_pMainFrame->m_wndPlaylistBar && m_pMainFrame->m_wndPlaylistBar.UsesNativePlaylistHost())
+                    ? CNativePlaylistPopup::SurfaceColor() :
                 NativePlaylistPresentation::Active(m_hWnd) ? CMPCTheme::ContentBGColor :
 #endif
                 CMPCTheme::WindowBGColor);
@@ -151,7 +153,9 @@ void CMPCThemePlayerBar::mpc_fillNcBG(CDC* mdc, CRect rcDraw)
         }
         mdc->FillSolidRect(rcDraw,
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-            NativePlaylistPresentation::Active(m_hWnd) ? CMPCTheme::ContentBGColor :
+            (this == &m_pMainFrame->m_wndPlaylistBar && m_pMainFrame->m_wndPlaylistBar.UsesNativePlaylistHost())
+                    ? CNativePlaylistPopup::SurfaceColor() :
+                NativePlaylistPresentation::Active(m_hWnd) ? CMPCTheme::ContentBGColor :
 #endif
             CMPCTheme::WindowBGColor);
     } else {
