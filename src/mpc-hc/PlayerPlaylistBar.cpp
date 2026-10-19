@@ -284,6 +284,10 @@ LRESULT CPlayerPlaylistBar::WindowProc(UINT message, WPARAM wParam, LPARAM lPara
     }
     const LRESULT result = __super::WindowProc(message, wParam, lParam);
     if (m_nativeDock.Active()) {
+        if (message == WM_WINDOWPOSCHANGED
+                && (reinterpret_cast<const WINDOWPOS*>(lParam)->flags & (SWP_SHOWWINDOW | SWP_HIDEWINDOW))) {
+            m_nativeHoverEntered = false;
+        }
         // The native tracker keeps the dock anchored; repaint its nonclient
         // button at the new width before the next resize step is displayed.
         if (message == WM_WINDOWPOSCHANGED) {
