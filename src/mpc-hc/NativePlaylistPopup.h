@@ -1,6 +1,7 @@
 /* Owned playlist flyout: native list and commands, independent video geometry. GPLv3+. */
 #pragma once
 #include "DropTarget.h"
+#include "NativePlaylistMaterial.h"
 #include <vector>
 #include <functional>
 class CPlayerPlaylistBar;
@@ -13,7 +14,8 @@ class CNativePlaylistPopup : public CWnd, public CDropClient {
     bool m_forceReveal = false, m_entered = false, m_closeHot = false, m_closePressed = false;
     bool m_systemBorder = false;
     bool m_materialActive = false, m_materialPainting = false, m_bufferedPaintReady = false;
-    int m_materialTint = 128;
+    CNativePlaylistMaterial m_systemMaterial;
+    int m_materialTint = 0;
     int m_materialMode = 3; // documented DWM: 1 = solid, 2 = Mica, 3 = Acrylic
     CFont m_titleFont;
     ULONG_PTR m_graphicsToken = 0;

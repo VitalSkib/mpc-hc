@@ -11,7 +11,7 @@ bool CNativePlaylistPopup::Create(CWnd* owner, CPlayerPlaylistBar* bar)
 {
     m_bar = bar;
     m_materialMode = std::clamp(static_cast<int>(AfxGetApp()->GetProfileInt(L"Settings", L"FluentPlaylistMaterial", 3)), 1, 3);
-    m_materialTint = std::clamp(static_cast<int>(AfxGetApp()->GetProfileInt(L"Settings", L"FluentPlaylistTint", 128)), 0, 255);
+    m_materialTint = std::clamp(static_cast<int>(AfxGetApp()->GetProfileInt(L"Settings", L"FluentPlaylistTint", 0)), 0, 255);
     m_bufferedPaintReady = SUCCEEDED(::BufferedPaintInit());
     // Give the native erase path the same background as our explicit paint path.
     static const HBRUSH background = ::CreateSolidBrush(SurfaceColor());
@@ -40,11 +40,14 @@ void CNativePlaylistPopup::ConfigureSurface()
         L"EnableTransparency", RRF_RT_REG_DWORD, nullptr, &transparency, &size);
     const DWORD requested = m_bufferedPaintReady && transparency && !(contrast.dwFlags & HCF_HIGHCONTRASTON)
         ? m_materialMode : 1;
-    m_materialActive = requested != 1 && SUCCEEDED(DwmSetWindowAttribute(m_hWnd,
-        static_cast<DWMWINDOWATTRIBUTE>(38), &requested, sizeof(requested)));
+    m_systemMaterial.Reset();
+    const DWORD none = 1;
+    DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(38), &none, sizeof(none));
+    m_materialActive = requested != 1 && m_systemMaterial.Start(m_hWnd, static_cast<int>(requested));
     const MARGINS margins = m_materialActive ? MARGINS{-1, -1, -1, -1} : MARGINS{};
     if (FAILED(DwmExtendFrameIntoClientArea(m_hWnd, &margins))) m_materialActive = false;
     if (!m_materialActive) {
+        m_systemMaterial.Reset();
         const DWORD none = 1; const MARGINS solid = {};
         DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(38), &none, sizeof(none));
         DwmExtendFrameIntoClientArea(m_hWnd, &solid);
@@ -504,6 +507,7 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
         break;
     case WM_NCDESTROY:
         EndReveal(false);
+        m_systemMaterial.Reset();
         if (m_bufferedPaintReady) { ::BufferedPaintUnInit(); m_bufferedPaintReady = false; }
         if (m_graphicsToken) { Gdiplus::GdiplusShutdown(m_graphicsToken); m_graphicsToken = 0; }
         break;

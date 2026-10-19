@@ -260,6 +260,9 @@ if not exist "$(OutDir)LAVFilters" if exist "$(SolutionDir)bin\mpc-hc_x86\LAVFil
     <ClCompile Include="PlayerListCtrl.cpp" />
     <ClCompile Include="PlayerNavigationBar.cpp" />
     <ClCompile Include="PlayerNavigationDialog.cpp" />
+    <ClCompile Include="NativePlaylistMaterial.cpp">
+      <AdditionalIncludeDirectories>$(ProjectDir)wasdk-probe\generated;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
     <ClCompile Include="PlayerPlaylistBar.cpp" />
     <ClCompile Include="PlayerPreView.cpp" />
     <ClCompile Include="PlayerSeekBar.cpp" />

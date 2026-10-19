@@ -41,6 +41,41 @@ jobs:
           Invoke-WebRequest 'https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/win64/nasm-2.16.03-win64.zip' -OutFile "$env:RUNNER_TEMP\nasm.zip"
           Expand-Archive "$env:RUNNER_TEMP\nasm.zip" "$env:RUNNER_TEMP\nasm"
           (Get-ChildItem "$env:RUNNER_TEMP\nasm" -Filter nasm.exe -Recurse | Select-Object -First 1).DirectoryName >> $env:GITHUB_PATH
+      - name: Prepare official Windows App SDK controller headers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $probe = Join-Path $env:GITHUB_WORKSPACE 'src/mpc-hc/wasdk-probe'
+          New-Item -ItemType Directory -Force $probe | Out-Null
+          $packages = @(
+            @('microsoft.windowsappsdk.foundation', '1.8.250906002', 'foundation', '77acb164613b71b55924e22f60da7c94f78ab9ebd426395f49e79ca3a0bea77c'),
+            @('microsoft.windowsappsdk.interactiveexperiences', '1.8.250906004', 'interactive', '454b682994bbbcf3f5029f42fa1aebff72b0bb29dde1ca6e1e99cae264c74451')
+          )
+          foreach ($package in $packages) {
+            $id, $version, $folder, $digest = $package
+            Invoke-WebRequest "https://api.nuget.org/v3-flatcontainer/$id/$version/$id.$version.nupkg" -OutFile "$probe/$folder.zip"
+            if ((Get-FileHash "$probe/$folder.zip" -Algorithm SHA256).Hash.ToLowerInvariant() -ne $digest) { throw "SDK package digest mismatch: $id" }
+            Expand-Archive "$probe/$folder.zip" "$probe/$folder"
+          }
+          $sdkRoot = "${env:ProgramFiles(x86)}/Windows Kits/10"
+          $sdk = Get-ChildItem "$sdkRoot/Include" -Directory | Where-Object Name -Match '^10\.0\.\d+\.0$' | Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
+          $cppwinrt = "$sdkRoot/bin/$($sdk.Name)/x64/cppwinrt.exe"
+          & $cppwinrt -input "$probe/interactive/metadata/10.0.18362.0" -reference "$sdkRoot/UnionMetadata/$($sdk.Name)/Windows.winmd" -output "$probe/generated"
+          if ($LASTEXITCODE -ne 0) { throw 'C++/WinRT projection generation failed.' }
+          $bytes = [IO.File]::ReadAllBytes("$probe/foundation/runtimes/win-x64/native/Microsoft.WindowsAppRuntime.Bootstrap.dll")
+          $text = [Text.StringBuilder]::new('static const unsigned char kPlaylistBootstrap[] = {')
+          for ($i = 0; $i -lt $bytes.Length; $i++) {
+            if (($i % 64) -eq 0) { [void]$text.AppendLine() }
+            [void]$text.Append($bytes[$i]).Append(',')
+          }
+          [void]$text.AppendLine('};')
+          [IO.File]::WriteAllText("$probe/bootstrap-bytes.h", $text.ToString(), [Text.Encoding]::ASCII)
+      - name: Compile controller integration preflight
+        shell: cmd
+        run: |
+          call build.user.bat
+          call "%MPCHC_VS_PATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+          cl /nologo /c /EHsc /std:c++17 /DMPC_EXPERIMENTAL_NATIVE_DECORATION /DMPC_MATERIAL_STANDALONE /I"src\mpc-hc\wasdk-probe\generated" src\mpc-hc\NativePlaylistMaterial.cpp /Fo"src\mpc-hc\wasdk-probe\preflight.obj"
       - name: Build native-controls x64 probe
         shell: cmd
         env:

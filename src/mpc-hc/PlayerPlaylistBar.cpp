@@ -3113,6 +3113,10 @@ void CPlayerPlaylistBar::OnContextMenu(CWnd* /*pWnd*/, CPoint point)
         if (UsesNativePopup()) {
             CMenu material; material.CreatePopupMenu();
             const int selected = m_nativePopup.MaterialMode();
+            if (selected != 1 && !m_nativePopup.MaterialActive()) {
+                material.AppendMenu(MF_STRING | MF_DISABLED, 0, L"Unavailable: solid fallback (see material log)");
+                material.AppendMenu(MF_SEPARATOR);
+            }
             material.AppendMenu(MF_STRING | (selected == 1 ? MF_CHECKED : 0), M_MATERIAL_SOLID, L"Solid");
             material.AppendMenu(MF_STRING | (selected == 2 ? MF_CHECKED : 0), M_MATERIAL_MICA, L"Mica");
             material.AppendMenu(MF_STRING | (selected == 3 ? MF_CHECKED : 0), M_MATERIAL_ACRYLIC, L"Acrylic");
