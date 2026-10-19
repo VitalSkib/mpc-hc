@@ -11,5 +11,6 @@ public:
     bool Start(HWND window, int mode);
     void Reset();
     bool Active() const;
+    bool SetRevealOffset(float offset);
     bool UpdateForeground(const void* premultipliedBGRA, int width, int height);
 };

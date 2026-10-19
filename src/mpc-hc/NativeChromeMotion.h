@@ -120,8 +120,8 @@ public:
         if (GetSafeHwnd()) KillTimer(1);
         for (auto& mask : m_masks) {
             if (::IsWindow(mask.window)) {
-                if (::SetWindowRgn(mask.window, mask.original, TRUE)) mask.original = nullptr;
-                ::RedrawWindow(mask.window, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+                if (::SetWindowRgn(mask.window, mask.original, FALSE)) mask.original = nullptr;
+                ::RedrawWindow(mask.window, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN);
             }
             if (mask.original) ::DeleteObject(mask.original);
         }

@@ -397,10 +397,18 @@ bool CNativePlaylistPopup::BeginLiveSlide()
     // Prepare the complete foreground before exposing any part of the material.
     UpdateMaterialForeground();
     if (!m_materialActive) return BeginReveal();
+    // Never move the HWND below the player. Only the composition tree slides.
+    // The nonclient border/shadow cannot be clipped with the visual tree, so
+    // defer those until the final frame instead of letting them escape the band.
+    if (!m_systemMaterial.SetRevealOffset(static_cast<float>(m_liveSlideRect.Height()))) return false;
+    const COLORREF noBorder = 0xFFFFFFFE;
+    const DWMNCRENDERINGPOLICY noFrame = DWMNCRP_DISABLED;
+    DwmSetWindowAttribute(m_hWnd, DWMWA_NCRENDERING_POLICY, &noFrame, sizeof(noFrame));
+    DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(34), &noBorder, sizeof(noBorder));
     m_liveSliding = true; m_liveSlideStart = 0;
     SetWindowRgn(::CreateRectRgn(0, 0, 0, 0), FALSE);
-    SetWindowPos(&wndTop, m_liveSlideRect.left, m_liveSlideRect.bottom, 0, 0,
-        SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    SetWindowPos(&wndTop, 0, 0, 0, 0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
     if (!SetTimer(4, 15, nullptr)) { EndLiveSlide(true); return false; }
     return true;
 }
@@ -412,12 +420,10 @@ void CNativePlaylistPopup::TickLiveSlide()
     const double progress = std::min(1.0, (GetTickCount64() - m_liveSlideStart) / 160.0);
     const double eased = 1.0 - std::pow(1.0 - progress, 3.0);
     const int offset = static_cast<int>(m_liveSlideRect.Height() * (1.0 - eased));
-    SetWindowPos(nullptr, m_liveSlideRect.left, m_liveSlideRect.top + offset, 0, 0,
-        SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
-    // The one live HWND contains both material and foreground. Clip it to the
-    // final band instead of moving individual layers or sampling the backdrop.
-    SetWindowRgn(::CreateRectRgn(0, 0, m_liveSlideRect.Width(),
-        std::max(0, m_liveSlideRect.Height() - offset)), TRUE);
+    if (!m_systemMaterial.SetRevealOffset(static_cast<float>(offset))) {
+        EndLiveSlide(true); return;
+    }
+    SetWindowRgn(::CreateRectRgn(0, offset, m_liveSlideRect.Width(), m_liveSlideRect.Height()), TRUE);
     if (progress >= 1.0) EndLiveSlide(true);
 }
 
@@ -426,9 +432,12 @@ void CNativePlaylistPopup::EndLiveSlide(bool show)
     if (!m_liveSliding) return;
     KillTimer(4); m_liveSliding = false;
     if (!show) ShowWindow(SW_HIDE);
-    SetWindowPos(nullptr, m_liveSlideRect.left, m_liveSlideRect.top, 0, 0,
-        SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    m_systemMaterial.SetRevealOffset(0.f);
     SetWindowRgn(nullptr, TRUE);
+    const DWMNCRENDERINGPOLICY frame = DWMNCRP_ENABLED;
+    const COLORREF border = BorderColor();
+    DwmSetWindowAttribute(m_hWnd, DWMWA_NCRENDERING_POLICY, &frame, sizeof(frame));
+    DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(34), &border, sizeof(border));
 }
 
 bool CNativePlaylistPopup::BeginReveal(bool fading)

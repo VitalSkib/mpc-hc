@@ -217,6 +217,9 @@ NativeChromeImage CChildView::CaptureBottomChrome(const CRect& screenBand)
 void CChildView::PrepareNativeControlsMotion(bool hiding)
 {
     if (m_refreshingNativeDecoration) return;
+    // Toolbar-set changes are not necessarily visibility transitions. In
+    // particular, mouse observations must not tear down an in-flight reveal.
+    if (m_chromeKnown && hiding == !m_chromeBottomVisible) return;
     m_refreshingNativeDecoration = true;
     struct ResetFlag { bool& flag; ~ResetFlag() { flag = false; } } reset{m_refreshingNativeDecoration};
     m_topChromeSlide.Finish(); m_bottomChromeSlide.Finish();
@@ -243,14 +246,15 @@ void CChildView::PrepareNativeControlsMotion(bool hiding)
                 {m_pMainFrame->m_wndSeekBar.GetSafeHwnd(), m_pMainFrame->m_wndToolBar.GetSafeHwnd(),
                     m_nativeBackdrop.GetSafeHwnd()});
         if (m_preparedHideMotion) ::DwmFlush();
-    } else if (!hiding && m_chromeKnown && !m_chromeTopVisible && !m_chromeBottomVisible
+    } else if (!hiding && m_chromeKnown && (!m_chromeTopVisible || !m_chromeBottomVisible)
             && m_chromeViewRect == screenView && systemMotion
             && m_pMainFrame->GetLoadState() == MLS::LOADED
             && AfxGetApp()->GetProfileInt(L"Settings", L"FluentChromeAnimation", 1) != 0) {
         // Prevent live controls from flashing at their final positions while
         // native layout and the first complete artwork frame are prepared.
-        m_preparedShowMotion |= m_topChromeSlide.MaskWindows({m_nativeHeader.GetSafeHwnd()});
-        m_preparedShowMotion |= m_bottomChromeSlide.MaskWindows(
+        if (!m_chromeTopVisible)
+            m_preparedShowMotion |= m_topChromeSlide.MaskWindows({m_nativeHeader.GetSafeHwnd()});
+        if (!m_chromeBottomVisible) m_preparedShowMotion |= m_bottomChromeSlide.MaskWindows(
             {m_pMainFrame->m_wndSeekBar.GetSafeHwnd(), m_pMainFrame->m_wndToolBar.GetSafeHwnd(),
                 m_nativeBackdrop.GetSafeHwnd()});
     }
@@ -363,7 +367,12 @@ void CChildView::UpdateNativeDecoration()
                 m_nativeBackdrop.GetSafeHwnd()}, m_preparedShowMotion);
     }
     if (bottomChanged) m_preparedBottomChrome.Clear();
-    if (topChanged || bottomChanged) m_preparedHideMotion = m_preparedShowMotion = false;
+    if (topChanged || bottomChanged) {
+        // Release any preparation mask whose target did not actually change.
+        if (m_preparedShowMotion && !topChanged && !m_topChromeSlide.Running()) m_topChromeSlide.Finish();
+        if (m_preparedShowMotion && !bottomChanged && !m_bottomChromeSlide.Running()) m_bottomChromeSlide.Finish();
+        m_preparedHideMotion = m_preparedShowMotion = false;
+    }
     if (playlist.UsesNativePopup()) {
         // Fill the stable band between caption and full footer, even while
         // those controls are hidden. Position adds the same 12-DIP margins.
