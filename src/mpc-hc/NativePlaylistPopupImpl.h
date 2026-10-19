@@ -332,7 +332,11 @@ void CNativePlaylistPopup::Refresh(const CRect& band, bool show, int dpi, bool c
         m_forceReveal = false;
         return;
     }
-    SetWindowPos(&wndTop, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    // Do not repeatedly raise an already visible owned popup over its menu.
+    // Fullscreen makes the owner/top-level popup topmost, so HWND_TOP here
+    // can cover the native menu on each hover observation tick.
+    if (opening) SetWindowPos(&wndTop, 0, 0, 0, 0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
     m_forceReveal = false;
 }
 
