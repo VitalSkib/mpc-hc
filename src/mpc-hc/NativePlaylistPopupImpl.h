@@ -10,7 +10,7 @@ bool CNativePlaylistPopup::Create(CWnd* owner, CPlayerPlaylistBar* bar)
     m_width = std::clamp<int>(AfxGetApp()->GetProfileInt(L"ToolBars\\Playlist", L"PopupWidth", 320), 120, 1200);
     // Give the native erase path the same background as our explicit paint path.
     static const HBRUSH background = ::CreateSolidBrush(SurfaceColor());
-    if (!CreateEx(WS_EX_TOOLWINDOW, AfxRegisterWndClass(CS_DBLCLKS, ::LoadCursor(nullptr, IDC_ARROW), background),
+    if (!CreateEx(WS_EX_TOOLWINDOW, AfxRegisterWndClass(CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW, ::LoadCursor(nullptr, IDC_ARROW), background),
             L"Playlist", WS_POPUP | WS_THICKFRAME | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, CRect(0, 0, 320, 200), owner, 0)) return false;
     Gdiplus::GdiplusStartupInput graphicsStartup;
     Gdiplus::GdiplusStartup(&m_graphicsToken, &graphicsStartup, nullptr);
@@ -30,29 +30,8 @@ void CNativePlaylistPopup::ConfigureSurface()
     DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(38), &none, sizeof(none));
     DwmExtendFrameIntoClientArea(m_hWnd, &solid);
     m_bar->m_listFrame.nativeSurface = true;
-    m_bar->m_list.SetExtendedStyle(m_bar->m_list.GetExtendedStyle() & ~LVS_EX_DOUBLEBUFFER);
-    const int opacity = std::clamp<int>(AfxGetApp()->GetProfileInt(L"ToolBars\\Playlist", L"PopupOpacity", 245), 64, 255);
-    if (opacity < 255) {
-        ModifyStyleEx(0, WS_EX_LAYERED);
-        m_translucent = !!::SetLayeredWindowAttributes(m_hWnd, 0, static_cast<BYTE>(opacity), LWA_ALPHA);
-        if (!m_translucent) ModifyStyleEx(WS_EX_LAYERED, 0);
-        else {
-            m_systemBorder = false; // layered windows use our explicit 8-DIP outline
-            UpdateRoundedRegion();
-
-        }
-    }
-}
-
-void CNativePlaylistPopup::UpdateRoundedRegion()
-{
-    if (!m_translucent) return;
-    CRect rect; GetWindowRect(rect);
-    if (m_regionSize == rect.Size() && m_regionDpi == m_dpi) return;
-    m_regionSize = rect.Size(); m_regionDpi = m_dpi;
-    const int diameter = MulDiv(16, m_dpi, 96);
-    HRGN region = ::CreateRoundRectRgn(0, 0, rect.Width() + 1, rect.Height() + 1, diameter, diameter);
-    if (region && !::SetWindowRgn(m_hWnd, region, FALSE)) ::DeleteObject(region);
+    // Match the upstream non-layered floating playlist and native list buffering.
+    m_bar->m_list.SetExtendedStyle(m_bar->m_list.GetExtendedStyle() | LVS_EX_DOUBLEBUFFER);
 }
 
 CRect CNativePlaylistPopup::CloseRect() const
@@ -107,7 +86,7 @@ void CNativePlaylistPopup::Refresh(const CRect& band, bool show, int dpi, bool a
     }
     if (!IsWindowVisible()) {
         SetWindowPos(&wndTop, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
-        RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+        Invalidate(FALSE);
     }
 }
 
@@ -131,7 +110,7 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
 {
     if (!m_bar) return __super::WindowProc(message, wParam, lParam);
     switch (message) {
-    case WM_NCCALCSIZE: return wParam ? (WVR_ALIGNTOP | WVR_ALIGNRIGHT) : 0;
+    case WM_NCCALCSIZE: return 0; // full client area; normal native resize preservation
     case WM_NCPAINT: return 0; // DWM owns the rounded border; no classic sizing-frame paint
     case WM_NCACTIVATE: return DefWindowProc(message, wParam, -1);
     case WM_NCHITTEST: {
@@ -178,21 +157,7 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
         dc.FillSolidRect(client, SurfaceColor());
         CRect header(client); header.bottom = std::min<LONG>(client.bottom, MulDiv(32, m_dpi, 96));
         dc.FillSolidRect(0, header.bottom - 1, client.Width(), 1, BorderColor());
-        if (!m_systemBorder) {
-            Gdiplus::Graphics graphics(dc.GetSafeHdc());
-            graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
-            const Gdiplus::REAL d = static_cast<Gdiplus::REAL>(MulDiv(16, m_dpi, 96));
-            const Gdiplus::REAL w = static_cast<Gdiplus::REAL>(client.Width() - 1);
-            const Gdiplus::REAL h = static_cast<Gdiplus::REAL>(client.Height() - 1);
-            Gdiplus::GraphicsPath outline;
-            outline.AddArc(0.5f, 0.5f, d, d, 180.0f, 90.0f);
-            outline.AddArc(w - d + 0.5f, 0.5f, d, d, 270.0f, 90.0f);
-            outline.AddArc(w - d + 0.5f, h - d + 0.5f, d, d, 0.0f, 90.0f);
-            outline.AddArc(0.5f, h - d + 0.5f, d, d, 90.0f, 90.0f);
-            outline.CloseFigure();
-            Gdiplus::Pen border(Gdiplus::Color(255, 60, 60, 60), 1.0f);
-            graphics.DrawPath(&border, &outline);
-        }
+        CBrush border(BorderColor()); if (!m_systemBorder) dc.FrameRect(client, &border);
         CRect close = CloseRect();
         if (m_closeHot) dc.FillSolidRect(close, SelectionColor());
         dc.SetBkMode(TRANSPARENT); dc.SetTextColor(RGB(210, 210, 210));
@@ -210,8 +175,7 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
     }
     case WM_SIZE:
         m_bar->ResizeListColumn();
-        UpdateRoundedRegion();
-        RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+        Invalidate(FALSE);
         return 0;
     case WM_SETCURSOR: {
         POINT point; ::GetCursorPos(&point); ScreenToClient(&point);
