@@ -205,6 +205,10 @@ bool CNativePlaylistPopup::BeginReveal()
     dc->IntersectClipRect(0, 0, list.Width(), list.Height());
     m_bar->m_list.SendMessage(WM_PRINT, reinterpret_cast<WPARAM>(m_revealDC),
         PRF_CLIENT | PRF_NONCLIENT | PRF_ERASEBKGND | PRF_CHILDREN);
+    dc->RestoreDC(saved);
+    const int scrollbarClip = dc->SaveDC();
+    dc->SetViewportOrg(list.TopLeft());
+    dc->IntersectClipRect(0, 0, list.Width(), list.Height());
     // Native WM_PRINT uses an unthemed scrollbar. Compose the very same narrow
     // scrollbar renderer used by the live list over it before taking the image.
     CRect listWindow, listClient;
@@ -218,7 +222,7 @@ bool CNativePlaylistPopup::BeginReveal()
     CRect horizontal(listClient.left, listClient.bottom, listClient.right, listWindow.Height() - listClient.top);
     m_bar->m_list.DrawThemedScrollBars(dc, m_bar->m_list.m_hWnd,
         vertical, horizontal, hasVertical, hasHorizontal, hasVertical && hasHorizontal);
-    dc->RestoreDC(saved);
+    dc->RestoreDC(scrollbarClip);
     // Explicitly retain the full header even if a child print path changes its clip.
     const int headerClip = dc->SaveDC();
     dc->IntersectClipRect(0, 0, width, MulDiv(32, m_dpi, 96));
@@ -306,7 +310,7 @@ void CNativePlaylistPopup::EndReveal(bool showLive)
     if (showLive) {
         // Paint the real list while the complete image still covers it, then
         // remove the image. No partially prepared live scrollbar is exposed.
-        CWnd* after = m_revealWindow.GetSafeHwnd() ? &m_revealWindow : &wndTop;
+        const CWnd* after = m_revealWindow.GetSafeHwnd() ? &m_revealWindow : &wndTop;
         SetWindowPos(after, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
         RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
         ::DwmFlush();
