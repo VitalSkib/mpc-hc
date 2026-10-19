@@ -134,9 +134,12 @@ public:
         m_image.Clear(); m_finishing = false;
     }
     bool Begin(CWnd* owner, NativeChromeImage image, bool entering, bool top,
-            const std::vector<HWND>& liveWindows) {
+            const std::vector<HWND>& liveWindows, bool retainMasks = false) {
+        std::vector<Mask> prepared;
+        if (retainMasks) prepared.swap(m_masks);
         Finish();
-        if (!image.Valid()) return false;
+        m_masks.swap(prepared);
+        if (!image.Valid()) { Finish(); return false; }
         m_image = std::move(image); m_entering = entering; m_top = top;
         BITMAPINFO info{}; info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
         info.bmiHeader.biWidth = m_image.rect.Width(); info.bmiHeader.biHeight = -m_image.rect.Height();
@@ -150,20 +153,27 @@ public:
             Finish(); return false;
         }
         if (!Draw(0)) { Finish(); return false; }
+        if (!MaskWindows(liveWindows)) { Finish(); return false; }
+        m_running = true; m_start = 0;
+        SetWindowPos(&wndTop, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        if (!SetTimer(1, 15, nullptr)) { Finish(); return false; }
+        return true;
+    }
+    bool MaskWindows(const std::vector<HWND>& liveWindows) {
         for (HWND window : liveWindows) {
             if (!::IsWindow(window)) continue;
+            if (std::any_of(m_masks.begin(), m_masks.end(), [window](const Mask& mask) { return mask.window == window; })) continue;
             HRGN original = ::CreateRectRgn(0, 0, 0, 0);
+            if (!original) { Finish(); return false; }
             if (::GetWindowRgn(window, original) == ERROR) { ::DeleteObject(original); original = nullptr; }
             HRGN empty = ::CreateRectRgn(0, 0, 0, 0);
+            if (!empty) { if (original) ::DeleteObject(original); Finish(); return false; }
             if (!::SetWindowRgn(window, empty, FALSE)) {
                 ::DeleteObject(empty); if (original) ::DeleteObject(original);
                 Finish(); return false;
             }
             m_masks.push_back({window, original});
         }
-        m_running = true; m_start = 0;
-        SetWindowPos(&wndTop, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
-        if (!SetTimer(1, 15, nullptr)) { Finish(); return false; }
         return true;
     }
 };

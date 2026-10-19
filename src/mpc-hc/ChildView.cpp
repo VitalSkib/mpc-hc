@@ -214,15 +214,46 @@ NativeChromeImage CChildView::CaptureBottomChrome(const CRect& screenBand)
     return image;
 }
 
-void CChildView::PrepareNativeControlsMotion()
+void CChildView::PrepareNativeControlsMotion(bool hiding)
 {
     if (m_refreshingNativeDecoration) return;
     m_refreshingNativeDecoration = true;
     struct ResetFlag { bool& flag; ~ResetFlag() { flag = false; } } reset{m_refreshingNativeDecoration};
     m_topChromeSlide.Finish(); m_bottomChromeSlide.Finish();
+    m_preparedHideMotion = false;
+    m_preparedShowMotion = false;
     m_preparedBottomChrome.Clear();
     if (m_chromeKnown && m_chromeBottomVisible && !m_chromeBottomRect.IsRectEmpty())
         m_preparedBottomChrome = CaptureBottomChrome(m_chromeBottomRect);
+    BOOL systemMotion = TRUE; SystemParametersInfo(SPI_GETCLIENTAREAANIMATION, 0, &systemMotion, 0);
+    CRect screenView; GetClientRect(screenView); ClientToScreen(screenView);
+    if (hiding && m_chromeKnown && m_chromeViewRect == screenView && systemMotion
+            && m_pMainFrame->GetLoadState() == MLS::LOADED
+            && AfxGetApp()->GetProfileInt(L"Settings", L"FluentChromeAnimation", 1) != 0) {
+        // Cover the live artwork before native hiding/layout exposes the video.
+        // The clocks start after that layout, on their first animation tick.
+        if (m_chromeTopVisible && m_nativeHeader.GetSafeHwnd()) {
+            NativeChromeImage image; CSize size; m_nativeHeader.GetWindowRect(image.rect);
+            if (m_nativeHeader.CaptureChrome(image.pixels, size))
+                m_preparedHideMotion |= m_topChromeSlide.Begin(m_pMainFrame, std::move(image), false, true,
+                    {m_nativeHeader.GetSafeHwnd()});
+        }
+        if (m_chromeBottomVisible)
+            m_preparedHideMotion |= m_bottomChromeSlide.Begin(m_pMainFrame, m_preparedBottomChrome, false, false,
+                {m_pMainFrame->m_wndSeekBar.GetSafeHwnd(), m_pMainFrame->m_wndToolBar.GetSafeHwnd(),
+                    m_nativeBackdrop.GetSafeHwnd()});
+        if (m_preparedHideMotion) ::DwmFlush();
+    } else if (!hiding && m_chromeKnown && !m_chromeTopVisible && !m_chromeBottomVisible
+            && m_chromeViewRect == screenView && systemMotion
+            && m_pMainFrame->GetLoadState() == MLS::LOADED
+            && AfxGetApp()->GetProfileInt(L"Settings", L"FluentChromeAnimation", 1) != 0) {
+        // Prevent live controls from flashing at their final positions while
+        // native layout and the first complete artwork frame are prepared.
+        m_preparedShowMotion |= m_topChromeSlide.MaskWindows({m_nativeHeader.GetSafeHwnd()});
+        m_preparedShowMotion |= m_bottomChromeSlide.MaskWindows(
+            {m_pMainFrame->m_wndSeekBar.GetSafeHwnd(), m_pMainFrame->m_wndToolBar.GetSafeHwnd(),
+                m_nativeBackdrop.GetSafeHwnd()});
+    }
 }
 
 void CChildView::UpdateNativeDecoration()
@@ -242,7 +273,7 @@ void CChildView::UpdateNativeDecoration()
         if (m_pMainFrame->m_wndPlaylistBar.UsesNativePopup())
             m_pMainFrame->m_wndPlaylistBar.RefreshNativePopup(CRect(0, 0, 0, 0), false, 96);
         m_topChromeSlide.Finish(); m_bottomChromeSlide.Finish();
-        m_chromeKnown = false; m_preparedBottomChrome.Clear();
+        m_chromeKnown = false; m_preparedHideMotion = m_preparedShowMotion = false; m_preparedBottomChrome.Clear();
         m_nativeHeader.Hide(); m_nativeBackdrop.Hide(); return;
     }
     CString title; m_pMainFrame->GetWindowText(title);
@@ -295,7 +326,7 @@ void CChildView::UpdateNativeDecoration()
         && AfxGetApp()->GetProfileInt(L"Settings", L"FluentChromeAnimation", 1) != 0;
     const bool topChanged = m_chromeKnown && headerVisible != m_chromeTopVisible;
     const bool bottomChanged = m_chromeKnown && bottomVisible != m_chromeBottomVisible;
-    if (!sameGeometry || !systemMotion) {
+    if (!animateChrome) {
         m_topChromeSlide.Finish(); m_bottomChromeSlide.Finish();
     }
     NativeChromeImage headerImage;
@@ -317,21 +348,22 @@ void CChildView::UpdateNativeDecoration()
     if (headerVisible) m_nativeHeader.Refresh(this, top, true,
         mediaLoaded ? title : CString(), dpi, m_pMainFrame->IsFullScreenMode() || m_pMainFrame->IsZoomed());
     else m_nativeHeader.Hide();
-    if (animateChrome && topChanged) {
+    if (animateChrome && topChanged && !(m_preparedHideMotion && !headerVisible && m_topChromeSlide.Running())) {
         if (headerVisible) {
             CSize size; m_nativeHeader.GetWindowRect(headerImage.rect);
             if (!m_nativeHeader.CaptureChrome(headerImage.pixels, size)) headerImage.Clear();
         }
         m_topChromeSlide.Begin(m_pMainFrame, std::move(headerImage), headerVisible, true,
-            {m_nativeHeader.GetSafeHwnd()});
+            {m_nativeHeader.GetSafeHwnd()}, m_preparedShowMotion);
     }
-    if (animateChrome && bottomChanged) {
+    if (animateChrome && bottomChanged && !(m_preparedHideMotion && !bottomVisible && m_bottomChromeSlide.Running())) {
         NativeChromeImage image = bottomVisible ? CaptureBottomChrome(screenBottom) : std::move(m_preparedBottomChrome);
         m_bottomChromeSlide.Begin(m_pMainFrame, std::move(image), bottomVisible, false,
             {m_pMainFrame->m_wndSeekBar.GetSafeHwnd(), m_pMainFrame->m_wndToolBar.GetSafeHwnd(),
-                m_nativeBackdrop.GetSafeHwnd()});
+                m_nativeBackdrop.GetSafeHwnd()}, m_preparedShowMotion);
     }
     if (bottomChanged) m_preparedBottomChrome.Clear();
+    if (topChanged || bottomChanged) m_preparedHideMotion = m_preparedShowMotion = false;
     if (playlist.UsesNativePopup()) {
         // Fill the stable band between caption and full footer, even while
         // those controls are hidden. Position adds the same 12-DIP margins.

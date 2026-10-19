@@ -44,6 +44,8 @@ class CChildView : public CMouseWndWithArtView
     NativeChromeImage m_preparedBottomChrome;
     CRect m_chromeViewRect = CRect(0, 0, 0, 0), m_chromeBottomRect = CRect(0, 0, 0, 0);
     bool m_chromeKnown = false, m_chromeTopVisible = false, m_chromeBottomVisible = false;
+    bool m_preparedHideMotion = false;
+    bool m_preparedShowMotion = false;
     NativeChromeImage CaptureBottomChrome(const CRect& screenBand);
 #endif
     bool m_bSwitchingFullscreen;
@@ -59,7 +61,7 @@ class CChildView : public CMouseWndWithArtView
 public:
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
     void UpdateNativeDecoration();
-    void PrepareNativeControlsMotion();
+    void PrepareNativeControlsMotion(bool hiding);
     bool IsNativeHeaderWindow(HWND window) const {
         return window && window == m_nativeHeader.GetSafeHwnd();
     }
