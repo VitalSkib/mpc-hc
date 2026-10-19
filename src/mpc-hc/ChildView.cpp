@@ -204,6 +204,8 @@ void CChildView::UpdateNativeDecoration()
     const bool nativeVisible = m_pMainFrame->m_controls.ToolbarsCoverVideo() && height > 0;
     if (!available || view.IsRectEmpty()) {
         m_pMainFrame->m_wndPlaylistBar.PrepareNativePresentation(false);
+        if (m_pMainFrame->m_wndPlaylistBar.UsesNativePopup())
+            m_pMainFrame->m_wndPlaylistBar.RefreshNativePopup(CRect(0, 0, 0, 0), false, 96);
         m_nativeHeader.Hide(); m_nativeBackdrop.Hide(); return;
     }
     CString title; m_pMainFrame->GetWindowText(title);
@@ -228,7 +230,7 @@ void CChildView::UpdateNativeDecoration()
     const unsigned footerHeight = std::max(height, m_pMainFrame->m_controls.GetToolbarsHeight());
     playlistBand.bottom = std::max(playlistBand.top, LONG(view.bottom - int(footerHeight)));
     ClientToScreen(playlistBand);
-    const bool playlistTransparent = playlist.PrepareNativePresentation(videoLoaded && AppIsThemeLoaded()
+    const bool playlistTransparent = playlist.PrepareNativePresentation(!playlist.UsesNativePopup() && videoLoaded && AppIsThemeLoaded()
         && !playlist.IsFloating() && m_pMainFrame->m_controls.ToolbarsCoverVideo(), playlistBand);
     if (playlistVisible) {
         if (playlistTransparent) playlistArea = playlist.GetNativePresentationRect();
@@ -258,6 +260,14 @@ void CChildView::UpdateNativeDecoration()
     if (headerVisible) m_nativeHeader.Refresh(this, top, true,
         mediaLoaded ? title : CString(), dpi, m_pMainFrame->IsFullScreenMode() || m_pMainFrame->IsZoomed());
     else m_nativeHeader.Hide();
+    if (playlist.UsesNativePopup()) {
+        // The flyout sits above the footer as well as video, without a dock allocation.
+        CRect flyoutBand(view);
+        flyoutBand.top = std::min(view.bottom, LONG(view.top + headerHeight));
+        ClientToScreen(flyoutBand);
+        playlist.nativePopupActivity = [this]() { m_pMainFrame->m_controls.UpdateToolbarsVisibility(); };
+        playlist.RefreshNativePopup(flyoutBand, mediaLoaded, dpi);
+    }
 }
 #endif
 

@@ -189,6 +189,10 @@ bool CMainFrameControls::ControlChecked(Toolbar toolbar)
 
 bool CMainFrameControls::ControlChecked(Panel panel)
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (panel == Panel::PLAYLIST && m_pMainFrame->m_wndPlaylistBar.UsesNativePopup())
+        return m_pMainFrame->m_wndPlaylistBar.NativePopupSelected();
+#endif
     auto pBar = m_panels[panel];
     return pBar->IsAutohidden() || pBar->IsWindowVisible();
 }
@@ -205,6 +209,15 @@ void CMainFrameControls::ToggleControl(Toolbar toolbar)
 
 void CMainFrameControls::ToggleControl(Panel panel)
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (panel == Panel::PLAYLIST && m_pMainFrame->m_wndPlaylistBar.UsesNativePopup()) {
+        m_pMainFrame->m_wndPlaylistBar.ToggleNativePopup();
+        LockHideZone(DOCK_BOTTOM);
+        ShowToolbarsSelection();
+        UpdateToolbarsVisibility();
+        return;
+    }
+#endif
     auto pBar = m_panels[panel];
     if (pBar->IsWindowVisible()) {
         m_pMainFrame->ShowControlBar(pBar, FALSE, FALSE);
@@ -462,6 +475,9 @@ void CMainFrameControls::UpdateToolbarsVisibility()
         if (m_pMainFrame->m_wndSeekBar.DraggingThumb() || m_pMainFrame->m_bTBDropdownActive
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
                 || m_pMainFrame->m_wndToolBar.VolumeFlyoutActive()
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+                || m_pMainFrame->m_wndPlaylistBar.NativePopupInputActive()
+#endif
 #endif
                 ) {
             // show bottom while dragging the seekbar thumb
@@ -602,19 +618,6 @@ void CMainFrameControls::UpdateToolbarsVisibility()
         // always show otherwise
         mask.show(maskAll);
     }
-
-#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-    // Keep the transparent playlist on the native zone hider and its timeout,
-    // but leave its own hover area independently of the bottom controls.
-    auto& nativePlaylist = m_pMainFrame->m_wndPlaylistBar;
-    if (bCanAutoHide && bCanHideDockedPanels && nativePlaylist.IsNativePresentationActive()
-            && !nativePlaylist.IsFloating() && !GetCapture()
-            && !nativePlaylist.HasActivePopup() && m_pMainFrame->m_nTrackedMenuDepth == 0) {
-        if (nativePlaylist.NativeHoverWantsHidden(screenPoint)) {
-            mask.hide(DOCK_RIGHT);
-        }
-    }
-#endif
 
     // we don't care for zone locks if we can't autohide at this point of time
     if (!bCanAutoHide) {
@@ -886,6 +889,9 @@ void CMainFrameControls::EnumPanelZones()
     m_panelDocks.clear();
 
     for (const auto& pair : m_panels) {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        if (pair.first == Panel::PLAYLIST && m_pMainFrame->m_wndPlaylistBar.UsesNativePopup()) continue;
+#endif
         auto& pBar = pair.second;
         if (IsWindow(pBar->m_hWnd) && (pBar->IsAutohidden() || pBar->IsWindowVisible())) {
             DockZone zone = GetPanelZone(pBar);
