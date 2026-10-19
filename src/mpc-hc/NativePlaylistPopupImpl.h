@@ -11,6 +11,7 @@ bool CNativePlaylistPopup::Create(CWnd* owner, CPlayerPlaylistBar* bar)
 {
     m_bar = bar;
     m_materialMode = std::clamp(static_cast<int>(AfxGetApp()->GetProfileInt(L"Settings", L"FluentPlaylistMaterial", 3)), 1, 3);
+    m_materialTint = std::clamp(static_cast<int>(AfxGetApp()->GetProfileInt(L"Settings", L"FluentPlaylistTint", 128)), 0, 255);
     m_bufferedPaintReady = SUCCEEDED(::BufferedPaintInit());
     // Give the native erase path the same background as our explicit paint path.
     static const HBRUSH background = ::CreateSolidBrush(SurfaceColor());
@@ -66,7 +67,7 @@ CRect CNativePlaylistPopup::CloseRect() const
 // Buffered painting copies the complete surface; repeated invalidations cannot
 // accumulate a translucent tint over an earlier frame.
 bool CNativePlaylistPopup::PaintMaterialBuffer(HDC target, const RECT& rect,
-    const std::function<void(HDC)>& draw)
+    const std::function<void(HDC)>& draw, BYTE tint)
 {
     if (rect.right <= rect.left || rect.bottom <= rect.top) return false;
     BP_PAINTPARAMS params = {sizeof(params)};
@@ -86,7 +87,7 @@ bool CNativePlaylistPopup::PaintMaterialBuffer(HDC target, const RECT& rect,
             auto& px = row[x];
             // Only the panel material is translucent. Text, selection, accent,
             // separators and scroll thumb retain their accepted solid artwork.
-            const BYTE alpha = px.rgbRed == 43 && px.rgbGreen == 43 && px.rgbBlue == 43 ? 232 : 255;
+            const BYTE alpha = px.rgbRed == 43 && px.rgbGreen == 43 && px.rgbBlue == 43 ? tint : 255;
             px.rgbRed = static_cast<BYTE>(px.rgbRed * alpha / 255);
             px.rgbGreen = static_cast<BYTE>(px.rgbGreen * alpha / 255);
             px.rgbBlue = static_cast<BYTE>(px.rgbBlue * alpha / 255);
@@ -94,6 +95,14 @@ bool CNativePlaylistPopup::PaintMaterialBuffer(HDC target, const RECT& rect,
         }
     }
     return SUCCEEDED(EndBufferedPaint(paint, TRUE));
+}
+
+void CNativePlaylistPopup::SetMaterialTint(int tint)
+{
+    EndReveal(false);
+    m_materialTint = std::clamp(tint, 0, 255);
+    AfxGetApp()->WriteProfileInt(L"Settings", L"FluentPlaylistTint", m_materialTint);
+    RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN | RDW_UPDATENOW);
 }
 
 void CNativePlaylistPopup::SetMaterialMode(int mode)
@@ -126,7 +135,7 @@ bool CNativePlaylistPopup::PaintMaterialList()
         CRect h(client.left, client.bottom, client.right, area.bottom - client.top);
         m_bar->m_list.DrawThemedScrollBars(dc, m_bar->m_list.m_hWnd,
             v, h, vertical, horizontal, vertical && horizontal);
-    });
+    }, static_cast<BYTE>(m_materialTint));
     m_materialPainting = false;
     return result;
 }
@@ -454,7 +463,7 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
         CPaintDC dc(this);
         CRect client; GetClientRect(client);
         if (!m_materialActive || !PaintMaterialBuffer(dc, client,
-                [this](HDC buffer) { PaintSurface(*CDC::FromHandle(buffer)); })) PaintSurface(dc);
+                [this](HDC buffer) { PaintSurface(*CDC::FromHandle(buffer)); }, static_cast<BYTE>(m_materialTint))) PaintSurface(dc);
         return 0;
     }
     case WM_SIZE:

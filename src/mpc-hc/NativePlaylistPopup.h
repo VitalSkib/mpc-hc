@@ -13,6 +13,7 @@ class CNativePlaylistPopup : public CWnd, public CDropClient {
     bool m_forceReveal = false, m_entered = false, m_closeHot = false, m_closePressed = false;
     bool m_systemBorder = false;
     bool m_materialActive = false, m_materialPainting = false, m_bufferedPaintReady = false;
+    int m_materialTint = 128;
     int m_materialMode = 3; // documented DWM: 1 = solid, 2 = Mica, 3 = Acrylic
     CFont m_titleFont;
     ULONG_PTR m_graphicsToken = 0;
@@ -46,8 +47,10 @@ public:
     bool MaterialActive() const { return m_materialActive; }
     int MaterialMode() const { return m_materialMode; }
     void SetMaterialMode(int mode);
+    int MaterialTint() const { return m_materialTint; }
+    void SetMaterialTint(int tint);
     bool PaintMaterialList();
-    static bool PaintMaterialBuffer(HDC target, const RECT& rect, const std::function<void(HDC)>& draw);
+    static bool PaintMaterialBuffer(HDC target, const RECT& rect, const std::function<void(HDC)>& draw, BYTE tint);
 
     bool Revealing() const { return m_revealing && !m_fading; }
     bool WantsReveal() const;

@@ -88,7 +88,7 @@ LRESULT CPlaylistListFrame::WindowProc(UINT message, WPARAM wParam, LPARAM lPara
             CPaintDC dc(this); CRect rect; GetClientRect(rect);
             CNativePlaylistPopup::PaintMaterialBuffer(dc, rect, [rect](HDC buffer) {
                 CDC::FromHandle(buffer)->FillSolidRect(rect, CNativePlaylistPopup::SurfaceColor());
-            });
+            }, static_cast<BYTE>(popup->MaterialTint()));
             return 0;
         }
     }
@@ -3008,7 +3008,8 @@ void CPlayerPlaylistBar::OnContextMenu(CWnd* /*pWnd*/, CPoint point)
         M_POSITION_FLOAT,
         M_MATERIAL_SOLID,
         M_MATERIAL_MICA,
-        M_MATERIAL_ACRYLIC
+        M_MATERIAL_ACRYLIC,
+        M_TINT_NONE, M_TINT_HALF, M_TINT_DARK, M_TINT_OLD
     };
 
     CAppSettings& s = AfxGetAppSettings();
@@ -3115,6 +3116,12 @@ void CPlayerPlaylistBar::OnContextMenu(CWnd* /*pWnd*/, CPoint point)
             material.AppendMenu(MF_STRING | (selected == 1 ? MF_CHECKED : 0), M_MATERIAL_SOLID, L"Solid");
             material.AppendMenu(MF_STRING | (selected == 2 ? MF_CHECKED : 0), M_MATERIAL_MICA, L"Mica");
             material.AppendMenu(MF_STRING | (selected == 3 ? MF_CHECKED : 0), M_MATERIAL_ACRYLIC, L"Acrylic");
+            material.AppendMenu(MF_SEPARATOR);
+            const int tint = m_nativePopup.MaterialTint();
+            material.AppendMenu(MF_STRING | (tint == 0 ? MF_CHECKED : 0), M_TINT_NONE, L"Dark tint: 0% (system material)");
+            material.AppendMenu(MF_STRING | (tint == 128 ? MF_CHECKED : 0), M_TINT_HALF, L"Dark tint: 50%");
+            material.AppendMenu(MF_STRING | (tint == 192 ? MF_CHECKED : 0), M_TINT_DARK, L"Dark tint: 75%");
+            material.AppendMenu(MF_STRING | (tint == 232 ? MF_CHECKED : 0), M_TINT_OLD, L"Dark tint: 91% (previous test)");
             m.AppendMenu(MF_POPUP, reinterpret_cast<UINT_PTR>(material.GetSafeHmenu()), L"Panel background");
             material.Detach();
         }
@@ -3144,6 +3151,10 @@ void CPlayerPlaylistBar::OnContextMenu(CWnd* /*pWnd*/, CPoint point)
 
     switch (nID) {
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        case M_TINT_NONE: m_nativePopup.SetMaterialTint(0); return;
+        case M_TINT_HALF: m_nativePopup.SetMaterialTint(128); return;
+        case M_TINT_DARK: m_nativePopup.SetMaterialTint(192); return;
+        case M_TINT_OLD: m_nativePopup.SetMaterialTint(232); return;
         case M_MATERIAL_SOLID: m_nativePopup.SetMaterialMode(1); return;
         case M_MATERIAL_MICA: m_nativePopup.SetMaterialMode(2); return;
         case M_MATERIAL_ACRYLIC: m_nativePopup.SetMaterialMode(3); return;
