@@ -94,6 +94,7 @@ private:
 public:
     bool PrepareNativePresentation(bool enabled, const CRect& band = CRect(0, 0, 0, 0));
     CRect GetNativePresentationRect() const;
+    bool IsNativePresentationActive() const { return m_nativeDock.Active(); }
     void UpdateNativeHover();
     LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam) override;
     void NcCalcClient(LPRECT rect, UINT dockId) override;

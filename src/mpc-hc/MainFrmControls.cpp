@@ -603,6 +603,19 @@ void CMainFrameControls::UpdateToolbarsVisibility()
         mask.show(maskAll);
     }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    // Keep the transparent playlist on the native zone hider and its timeout,
+    // but leave its own hover area independently of the bottom controls.
+    auto& nativePlaylist = m_pMainFrame->m_wndPlaylistBar;
+    if (bCanAutoHide && bCanHideDockedPanels && nativePlaylist.IsNativePresentationActive()
+            && !nativePlaylist.IsFloating() && !GetCapture()
+            && !nativePlaylist.HasActivePopup() && m_pMainFrame->m_nTrackedMenuDepth == 0) {
+        if (!nativePlaylist.GetNativePresentationRect().PtInRect(screenPoint)) {
+            mask.hide(DOCK_RIGHT);
+        }
+    }
+#endif
+
     // we don't care for zone locks if we can't autohide at this point of time
     if (!bCanAutoHide) {
         m_zoneHideLocks.clear();

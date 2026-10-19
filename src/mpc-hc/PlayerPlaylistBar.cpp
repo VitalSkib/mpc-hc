@@ -40,7 +40,7 @@
 #undef SubclassWindow
 
 
-// CPlaylistListFrame — thin border container; forwards owner-draw and input messages to bar
+// CPlaylistListFrame â€” thin border container; forwards owner-draw and input messages to bar
 
 BEGIN_MESSAGE_MAP(CPlaylistListFrame, CWnd)
     ON_WM_NCPAINT()
@@ -255,7 +255,19 @@ LRESULT CPlayerPlaylistBar::WindowProc(UINT message, WPARAM wParam, LPARAM lPara
             return 0;
         }
     }
-    return __super::WindowProc(message, wParam, lParam);
+    const LRESULT result = __super::WindowProc(message, wParam, lParam);
+    if (m_nativeDock.Active()) {
+        // The native tracker keeps the dock anchored; repaint its nonclient
+        // button at the new width before the next resize step is displayed.
+        if (message == WM_WINDOWPOSCHANGED) {
+            const auto position = reinterpret_cast<const WINDOWPOS*>(lParam);
+            if (!(position->flags & SWP_NOSIZE)) {
+                RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_FRAME | RDW_UPDATENOW | RDW_NOCHILDREN);
+            }
+        }
+        if (message == WM_NCCALCSIZE && wParam) return WVR_REDRAW;
+    }
+    return result;
 }
 
 CRect CPlayerPlaylistBar::GetNativePresentationRect() const
