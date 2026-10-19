@@ -176,7 +176,7 @@ void CNativePlaylistPopup::HideEnabled(bool animate)
     m_entered = false; m_closeHot = false; m_forceReveal = false;
     BOOL animations = TRUE;
     ::SystemParametersInfo(SPI_GETCLIENTAREAANIMATION, 0, &animations, 0);
-    if (visible && !m_revealing && animate && animations && BeginReveal(true)) return;
+    if (visible && !m_revealing && !m_materialActive && animate && animations && BeginReveal(true)) return;
     EndReveal(false);
     if (IsWindowVisible()) ShowWindow(SW_HIDE);
 }
@@ -229,7 +229,7 @@ void CNativePlaylistPopup::Refresh(const CRect& band, bool show, int dpi, bool c
     const bool opening = !IsWindowVisible();
     BOOL animations = TRUE;
     ::SystemParametersInfo(SPI_GETCLIENTAREAANIMATION, 0, &animations, 0);
-    if (opening && !busy && animations && BeginReveal()) {
+    if (opening && !m_materialActive && !busy && animations && BeginReveal()) {
         m_forceReveal = false;
         return;
     }
