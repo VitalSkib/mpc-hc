@@ -202,9 +202,36 @@ bool CPlayerPlaylistBar::PrepareNativePresentation(bool enabled, const CRect& ba
     } else if (m_nativeClipped) {
         ::SetWindowRgn(m_hWnd, nullptr, TRUE); m_nativeClip.SetRectEmpty(); m_nativeClipped = false;
     }
-    if (active) m_nativeDock.ClipTo(GetNativePresentationRect());
+    if (active) {
+        const CRect visible = GetNativePresentationRect();
+        m_nativeDock.ClipTo(visible);
+        if (IsWindowVisible() && !IsAutohidden()) {
+            CRect frame; m_pMainFrame->GetClientRect(frame); m_pMainFrame->ClientToScreen(frame);
+            m_nativeHoverWidth = visible.Width();
+            m_nativeHoverInsets = CRect(0, visible.top - frame.top,
+                frame.right - visible.right, frame.bottom - visible.bottom);
+        }
+    }
     UpdateNativeHover();
     return active;
+}
+
+bool CPlayerPlaylistBar::NativeHoverWantsHidden(CPoint screenPoint)
+{
+    CRect area; m_pMainFrame->GetClientRect(area); m_pMainFrame->ClientToScreen(area);
+    area.top += m_nativeHoverInsets.top;
+    area.bottom -= m_nativeHoverInsets.bottom;
+    area.right -= m_nativeHoverInsets.right;
+    area.left = area.right - m_nativeHoverWidth;
+    const bool inside = m_nativeHoverWidth > 0 && area.PtInRect(screenPoint);
+    if (IsAutohidden() || !IsWindowVisible()) {
+        m_nativeHoverEntered = false;
+        return !inside;
+    }
+    if (inside) m_nativeHoverEntered = true;
+    // Opening by button/menu has its normal timeout until the first entry.
+    // Once entered, leaving the panel hides it immediately.
+    return m_nativeHoverEntered && !inside;
 }
 
 bool CPlayerPlaylistBar::IsNativeResizeEdge(CPoint screenPoint) const
@@ -262,7 +289,10 @@ LRESULT CPlayerPlaylistBar::WindowProc(UINT message, WPARAM wParam, LPARAM lPara
         if (message == WM_WINDOWPOSCHANGED) {
             const auto position = reinterpret_cast<const WINDOWPOS*>(lParam);
             if (!(position->flags & SWP_NOSIZE)) {
-                RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_FRAME | RDW_UPDATENOW | RDW_NOCHILDREN);
+                // The color-keyed surface belongs to the parent dock, not the
+                // playlist child. Clear its saved pixels along with the frame.
+                GetParent()->RedrawWindow(nullptr, nullptr,
+                    RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN | RDW_UPDATENOW);
             }
         }
         if (message == WM_NCCALCSIZE && wParam) return WVR_REDRAW;

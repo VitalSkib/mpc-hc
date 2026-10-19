@@ -610,7 +610,7 @@ void CMainFrameControls::UpdateToolbarsVisibility()
     if (bCanAutoHide && bCanHideDockedPanels && nativePlaylist.IsNativePresentationActive()
             && !nativePlaylist.IsFloating() && !GetCapture()
             && !nativePlaylist.HasActivePopup() && m_pMainFrame->m_nTrackedMenuDepth == 0) {
-        if (!nativePlaylist.GetNativePresentationRect().PtInRect(screenPoint)) {
+        if (nativePlaylist.NativeHoverWantsHidden(screenPoint)) {
             mask.hide(DOCK_RIGHT);
         }
     }

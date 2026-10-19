@@ -89,12 +89,16 @@ private:
     int m_nativeHotItem = -1, m_nativeTopInset = 0, m_nativeBottomInset = 0;
     CRect m_nativeClip = CRect(0, 0, 0, 0);
     bool m_nativeClipped = false;
+    CRect m_nativeHoverInsets = CRect(0, 0, 0, 0);
+    int m_nativeHoverWidth = 0;
+    bool m_nativeHoverEntered = false;
     static LRESULT CALLBACK NativeListProcedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam,
         UINT_PTR id, DWORD_PTR data);
 public:
     bool PrepareNativePresentation(bool enabled, const CRect& band = CRect(0, 0, 0, 0));
     CRect GetNativePresentationRect() const;
     bool IsNativePresentationActive() const { return m_nativeDock.Active(); }
+    bool NativeHoverWantsHidden(CPoint screenPoint);
     void UpdateNativeHover();
     LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam) override;
     void NcCalcClient(LPRECT rect, UINT dockId) override;
