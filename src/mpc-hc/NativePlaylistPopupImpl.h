@@ -217,6 +217,23 @@ bool CNativePlaylistPopup::PaintMaterialList()
     return true;
 }
 
+void CNativePlaylistPopup::Position()
+{
+    if (m_band.IsRectEmpty()) return;
+    const int gap = MulDiv(12, m_dpi, 96);
+    CRect available(m_band);
+    const int insetX = std::min(gap, std::max(0, (available.Width() - 1) / 2));
+    const int insetY = std::min(gap, std::max(0, (available.Height() - 1) / 2));
+    available.DeflateRect(insetX, insetY);
+    const int preferredWidth = m_bar->m_pMainFrame->IsFullScreenMode() ? 540 : 360;
+    const int width = std::min(MulDiv(preferredWidth, m_dpi, 96), available.Width());
+    const int height = available.Height();
+    CRect rect(available.right - width, available.bottom - height, available.right, available.bottom), before;
+    GetWindowRect(before);
+    if (rect != before) SetWindowPos(nullptr, rect.left, rect.top, rect.Width(), rect.Height(),
+        SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOCOPYBITS);
+}
+
 void CNativePlaylistPopup::RequestOpen()
 {
     m_entered = false;
