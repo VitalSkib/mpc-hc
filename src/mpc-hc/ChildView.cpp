@@ -261,12 +261,13 @@ void CChildView::UpdateNativeDecoration()
         mediaLoaded ? title : CString(), dpi, m_pMainFrame->IsFullScreenMode() || m_pMainFrame->IsZoomed());
     else m_nativeHeader.Hide();
     if (playlist.UsesNativePopup()) {
-        // The flyout sits above the footer as well as video, without a dock allocation.
+        // Keep the button row clickable; the flyout may still cover the seekbar.
         CRect flyoutBand(view);
         flyoutBand.top = std::min(view.bottom, LONG(view.top + headerHeight));
+        flyoutBand.bottom = std::max(flyoutBand.top, LONG(view.bottom - m_pMainFrame->m_dpi.ScaleY(48)));
         ClientToScreen(flyoutBand);
         playlist.nativePopupActivity = [this]() { m_pMainFrame->m_controls.UpdateToolbarsVisibility(); };
-        playlist.RefreshNativePopup(flyoutBand, mediaLoaded, dpi);
+        playlist.RefreshNativePopup(flyoutBand, mediaLoaded, dpi, nativeVisible);
     }
 }
 #endif

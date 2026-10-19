@@ -61,6 +61,7 @@ void CNativePlaylistPopup::RequestOpen()
     ::GetCursorPos(&m_lastInputPoint);
     m_revealUntil = GetTickCount64() + 4000;
     m_entered = false;
+    m_forceReveal = true;
 }
 
 void CNativePlaylistPopup::NoteInput()
@@ -72,15 +73,39 @@ void CNativePlaylistPopup::NoteInput()
     }
 }
 
-void CNativePlaylistPopup::Dismiss()
+CRect CNativePlaylistPopup::HoverRect() const
 {
-    KillTimer(1);
-    m_bar->m_nativePopupSelected = false;
-    ShowWindow(SW_HIDE);
-    m_entered = false;
+    CRect rect; GetWindowRect(rect);
+    rect.right = m_band.right; // bridge the gap to the player right edge
+    return rect;
 }
 
-void CNativePlaylistPopup::Refresh(const CRect& band, bool show, int dpi)
+bool CNativePlaylistPopup::WantsReveal() const
+{
+    if (!m_bar->m_nativePopupSelected || m_band.IsRectEmpty()) return false;
+    CPoint cursor; ::GetCursorPos(&cursor);
+    return m_forceReveal || (!IsWindowVisible() && cursor != m_hiddenPoint && HoverRect().PtInRect(cursor));
+}
+
+void CNativePlaylistPopup::HideEnabled()
+{
+    if (IsWindowVisible()) {
+        ::GetCursorPos(&m_hiddenPoint);
+        ShowWindow(SW_HIDE);
+    }
+    m_entered = false;
+    m_closeHot = false;
+    m_forceReveal = false;
+}
+
+void CNativePlaylistPopup::Dismiss()
+{
+    HideEnabled();
+    m_bar->m_nativePopupSelected = false;
+    KillTimer(1);
+}
+
+void CNativePlaylistPopup::Refresh(const CRect& band, bool show, int dpi, bool controlsVisible)
 {
     m_band = band;
     if (m_dpi != dpi || !m_titleFont.GetSafeHandle()) {
@@ -91,30 +116,31 @@ void CNativePlaylistPopup::Refresh(const CRect& band, bool show, int dpi)
     }
     m_dpi = dpi;
     if (!show || m_band.IsRectEmpty()) {
+        HideEnabled();
         KillTimer(1);
-        if (IsWindowVisible()) ShowWindow(SW_HIDE);
         return;
     }
     Position();
+    SetTimer(1, 100, nullptr); // enabled hidden panels also watch their activation area
+    if (!IsWindowVisible() && WantsReveal()) RequestOpen();
+    if (!IsWindowVisible() && !m_forceReveal) return;
     CPoint cursor; ::GetCursorPos(&cursor);
-    CRect bounds; GetWindowRect(bounds);
-    const bool hovered = bounds.PtInRect(cursor);
+    const bool hovered = HoverRect().PtInRect(cursor);
     if (hovered) m_entered = true;
     const HWND capture = ::GetCapture();
-    const bool busy = m_bar->HasActivePopup() || m_bar->m_bDragging
+    const bool busy = m_bar->HasActivePopup() || m_bar->m_bDragging || GetTickCount64() < m_dropUntil
         || (capture && (capture == m_hWnd || ::IsChild(m_hWnd, capture)));
     if (busy) m_revealUntil = GetTickCount64() + 4000;
     const HWND owner = ::GetWindow(m_hWnd, GW_OWNER);
     CRect ownerBounds; ::GetWindowRect(owner, ownerBounds);
-    // A button-opened flyout has time to receive the cursor. Once entered,
-    // leaving its bounds dismisses it. No edge-hover automatic reopening.
     if (!busy && ((!ownerBounds.PtInRect(cursor) && !hovered)
+            || (!controlsVisible && !m_forceReveal)
             || (m_entered && !hovered) || GetTickCount64() >= m_revealUntil)) {
-        Dismiss();
+        HideEnabled();
         return;
     }
     SetWindowPos(&wndTop, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
-    SetTimer(1, 100, nullptr);
+    m_forceReveal = false;
 }
 
 BOOL CNativePlaylistPopup::PreTranslateMessage(MSG* message)
@@ -130,6 +156,8 @@ void CNativePlaylistPopup::OnDropFiles(CAtlList<CStringW>& files, DROPEFFECT eff
 
 DROPEFFECT CNativePlaylistPopup::OnDropAccept(COleDataObject* data, DWORD keys, CPoint point)
 {
+    m_dropUntil = GetTickCount64() + 500;
+    m_revealUntil = GetTickCount64() + 4000;
     return m_bar ? static_cast<CDropClient*>(m_bar)->OnDropAccept(data, keys, point) : DROPEFFECT_NONE;
 }
 
@@ -227,7 +255,8 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
 
 bool CPlayerPlaylistBar::NativePopupInputActive() const
 {
-    if (!UsesNativePopup() || !m_nativePopup.IsWindowVisible()) return false;
+    if (!UsesNativePopup()) return false;
+    if (!m_nativePopup.IsWindowVisible()) return m_nativePopup.WantsReveal();
     if (HasActivePopup() || m_bDragging) return true;
     HWND capture = ::GetCapture();
     if (capture && (capture == m_hWnd || capture == m_nativePopup.m_hWnd || ::IsChild(m_nativePopup.m_hWnd, capture))) return true;
@@ -236,7 +265,7 @@ bool CPlayerPlaylistBar::NativePopupInputActive() const
     return bounds.PtInRect(point) && ::GetAncestor(target, GA_ROOT) == m_nativePopup.m_hWnd;
 }
 
-void CPlayerPlaylistBar::RefreshNativePopup(const CRect& band, bool show, int dpi)
+void CPlayerPlaylistBar::RefreshNativePopup(const CRect& band, bool show, int dpi, bool controlsVisible)
 {
     if (!UsesNativePopup()) return;
     const auto& settings = AfxGetAppSettings();
@@ -244,6 +273,6 @@ void CPlayerPlaylistBar::RefreshNativePopup(const CRect& band, bool show, int dp
     const bool neverShow = fullscreen && settings.bHideFullscreenControls
         && settings.eHideFullscreenControlsPolicy == CAppSettings::HideFullscreenControlsPolicy::SHOW_NEVER;
     const bool hiddenFullscreen = fullscreen && settings.bHidePlaylistFullScreen;
-    m_nativePopup.Refresh(band, show && m_nativePopupSelected && !hiddenFullscreen && !neverShow, dpi);
+    m_nativePopup.Refresh(band, show && m_nativePopupSelected && !hiddenFullscreen && !neverShow, dpi, controlsVisible);
     UpdateNativeHover();
 }

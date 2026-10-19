@@ -103,7 +103,7 @@ public:
         if (m_nativePopupSelected) m_nativePopup.RequestOpen();
     }
     bool NativePopupInputActive() const;
-    void RefreshNativePopup(const CRect& band, bool show, int dpi);
+    void RefreshNativePopup(const CRect& band, bool show, int dpi, bool controlsVisible = true);
     std::function<void()> nativePopupActivity;
     bool PrepareNativePresentation(bool enabled, const CRect& band = CRect(0, 0, 0, 0));
     CRect GetNativePresentationRect() const;
