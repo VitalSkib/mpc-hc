@@ -288,8 +288,8 @@ bool CNativePlaylistPopup::DrawReveal(double progress)
             | (((source >> 16 & 255) * alpha / sourceAlpha) << 16)
             | (((source >> 8 & 255) * alpha / sourceAlpha) << 8) | ((source & 255) * alpha / sourceAlpha);
     }
-    const POINT dest = m_revealRect.TopLeft(), source = {};
-    const SIZE size = {width, height};
+    POINT dest = m_revealRect.TopLeft(), source = {};
+    SIZE size = {width, height};
     BLENDFUNCTION blend = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
     return !!::UpdateLayeredWindow(m_revealWindow.m_hWnd, nullptr, &dest, &size,
         m_revealDC, &source, 0, &blend, ULW_ALPHA);
