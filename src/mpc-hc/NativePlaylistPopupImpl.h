@@ -128,7 +128,18 @@ void CNativePlaylistPopup::Refresh(const CRect& band, bool show, int dpi, bool c
         HideEnabled();
         return;
     }
-    SetWindowPos(&wndTop, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    const bool opening = !IsWindowVisible();
+    SetWindowPos(&wndTop, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    if (opening) {
+        BOOL animations = TRUE;
+        ::SystemParametersInfo(SPI_GETCLIENTAREAANIMATION, 0, &animations, 0);
+        // Use the system slide/mask animation, without moving or resizing the
+        // live list. Drag/drop reveals stay immediate for uninterrupted input.
+        if (busy || !animations || !::AnimateWindow(m_hWnd, 140, AW_SLIDE | AW_VER_NEGATIVE)) {
+            ShowWindow(SW_SHOWNOACTIVATE);
+        }
+        RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+    }
     m_forceReveal = false;
 }
 
@@ -147,6 +158,28 @@ DROPEFFECT CNativePlaylistPopup::OnDropAccept(COleDataObject* data, DWORD keys, 
 {
     m_dropUntil = GetTickCount64() + 500;
     return m_bar ? static_cast<CDropClient*>(m_bar)->OnDropAccept(data, keys, point) : DROPEFFECT_NONE;
+}
+
+void CNativePlaylistPopup::PaintSurface(CDC& dc)
+{
+    CRect client; GetClientRect(client);
+    dc.FillSolidRect(client, SurfaceColor());
+    CRect header(client); header.bottom = std::min<LONG>(client.bottom, MulDiv(32, m_dpi, 96));
+    dc.FillSolidRect(0, header.bottom - 1, client.Width(), 1, BorderColor());
+    CBrush border(BorderColor()); if (!m_systemBorder) dc.FrameRect(client, &border);
+    CRect close = CloseRect();
+    if (m_closeHot) dc.FillSolidRect(close, SelectionColor());
+    dc.SetBkMode(TRANSPARENT); dc.SetTextColor(RGB(210, 210, 210));
+    CFont* old = dc.SelectObject(m_titleFont.GetSafeHandle() ? &m_titleFont : &m_bar->m_font);
+    CRect title(client); title.left += MulDiv(12, m_dpi, 96); title.right = close.left; title.bottom = close.bottom;
+    CString caption; m_bar->GetWindowText(caption);
+    dc.DrawText(caption, title, DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
+    dc.SelectObject(old);
+    CPen pen(PS_SOLID, 1, CMPCTheme::TextFGColor); CPen* previous = dc.SelectObject(&pen);
+    const CPoint center = close.CenterPoint(); const int half = MulDiv(4, m_dpi, 96);
+    dc.MoveTo(center.x-half, center.y-half); dc.LineTo(center.x+half+1, center.y+half+1);
+    dc.MoveTo(center.x+half, center.y-half); dc.LineTo(center.x-half-1, center.y+half+1);
+    dc.SelectObject(previous);
 }
 
 LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
@@ -174,27 +207,13 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
         return TRUE;
     }
     case WM_PAINT: {
-        CPaintDC paint(this); CRect client; GetClientRect(client);
-        CDC& dc = paint;
-        dc.FillSolidRect(client, SurfaceColor());
-        CRect header(client); header.bottom = std::min<LONG>(client.bottom, MulDiv(32, m_dpi, 96));
-        dc.FillSolidRect(0, header.bottom - 1, client.Width(), 1, BorderColor());
-        CBrush border(BorderColor()); if (!m_systemBorder) dc.FrameRect(client, &border);
-        CRect close = CloseRect();
-        if (m_closeHot) dc.FillSolidRect(close, SelectionColor());
-        dc.SetBkMode(TRANSPARENT); dc.SetTextColor(RGB(210, 210, 210));
-        CFont* old = dc.SelectObject(m_titleFont.GetSafeHandle() ? &m_titleFont : &m_bar->m_font);
-        CRect title(client); title.left += MulDiv(12, m_dpi, 96); title.right = close.left; title.bottom = close.bottom;
-        CString caption; m_bar->GetWindowText(caption);
-        dc.DrawText(caption, title, DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
-        dc.SelectObject(old);
-        CPen pen(PS_SOLID, 1, CMPCTheme::TextFGColor); CPen* previous = dc.SelectObject(&pen);
-        const CPoint center = close.CenterPoint(); const int half = MulDiv(4, m_dpi, 96);
-        dc.MoveTo(center.x-half, center.y-half); dc.LineTo(center.x+half+1, center.y+half+1);
-        dc.MoveTo(center.x+half, center.y-half); dc.LineTo(center.x-half-1, center.y+half+1);
-        dc.SelectObject(previous);
+        CPaintDC dc(this);
+        PaintSurface(dc);
         return 0;
     }
+    case WM_PRINTCLIENT:
+        if (wParam) PaintSurface(*CDC::FromHandle(reinterpret_cast<HDC>(wParam)));
+        return 0;
     case WM_SIZE:
         m_bar->ResizeListColumn();
         RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
