@@ -97,6 +97,7 @@ private:
         UINT_PTR id, DWORD_PTR data);
 public:
     bool UsesNativePopup() const { return m_nativePopup.GetSafeHwnd() != nullptr; }
+    bool NativeMaterialActive() const { return m_nativePopup.MaterialActive(); }
     bool NativePopupSelected() const { return m_nativePopupSelected; }
     void ToggleNativePopup() {
         m_nativePopupSelected = !m_nativePopupSelected;

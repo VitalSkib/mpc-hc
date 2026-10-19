@@ -2,6 +2,7 @@
 #pragma once
 #include "DropTarget.h"
 #include <vector>
+#include <functional>
 class CPlayerPlaylistBar;
 class CNativePlaylistPopup : public CWnd, public CDropClient {
     CPlayerPlaylistBar* m_bar = nullptr;
@@ -11,6 +12,8 @@ class CNativePlaylistPopup : public CWnd, public CDropClient {
     CPoint m_hiddenPoint = CPoint(0, 0);
     bool m_forceReveal = false, m_entered = false, m_closeHot = false, m_closePressed = false;
     bool m_systemBorder = false;
+    bool m_materialActive = false, m_materialPainting = false, m_bufferedPaintReady = false;
+    int m_materialMode = 3; // documented DWM: 1 = solid, 2 = Mica, 3 = Acrylic
     CFont m_titleFont;
     ULONG_PTR m_graphicsToken = 0;
     CRect CloseRect() const;
@@ -40,6 +43,11 @@ public:
     static COLORREF SelectionColor() { return RGB(56, 56, 56); }
     bool Create(CWnd* owner, CPlayerPlaylistBar* bar);
     void ConfigureSurface();
+    bool MaterialActive() const { return m_materialActive; }
+    int MaterialMode() const { return m_materialMode; }
+    void SetMaterialMode(int mode);
+    bool PaintMaterialList();
+    static bool PaintMaterialBuffer(HDC target, const RECT& rect, const std::function<void(HDC)>& draw);
 
     bool Revealing() const { return m_revealing && !m_fading; }
     bool WantsReveal() const;

@@ -4,10 +4,14 @@
 
 #include <gdiplus.h>
 #include <cmath>
+#include <uxtheme.h>
+#pragma comment(lib, "uxtheme.lib")
 
 bool CNativePlaylistPopup::Create(CWnd* owner, CPlayerPlaylistBar* bar)
 {
     m_bar = bar;
+    m_materialMode = std::clamp(static_cast<int>(AfxGetApp()->GetProfileInt(L"Settings", L"FluentPlaylistMaterial", 3)), 1, 3);
+    m_bufferedPaintReady = SUCCEEDED(::BufferedPaintInit());
     // Give the native erase path the same background as our explicit paint path.
     static const HBRUSH background = ::CreateSolidBrush(SurfaceColor());
     if (!CreateEx(WS_EX_TOOLWINDOW, AfxRegisterWndClass(CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW, ::LoadCursor(nullptr, IDC_ARROW), background),
@@ -24,11 +28,26 @@ bool CNativePlaylistPopup::Create(CWnd* owner, CPlayerPlaylistBar* bar)
 
 void CNativePlaylistPopup::ConfigureSurface()
 {
-    // Opaque GDI children: no keyed surfaces, material, or transparent-input routing.
-    const DWORD none = 1;
-    const MARGINS solid = {};
-    DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(38), &none, sizeof(none));
-    DwmExtendFrameIntoClientArea(m_hWnd, &solid);
+    // The backdrop and alpha-aware GDI client share this same HWND/redirection
+    // surface. No keyed child, extra material window or new input routing.
+    const BOOL dark = TRUE;
+    DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(20), &dark, sizeof(dark));
+    HIGHCONTRAST contrast = {sizeof(contrast)};
+    SystemParametersInfo(SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast, 0);
+    DWORD transparency = 1, size = sizeof(transparency);
+    RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+        L"EnableTransparency", RRF_RT_REG_DWORD, nullptr, &transparency, &size);
+    const DWORD requested = m_bufferedPaintReady && transparency && !(contrast.dwFlags & HCF_HIGHCONTRASTON)
+        ? m_materialMode : 1;
+    m_materialActive = requested != 1 && SUCCEEDED(DwmSetWindowAttribute(m_hWnd,
+        static_cast<DWMWINDOWATTRIBUTE>(38), &requested, sizeof(requested)));
+    const MARGINS margins = m_materialActive ? MARGINS{-1, -1, -1, -1} : MARGINS{};
+    if (FAILED(DwmExtendFrameIntoClientArea(m_hWnd, &margins))) m_materialActive = false;
+    if (!m_materialActive) {
+        const DWORD none = 1; const MARGINS solid = {};
+        DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(38), &none, sizeof(none));
+        DwmExtendFrameIntoClientArea(m_hWnd, &solid);
+    }
     m_bar->m_listFrame.nativeSurface = true;
     ::SetPropW(m_bar->m_list.m_hWnd, L"MPC.FluentPlaylistScroll", reinterpret_cast<HANDLE>(1));
     // Match the upstream non-layered floating playlist and native list buffering.
@@ -40,6 +59,76 @@ CRect CNativePlaylistPopup::CloseRect() const
     CRect client; GetClientRect(client);
     const int size = MulDiv(32, m_dpi, 96);
     return CRect(std::max<LONG>(0, client.right - size), 0, client.right, size);
+}
+
+// GDI fills and text do not preserve meaningful alpha. Render the native
+// artwork into a top-down DIB first, then assign premultiplied alpha explicitly.
+// Buffered painting copies the complete surface; repeated invalidations cannot
+// accumulate a translucent tint over an earlier frame.
+bool CNativePlaylistPopup::PaintMaterialBuffer(HDC target, const RECT& rect,
+    const std::function<void(HDC)>& draw)
+{
+    if (rect.right <= rect.left || rect.bottom <= rect.top) return false;
+    BP_PAINTPARAMS params = {sizeof(params)};
+    params.dwFlags = BPPF_ERASE;
+    HDC buffer = nullptr;
+    HPAINTBUFFER paint = BeginBufferedPaint(target, &rect, BPBF_TOPDOWNDIB, &params, &buffer);
+    if (!paint || !buffer) return false;
+    draw(buffer);
+    RGBQUAD* pixels = nullptr; int stride = 0;
+    if (FAILED(GetBufferedPaintBits(paint, &pixels, &stride)) || !pixels) {
+        EndBufferedPaint(paint, FALSE); return false;
+    }
+    GdiFlush();
+    for (int y = 0; y < rect.bottom - rect.top; ++y) {
+        RGBQUAD* row = pixels + static_cast<size_t>(y) * stride;
+        for (int x = 0; x < rect.right - rect.left; ++x) {
+            auto& px = row[x];
+            // Only the panel material is translucent. Text, selection, accent,
+            // separators and scroll thumb retain their accepted solid artwork.
+            const BYTE alpha = px.rgbRed == 43 && px.rgbGreen == 43 && px.rgbBlue == 43 ? 232 : 255;
+            px.rgbRed = static_cast<BYTE>(px.rgbRed * alpha / 255);
+            px.rgbGreen = static_cast<BYTE>(px.rgbGreen * alpha / 255);
+            px.rgbBlue = static_cast<BYTE>(px.rgbBlue * alpha / 255);
+            px.rgbReserved = alpha;
+        }
+    }
+    return SUCCEEDED(EndBufferedPaint(paint, TRUE));
+}
+
+void CNativePlaylistPopup::SetMaterialMode(int mode)
+{
+    if (mode < 1 || mode > 3) return;
+    EndReveal(false);
+    m_materialMode = mode;
+    AfxGetApp()->WriteProfileInt(L"Settings", L"FluentPlaylistMaterial", mode);
+    ConfigureSurface();
+    RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN | RDW_UPDATENOW);
+}
+
+bool CNativePlaylistPopup::PaintMaterialList()
+{
+    if (!m_materialActive || m_materialPainting) return false;
+    CRect bounds; m_bar->m_list.GetWindowRect(bounds);
+    CRect area(0, 0, bounds.Width(), bounds.Height());
+    CWindowDC target(&m_bar->m_list);
+    m_materialPainting = true;
+    const bool result = PaintMaterialBuffer(target, area, [this, area, bounds](HDC buffer) {
+        CDC* dc = CDC::FromHandle(buffer);
+        dc->FillSolidRect(area, SurfaceColor());
+        m_bar->m_list.SendMessage(WM_PRINT, reinterpret_cast<WPARAM>(buffer),
+            PRF_CLIENT | PRF_NONCLIENT | PRF_ERASEBKGND | PRF_CHILDREN);
+        CRect client; m_bar->m_list.GetClientRect(client);
+        m_bar->m_list.ClientToScreen(client); client.OffsetRect(-bounds.TopLeft());
+        const LONG_PTR style = GetWindowLongPtr(m_bar->m_list.m_hWnd, GWL_STYLE);
+        const bool vertical = !!(style & WS_VSCROLL), horizontal = !!(style & WS_HSCROLL);
+        CRect v(client.right, client.top, area.right - client.left, client.bottom);
+        CRect h(client.left, client.bottom, client.right, area.bottom - client.top);
+        m_bar->m_list.DrawThemedScrollBars(dc, m_bar->m_list.m_hWnd,
+            v, h, vertical, horizontal, vertical && horizontal);
+    });
+    m_materialPainting = false;
+    return result;
 }
 
 void CNativePlaylistPopup::Position()
@@ -355,13 +444,18 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
         break;
     case WM_NCLBUTTONDBLCLK: return 0;
     case WM_ERASEBKGND: {
+        if (m_materialActive) return TRUE;
         if (!wParam) return 0;
         CRect client; GetClientRect(client);
         CDC::FromHandle(reinterpret_cast<HDC>(wParam))->FillSolidRect(client, SurfaceColor());
         return TRUE;
     }
     case WM_PAINT: {
-        CPaintDC dc(this); PaintSurface(dc); return 0;
+        CPaintDC dc(this);
+        CRect client; GetClientRect(client);
+        if (!m_materialActive || !PaintMaterialBuffer(dc, client,
+                [this](HDC buffer) { PaintSurface(*CDC::FromHandle(buffer)); })) PaintSurface(dc);
+        return 0;
     }
     case WM_SIZE:
         m_bar->ResizeListColumn();
@@ -393,8 +487,15 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
         m_bar->m_pMainFrame->SetFocus();
         if (m_bar->nativePopupActivity) m_bar->nativePopupActivity();
         return 0;
+    case WM_DWMCOMPOSITIONCHANGED:
+    case WM_THEMECHANGED:
+    case WM_SETTINGCHANGE:
+        ConfigureSurface();
+        RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN);
+        break;
     case WM_NCDESTROY:
         EndReveal(false);
+        if (m_bufferedPaintReady) { ::BufferedPaintUnInit(); m_bufferedPaintReady = false; }
         if (m_graphicsToken) { Gdiplus::GdiplusShutdown(m_graphicsToken); m_graphicsToken = 0; }
         break;
     case WM_CAPTURECHANGED: m_closePressed = false; break;

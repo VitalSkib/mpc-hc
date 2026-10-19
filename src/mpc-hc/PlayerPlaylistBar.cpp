@@ -74,9 +74,23 @@ LRESULT CPlaylistListFrame::WindowProc(UINT message, WPARAM wParam, LPARAM lPara
     if (message == WM_ERASEBKGND && wParam && nativeSurface) {
         // The native list is briefly hidden by WM_SETREDRAW during layout.
         // Its container must clear to the same key, never an uninitialized black surface.
+        auto bar = static_cast<CPlayerPlaylistBar*>(GetParent());
+        if (bar && bar->NativeMaterialActive()) return TRUE;
         CRect rect; GetClientRect(rect);
         CDC::FromHandle(reinterpret_cast<HDC>(wParam))->FillSolidRect(rect, CNativePlaylistPopup::SurfaceColor());
         return TRUE;
+    }
+#endif
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (message == WM_PAINT && nativeSurface) {
+        auto bar = static_cast<CPlayerPlaylistBar*>(GetParent());
+        if (bar && bar->UsesNativePopup() && bar->NativeMaterialActive()) {
+            CPaintDC dc(this); CRect rect; GetClientRect(rect);
+            CNativePlaylistPopup::PaintMaterialBuffer(dc, rect, [rect](HDC buffer) {
+                CDC::FromHandle(buffer)->FillSolidRect(rect, CNativePlaylistPopup::SurfaceColor());
+            });
+            return 0;
+        }
     }
 #endif
     if (CWnd* pBar = GetParent()) {
@@ -292,7 +306,15 @@ LRESULT CALLBACK CPlayerPlaylistBar::NativeListProcedure(HWND window, UINT messa
 {
     auto bar = reinterpret_cast<CPlayerPlaylistBar*>(data);
     if (message == WM_NCDESTROY) ::RemoveWindowSubclass(window, NativeListProcedure, id);
+    else if ((message == WM_PAINT || message == WM_NCPAINT) && bar->UsesNativePopup()
+            && bar->m_nativePopup.MaterialActive()) {
+        if (bar->m_nativePopup.PaintMaterialList()) {
+            if (message == WM_PAINT) ::ValidateRect(window, nullptr);
+            return 0;
+        }
+    }
     else if (message == WM_ERASEBKGND && bar->UsesNativePopup() && wparam) {
+        if (bar->m_nativePopup.MaterialActive()) return TRUE;
         // The themed list's EraseBkgnd hardcodes ContentBGColor below the rows.
         // Paint this popup's actual background/key instead, including the empty area.
         RECT rect; ::GetClientRect(window, &rect);
@@ -2983,7 +3005,10 @@ void CPlayerPlaylistBar::OnContextMenu(CWnd* /*pWnd*/, CPoint point)
         M_POSITION_TOP,
         M_POSITION_RIGHT,
         M_POSITION_BOTTOM,
-        M_POSITION_FLOAT
+        M_POSITION_FLOAT,
+        M_MATERIAL_SOLID,
+        M_MATERIAL_MICA,
+        M_MATERIAL_ACRYLIC
     };
 
     CAppSettings& s = AfxGetAppSettings();
@@ -3083,6 +3108,17 @@ void CPlayerPlaylistBar::OnContextMenu(CWnd* /*pWnd*/, CPoint point)
             m.AppendMenu(MF_STRING | MF_POPUP | MF_ENABLED, (UINT_PTR)positionMenu.GetSafeHmenu(), ResStr(IDS_PLAYLIST_POSITION));
             positionMenu.Detach();
         }
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        if (UsesNativePopup()) {
+            CMenu material; material.CreatePopupMenu();
+            const int selected = m_nativePopup.MaterialMode();
+            material.AppendMenu(MF_STRING | (selected == 1 ? MF_CHECKED : 0), M_MATERIAL_SOLID, L"Solid");
+            material.AppendMenu(MF_STRING | (selected == 2 ? MF_CHECKED : 0), M_MATERIAL_MICA, L"Mica");
+            material.AppendMenu(MF_STRING | (selected == 3 ? MF_CHECKED : 0), M_MATERIAL_ACRYLIC, L"Acrylic");
+            m.AppendMenu(MF_POPUP, reinterpret_cast<UINT_PTR>(material.GetSafeHmenu()), L"Panel background");
+            material.Detach();
+        }
+#endif
         if (AppIsThemeLoaded()) {
             m.fulfillThemeReqs();
         }
@@ -3107,6 +3143,11 @@ void CPlayerPlaylistBar::OnContextMenu(CWnd* /*pWnd*/, CPoint point)
     }
 
     switch (nID) {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        case M_MATERIAL_SOLID: m_nativePopup.SetMaterialMode(1); return;
+        case M_MATERIAL_MICA: m_nativePopup.SetMaterialMode(2); return;
+        case M_MATERIAL_ACRYLIC: m_nativePopup.SetMaterialMode(3); return;
+#endif
         case M_OPEN:
             {
                 CAutoLock pledit(&m_plEditLock);
