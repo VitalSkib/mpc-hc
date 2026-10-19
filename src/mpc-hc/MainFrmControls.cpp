@@ -346,6 +346,12 @@ CSize CMainFrameControls::GetDockZonesMinSize(unsigned uSaneFallback)
 
 bool CMainFrameControls::PanelsCoverVideo() const
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    // Native-host styling test: side docks reserve their normal client space.
+    // Do not extend our renderer HWND or its destination rectangle beneath them.
+    if (m_pMainFrame->m_wndPlaylistBar.UsesNativePlaylistHost()
+            && !m_pMainFrame->IsFullScreenMainFrame()) return false;
+#endif
     const auto& s = AfxGetAppSettings();
     return m_pMainFrame->IsFullScreenMainFrame() && !m_pMainFrame->m_bIsMPCVRExclusiveMode ||
         (!m_pMainFrame->IsD3DFullScreenMode() && s.bHideWindowedControls && s.bHideFullscreenControls && s.bHideFullscreenDockedPanels &&
