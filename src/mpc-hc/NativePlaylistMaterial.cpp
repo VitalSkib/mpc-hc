@@ -1,4 +1,3 @@
-#ifdef MPC_MATERIAL_STANDALONE
 #define NOMINMAX
 #include <windows.h>
 #include <vector>
@@ -7,9 +6,6 @@
 #include <cstring>
 #include <cwchar>
 #include <cstdint>
-#else
-#include "stdafx.h"
-#endif
 #include "NativePlaylistMaterial.h"
 
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
