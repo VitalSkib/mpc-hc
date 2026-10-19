@@ -329,6 +329,9 @@ LRESULT CALLBACK CPlayerPlaylistBar::NativeListProcedure(HWND window, UINT messa
         }
     }
     const LRESULT result = ::DefSubclassProc(window, message, wparam, lparam);
+    if (bar->UsesNativePopup() && bar->m_nativePopup.MaterialActive()
+            && message != WM_PRINT && message != WM_PRINTCLIENT && message != WM_ERASEBKGND)
+        bar->m_nativePopup.QueueMaterialForeground();
     if (message == WM_MOUSEWHEEL || message == WM_VSCROLL || message == WM_HSCROLL) bar->UpdateNativeHover();
     return result;
 }

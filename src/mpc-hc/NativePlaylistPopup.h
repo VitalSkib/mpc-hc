@@ -53,6 +53,9 @@ public:
     int MaterialTint() const { return m_materialTint; }
     void SetMaterialTint(int tint);
     bool PaintMaterialList();
+    void QueueMaterialForeground();
+    void UpdateMaterialForeground();
+    bool m_foregroundPending = false;
     static bool PaintMaterialBuffer(HDC target, const RECT& rect, const std::function<void(HDC)>& draw, BYTE tint);
 
     bool Revealing() const { return m_revealing && !m_fading; }

@@ -14,6 +14,9 @@
 #include <dwmapi.h>
 #include <DispatcherQueue.h>
 #include <windows.ui.composition.interop.h>
+#include <d3d11.h>
+#include <d2d1_1.h>
+#include <winrt/Windows.Graphics.DirectX.h>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.System.h>
 #include <winrt/Windows.UI.Composition.Desktop.h>
@@ -21,6 +24,8 @@
 #include "wasdk-probe/bootstrap-bytes.h"
 #pragma comment(lib, "windowsapp.lib")
 #pragma comment(lib, "CoreMessaging.lib")
+#pragma comment(lib, "d3d11.lib")
+#pragma comment(lib, "d2d1.lib")
 
 namespace {
 void MaterialLog(const char* stage, HRESULT result)
@@ -87,6 +92,10 @@ HRESULT LoadRuntime()
 struct CNativePlaylistMaterial::State {
     winrt::Windows::UI::Composition::Compositor compositor{nullptr};
     winrt::Windows::UI::Composition::Desktop::DesktopWindowTarget target{nullptr};
+    winrt::Windows::UI::Composition::CompositionGraphicsDevice graphics{nullptr};
+    winrt::Windows::UI::Composition::CompositionDrawingSurface foreground{nullptr};
+    winrt::Windows::UI::Composition::SpriteVisual artwork{nullptr};
+    int width = 0, height = 0;
     winrt::Microsoft::UI::Composition::SystemBackdrops::SystemBackdropConfiguration configuration{nullptr};
     winrt::Microsoft::UI::Composition::SystemBackdrops::DesktopAcrylicController acrylic{nullptr};
     winrt::Microsoft::UI::Composition::SystemBackdrops::MicaController mica{nullptr};
@@ -96,7 +105,7 @@ struct CNativePlaylistMaterial::State {
         try { if (acrylic) acrylic.Close(); if (mica) mica.Close(); } catch (...) {}
         acrylic = nullptr; mica = nullptr; configuration = nullptr;
         try { if (target) { target.Root(nullptr); target.Close(); } } catch (...) {}
-        target = nullptr;
+        artwork = nullptr; foreground = nullptr; graphics = nullptr; target = nullptr;
         try { if (compositor) compositor.Close(); } catch (...) {}
         compositor = nullptr;
         if (apartment) RoUninitialize();
@@ -156,6 +165,25 @@ bool CNativePlaylistMaterial::Start(HWND window, int mode)
         }
         MaterialLog("SetTarget; input active = true", attached ? S_OK : E_FAIL);
         if (!attached) return false;
+        // The controller's visual is above HWND GDI. Keep the complete native
+        // artwork in the same visual tree, explicitly above the backdrop.
+        winrt::com_ptr<ID3D11Device> d3d;
+        HRESULT device = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
+            D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0, D3D11_SDK_VERSION,
+            d3d.put(), nullptr, nullptr);
+        if (FAILED(device)) winrt::check_hresult(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr,
+            D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0, D3D11_SDK_VERSION,
+            d3d.put(), nullptr, nullptr));
+        winrt::com_ptr<ID2D1Factory1> factory;
+        winrt::check_hresult(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED,
+            __uuidof(ID2D1Factory1), nullptr, factory.put_void()));
+        winrt::com_ptr<ID2D1Device> d2d;
+        winrt::check_hresult(factory->CreateDevice(d3d.as<IDXGIDevice>().get(), d2d.put()));
+        winrt::check_hresult(state->compositor.as<ABI::Windows::UI::Composition::ICompositorInterop>()->CreateGraphicsDevice(
+            d2d.get(), reinterpret_cast<ABI::Windows::UI::Composition::ICompositionGraphicsDevice**>(winrt::put_abi(state->graphics))));
+        state->artwork = state->compositor.CreateSpriteVisual();
+        state->target.Root().as<winrt::Windows::UI::Composition::ContainerVisual>().Children().InsertAtTop(state->artwork);
+        MaterialLog("Foreground visual above material", S_OK);
         m_state = std::move(state);
         return true;
     } catch (const winrt::hresult_error& error) {
@@ -163,6 +191,42 @@ bool CNativePlaylistMaterial::Start(HWND window, int mode)
     } catch (...) { MaterialLog("Controller setup failed", E_FAIL); }
     return false;
 }
+bool CNativePlaylistMaterial::UpdateForeground(const void* pixels, int width, int height)
+{
+    if (!m_state || !pixels || width <= 0 || height <= 0) return false;
+    try {
+        auto& state = *m_state;
+        if (!state.foreground || state.width != width || state.height != height) {
+            namespace dx = winrt::Windows::Graphics::DirectX;
+            state.foreground = state.graphics.CreateDrawingSurface(
+                {static_cast<float>(width), static_cast<float>(height)},
+                dx::DirectXPixelFormat::B8G8R8A8UIntNormalized, dx::DirectXAlphaMode::Premultiplied);
+            state.artwork.Brush(state.compositor.CreateSurfaceBrush(state.foreground));
+            state.artwork.Size({static_cast<float>(width), static_cast<float>(height)});
+            state.width = width; state.height = height;
+        }
+        auto surface = state.foreground.as<ABI::Windows::UI::Composition::ICompositionDrawingSurfaceInterop>();
+        winrt::com_ptr<ID2D1DeviceContext> dc;
+        POINT offset{};
+        winrt::check_hresult(surface->BeginDraw(nullptr, __uuidof(ID2D1DeviceContext), dc.put_void(), &offset));
+        // Always finish a begun composition update, including an allocation failure.
+        const auto properties = D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_NONE,
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+        winrt::com_ptr<ID2D1Bitmap1> bitmap;
+        const HRESULT upload = dc->CreateBitmap(D2D1::SizeU(width, height), pixels, width * 4, &properties, bitmap.put());
+        if (SUCCEEDED(upload)) {
+            dc->SetDpi(96, 96);
+            dc->SetTransform(D2D1::Matrix3x2F::Translation(static_cast<float>(offset.x), static_cast<float>(offset.y)));
+            dc->Clear(D2D1::ColorF(0, 0, 0, 0));
+            dc->DrawBitmap(bitmap.get(), D2D1::RectF(0, 0, static_cast<float>(width), static_cast<float>(height)));
+        }
+        const HRESULT end = surface->EndDraw();
+        winrt::check_hresult(upload); winrt::check_hresult(end);
+        return true;
+    } catch (const winrt::hresult_error& error) { MaterialLog("Foreground update failed", error.code()); }
+    return false;
+}
+
 bool CNativePlaylistMaterial::Active() const
 {
     if (!m_state) return false;
@@ -182,6 +246,7 @@ bool CNativePlaylistMaterial::Active() const
 struct CNativePlaylistMaterial::State {};
 bool CNativePlaylistMaterial::Start(HWND, int) { return false; }
 bool CNativePlaylistMaterial::Active() const { return false; }
+bool CNativePlaylistMaterial::UpdateForeground(const void*, int, int) { return false; }
 #endif
 
 CNativePlaylistMaterial::CNativePlaylistMaterial() = default;

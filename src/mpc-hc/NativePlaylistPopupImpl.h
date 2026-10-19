@@ -58,6 +58,7 @@ void CNativePlaylistPopup::ConfigureSurface()
     ModifyStyleEx(WS_EX_COMPOSITED, m_materialActive ? WS_EX_COMPOSITED : 0);
     m_bar->m_listFrame.ModifyStyleEx(WS_EX_TRANSPARENT, m_materialActive ? WS_EX_TRANSPARENT : 0);
     m_bar->m_list.ModifyStyleEx(WS_EX_TRANSPARENT, m_materialActive ? WS_EX_TRANSPARENT : 0);
+    QueueMaterialForeground();
     m_bar->m_listFrame.nativeSurface = true;
     ::SetPropW(m_bar->m_list.m_hWnd, L"MPC.FluentPlaylistScroll", reinterpret_cast<HANDLE>(1));
     // Match the upstream non-layered floating playlist and native list buffering.
@@ -124,46 +125,96 @@ void CNativePlaylistPopup::SetMaterialMode(int mode)
     RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN | RDW_UPDATENOW);
 }
 
+void CNativePlaylistPopup::QueueMaterialForeground()
+{
+    if (!m_materialActive || m_materialPainting || m_foregroundPending) return;
+    m_foregroundPending = true;
+    PostMessage(WM_APP + 0x371);
+}
+
+void CNativePlaylistPopup::UpdateMaterialForeground()
+{
+    if (!m_materialActive || m_materialPainting) return;
+    CRect area; GetClientRect(area);
+    const int width = area.Width(), height = area.Height();
+    if (width <= 0 || height <= 0 || !m_bar->m_list.GetSafeHwnd()) return;
+    CRect origin(area); ClientToScreen(origin);
+    BITMAPINFO info{};
+    info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth = width; info.bmiHeader.biHeight = -height;
+    info.bmiHeader.biPlanes = 1; info.bmiHeader.biBitCount = 32;
+    HDC memory = ::CreateCompatibleDC(nullptr);
+    DWORD* pixels = nullptr;
+    HBITMAP bitmap = ::CreateDIBSection(memory, &info, DIB_RGB_COLORS,
+        reinterpret_cast<void**>(&pixels), nullptr, 0);
+    if (!memory || !bitmap || !pixels) {
+        if (bitmap) ::DeleteObject(bitmap);
+        if (memory) ::DeleteDC(memory);
+        return;
+    }
+    HGDIOBJ old = ::SelectObject(memory, bitmap);
+    CDC* dc = CDC::FromHandle(memory);
+    m_materialPainting = true;
+
+    PaintSurface(*dc);
+    // Print only the native list, at its exact final location. Do not ask the
+    // window manager to separately animate the live client or its DWM frame.
+    CRect list; m_bar->m_list.GetWindowRect(list);
+    list.OffsetRect(-origin.TopLeft());
+    const int saved = dc->SaveDC();
+    dc->SetViewportOrg(list.TopLeft());
+    dc->IntersectClipRect(0, 0, list.Width(), list.Height());
+    m_bar->m_list.SendMessage(WM_PRINT, reinterpret_cast<WPARAM>(memory),
+        PRF_CLIENT | PRF_NONCLIENT | PRF_ERASEBKGND | PRF_CHILDREN);
+    dc->RestoreDC(saved);
+    const int scrollbarClip = dc->SaveDC();
+    dc->SetViewportOrg(list.TopLeft());
+    dc->IntersectClipRect(0, 0, list.Width(), list.Height());
+    // Native WM_PRINT uses an unthemed scrollbar. Compose the very same narrow
+    // scrollbar renderer used by the live list over it before taking the image.
+    CRect listWindow, listClient;
+    m_bar->m_list.GetWindowRect(listWindow); m_bar->m_list.GetClientRect(listClient);
+    m_bar->m_list.ClientToScreen(listClient); listClient.OffsetRect(-listWindow.TopLeft());
+    const LONG_PTR listStyle = ::GetWindowLongPtr(m_bar->m_list.m_hWnd, GWL_STYLE);
+    const bool hasVertical = !!(listStyle & WS_VSCROLL), hasHorizontal = !!(listStyle & WS_HSCROLL);
+    // GetScrollBarInfo reports a hidden parent's bar as invisible. Use its
+    // layout/style here so the print image still gets the dark scrollbar.
+    CRect vertical(listClient.right, listClient.top, listWindow.Width() - listClient.left, listClient.bottom);
+    CRect horizontal(listClient.left, listClient.bottom, listClient.right, listWindow.Height() - listClient.top);
+    m_bar->m_list.DrawThemedScrollBars(dc, m_bar->m_list.m_hWnd,
+        vertical, horizontal, hasVertical, hasHorizontal, hasVertical && hasHorizontal);
+    dc->RestoreDC(scrollbarClip);
+    // Explicitly retain the full header even if a child print path changes its clip.
+    const int headerClip = dc->SaveDC();
+    dc->IntersectClipRect(0, 0, width, MulDiv(32, m_dpi, 96));
+    PaintSurface(*dc); dc->RestoreDC(headerClip);
+
+    ::GdiFlush();
+    for (size_t i = 0; i < static_cast<size_t>(width) * height; ++i) {
+        const DWORD rgb = pixels[i] & 0xffffff;
+        const DWORD alpha = rgb == 0x2b2b2b ? m_materialTint : 255;
+        pixels[i] = (alpha << 24) | (((rgb >> 16 & 255) * alpha / 255) << 16)
+            | (((rgb >> 8 & 255) * alpha / 255) << 8) | ((rgb & 255) * alpha / 255);
+    }
+    const bool updated = m_systemMaterial.UpdateForeground(pixels, width, height);
+    ::SelectObject(memory, old); ::DeleteObject(bitmap); ::DeleteDC(memory);
+    m_materialPainting = false;
+    if (!updated) {
+        // An unsupported/device-lost foreground must leave a readable Solid UI.
+        m_systemMaterial.Reset(); m_materialActive = false;
+        const MARGINS solid{}; DwmExtendFrameIntoClientArea(m_hWnd, &solid);
+        ModifyStyleEx(WS_EX_COMPOSITED, 0);
+        m_bar->m_listFrame.ModifyStyleEx(WS_EX_TRANSPARENT, 0);
+        m_bar->m_list.ModifyStyleEx(WS_EX_TRANSPARENT, 0);
+        RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
+    }
+}
+
 bool CNativePlaylistPopup::PaintMaterialList()
 {
     if (!m_materialActive || m_materialPainting) return false;
-    CRect bounds; m_bar->m_list.GetWindowRect(bounds);
-    CRect area(0, 0, bounds.Width(), bounds.Height());
-    CWindowDC target(&m_bar->m_list);
-    m_materialPainting = true;
-    const bool result = PaintMaterialBuffer(target, area, [this, area, bounds](HDC buffer) {
-        CDC* dc = CDC::FromHandle(buffer);
-        dc->FillSolidRect(area, SurfaceColor());
-        m_bar->m_list.SendMessage(WM_PRINT, reinterpret_cast<WPARAM>(buffer),
-            PRF_CLIENT | PRF_NONCLIENT | PRF_ERASEBKGND | PRF_CHILDREN);
-        CRect client; m_bar->m_list.GetClientRect(client);
-        m_bar->m_list.ClientToScreen(client); client.OffsetRect(-bounds.TopLeft());
-        const LONG_PTR style = GetWindowLongPtr(m_bar->m_list.m_hWnd, GWL_STYLE);
-        const bool vertical = !!(style & WS_VSCROLL), horizontal = !!(style & WS_HSCROLL);
-        CRect v(client.right, client.top, area.right - client.left, client.bottom);
-        CRect h(client.left, client.bottom, client.right, area.bottom - client.top);
-        m_bar->m_list.DrawThemedScrollBars(dc, m_bar->m_list.m_hWnd,
-            v, h, vertical, horizontal, vertical && horizontal);
-    }, static_cast<BYTE>(m_materialTint));
-    m_materialPainting = false;
-    return result;
-}
-
-void CNativePlaylistPopup::Position()
-{
-    if (m_band.IsRectEmpty()) return;
-    const int gap = MulDiv(12, m_dpi, 96);
-    CRect available(m_band);
-    const int insetX = std::min(gap, std::max(0, (available.Width() - 1) / 2));
-    const int insetY = std::min(gap, std::max(0, (available.Height() - 1) / 2));
-    available.DeflateRect(insetX, insetY);
-    const int preferredWidth = m_bar->m_pMainFrame->IsFullScreenMode() ? 540 : 360;
-    const int width = std::min(MulDiv(preferredWidth, m_dpi, 96), available.Width());
-    const int height = available.Height();
-    CRect rect(available.right - width, available.bottom - height, available.right, available.bottom), before;
-    GetWindowRect(before);
-    if (rect != before) SetWindowPos(nullptr, rect.left, rect.top, rect.Width(), rect.Height(),
-        SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOCOPYBITS);
+    QueueMaterialForeground();
+    return true;
 }
 
 void CNativePlaylistPopup::RequestOpen()
@@ -446,6 +497,8 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
 {
     if (!m_bar) return __super::WindowProc(message, wParam, lParam);
     switch (message) {
+    case WM_APP + 0x371:
+        m_foregroundPending = false; UpdateMaterialForeground(); return 0;
     case WM_NCCALCSIZE: return wParam ? WVR_REDRAW : 0;
     case WM_NCPAINT: return 0;
     case WM_NCACTIVATE: return DefWindowProc(message, wParam, -1);
@@ -470,6 +523,7 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
     }
     case WM_PAINT: {
         CPaintDC dc(this);
+        if (m_materialActive) { QueueMaterialForeground(); return 0; }
         CRect client; GetClientRect(client);
         if (!m_materialActive || !PaintMaterialBuffer(dc, client,
                 [this](HDC buffer) { PaintSurface(*CDC::FromHandle(buffer)); }, static_cast<BYTE>(m_materialTint))) PaintSurface(dc);
