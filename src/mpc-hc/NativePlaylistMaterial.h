@@ -10,4 +10,5 @@ public:
     ~CNativePlaylistMaterial();
     bool Start(HWND window, int mode);
     void Reset();
+    bool Active() const;
 };

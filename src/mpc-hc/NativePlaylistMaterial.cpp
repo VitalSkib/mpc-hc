@@ -18,6 +18,7 @@
 #include <dwmapi.h>
 #include <DispatcherQueue.h>
 #include <windows.ui.composition.interop.h>
+#include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.System.h>
 #include <winrt/Windows.UI.Composition.Desktop.h>
 #include <winrt/Microsoft.UI.Composition.SystemBackdrops.h>
@@ -94,6 +95,7 @@ struct CNativePlaylistMaterial::State {
     winrt::Microsoft::UI::Composition::SystemBackdrops::DesktopAcrylicController acrylic{nullptr};
     winrt::Microsoft::UI::Composition::SystemBackdrops::MicaController mica{nullptr};
     bool apartment = false;
+    int lastState = -1;
     ~State() {
         try { if (acrylic) acrylic.Close(); if (mica) mica.Close(); } catch (...) {}
         acrylic = nullptr; mica = nullptr; configuration = nullptr;
@@ -163,9 +165,25 @@ bool CNativePlaylistMaterial::Start(HWND window, int mode)
     } catch (...) { MaterialLog("Controller setup failed", E_FAIL); }
     return false;
 }
+bool CNativePlaylistMaterial::Active() const
+{
+    if (!m_state) return false;
+    try {
+        namespace sb = winrt::Microsoft::UI::Composition::SystemBackdrops;
+        const auto current = m_state->acrylic ? m_state->acrylic.State() : m_state->mica.State();
+        const int value = static_cast<int>(current);
+        if (value != m_state->lastState) {
+            MaterialLog("Current state (0=Active,1=Fallback,2=HighContrast)", static_cast<HRESULT>(value));
+            m_state->lastState = value;
+        }
+        return current == sb::SystemBackdropState::Active;
+    } catch (const winrt::hresult_error& error) { MaterialLog("Read controller state", error.code()); }
+    return false;
+}
 #else
 struct CNativePlaylistMaterial::State {};
 bool CNativePlaylistMaterial::Start(HWND, int) { return false; }
+bool CNativePlaylistMaterial::Active() const { return false; }
 #endif
 
 CNativePlaylistMaterial::CNativePlaylistMaterial() = default;

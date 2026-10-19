@@ -47,6 +47,7 @@ public:
     bool Create(CWnd* owner, CPlayerPlaylistBar* bar);
     void ConfigureSurface();
     bool MaterialActive() const { return m_materialActive; }
+    bool MaterialLive() const { return m_materialActive && m_systemMaterial.Active(); }
     int MaterialMode() const { return m_materialMode; }
     void SetMaterialMode(int mode);
     int MaterialTint() const { return m_materialTint; }
