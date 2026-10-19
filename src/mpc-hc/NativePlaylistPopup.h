@@ -56,6 +56,8 @@ public:
     void QueueMaterialForeground();
     void UpdateMaterialForeground();
     bool m_foregroundPending = false;
+    std::vector<DWORD> m_foregroundPixels;
+    int m_foregroundWidth = 0, m_foregroundHeight = 0;
     static bool PaintMaterialBuffer(HDC target, const RECT& rect, const std::function<void(HDC)>& draw, BYTE tint);
 
     bool Revealing() const { return m_revealing && !m_fading; }

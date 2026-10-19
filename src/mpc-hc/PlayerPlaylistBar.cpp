@@ -309,7 +309,10 @@ LRESULT CALLBACK CPlayerPlaylistBar::NativeListProcedure(HWND window, UINT messa
     else if ((message == WM_PAINT || message == WM_NCPAINT) && bar->UsesNativePopup()
             && bar->m_nativePopup.MaterialActive()) {
         if (bar->m_nativePopup.PaintMaterialList()) {
-            if (message == WM_PAINT) ::ValidateRect(window, nullptr);
+            if (message == WM_PAINT) {
+                PAINTSTRUCT paint{};
+                ::BeginPaint(window, &paint); ::EndPaint(window, &paint);
+            }
             return 0;
         }
     }
@@ -329,9 +332,23 @@ LRESULT CALLBACK CPlayerPlaylistBar::NativeListProcedure(HWND window, UINT messa
         }
     }
     const LRESULT result = ::DefSubclassProc(window, message, wparam, lparam);
-    if (bar->UsesNativePopup() && bar->m_nativePopup.MaterialActive()
-            && message != WM_PRINT && message != WM_PRINTCLIENT && message != WM_ERASEBKGND)
-        bar->m_nativePopup.QueueMaterialForeground();
+    // Read-only native queries (including dialog navigation and item queries)
+    // must never enqueue a composition update. They also run while pumping it.
+    if (bar->UsesNativePopup() && bar->m_nativePopup.MaterialActive()) {
+        switch (message) {
+        case WM_MOUSEMOVE: case WM_MOUSELEAVE:
+        case WM_LBUTTONDOWN: case WM_LBUTTONUP: case WM_LBUTTONDBLCLK:
+        case WM_RBUTTONDOWN: case WM_RBUTTONUP:
+        case WM_KEYDOWN: case WM_KEYUP: case WM_CHAR:
+        case WM_MOUSEWHEEL: case WM_VSCROLL: case WM_HSCROLL:
+        case WM_SIZE: case WM_SETFOCUS: case WM_KILLFOCUS:
+        case LVM_SETITEMSTATE: case LVM_SETITEMCOUNT: case LVM_SETITEMTEXT:
+        case LVM_SETITEM: case LVM_INSERTITEM: case LVM_DELETEITEM:
+        case LVM_DELETEALLITEMS: case LVM_REDRAWITEMS: case LVM_ENSUREVISIBLE:
+        case LVM_SCROLL:
+            bar->m_nativePopup.QueueMaterialForeground(); break;
+        }
+    }
     if (message == WM_MOUSEWHEEL || message == WM_VSCROLL || message == WM_HSCROLL) bar->UpdateNativeHover();
     return result;
 }

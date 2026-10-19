@@ -29,6 +29,8 @@ bool CNativePlaylistPopup::Create(CWnd* owner, CPlayerPlaylistBar* bar)
 
 void CNativePlaylistPopup::ConfigureSurface()
 {
+    KillTimer(3); m_foregroundPending = false;
+    m_foregroundPixels.clear();
     // The backdrop and alpha-aware GDI client share this same HWND/redirection
     // surface. No keyed child, extra material window or new input routing.
     const BOOL dark = TRUE;
@@ -128,8 +130,9 @@ void CNativePlaylistPopup::SetMaterialMode(int mode)
 void CNativePlaylistPopup::QueueMaterialForeground()
 {
     if (!m_materialActive || m_materialPainting || m_foregroundPending) return;
-    m_foregroundPending = true;
-    PostMessage(WM_APP + 0x371);
+    // A posted update can starve input/WM_PAINT when native queries schedule
+    // another update. A one-shot low-priority timer coalesces actual damage.
+    m_foregroundPending = !!SetTimer(3, 16, nullptr);
 }
 
 void CNativePlaylistPopup::UpdateMaterialForeground()
@@ -196,7 +199,17 @@ void CNativePlaylistPopup::UpdateMaterialForeground()
         pixels[i] = (alpha << 24) | (((rgb >> 16 & 255) * alpha / 255) << 16)
             | (((rgb >> 8 & 255) * alpha / 255) << 8) | ((rgb & 255) * alpha / 255);
     }
-    const bool updated = m_systemMaterial.UpdateForeground(pixels, width, height);
+    const size_t count = static_cast<size_t>(width) * height;
+    const bool changed = m_foregroundWidth != width || m_foregroundHeight != height
+        || m_foregroundPixels.size() != count
+        || memcmp(m_foregroundPixels.data(), pixels, count * sizeof(DWORD));
+    // Composition commits can themselves cause paint notifications. Stop that
+    // feedback at the pixel boundary instead of recommitting an identical frame.
+    const bool updated = !changed || m_systemMaterial.UpdateForeground(pixels, width, height);
+    if (updated && changed) {
+        m_foregroundPixels.assign(pixels, pixels + count);
+        m_foregroundWidth = width; m_foregroundHeight = height;
+    }
     ::SelectObject(memory, old); ::DeleteObject(bitmap); ::DeleteDC(memory);
     m_materialPainting = false;
     if (!updated) {
@@ -514,8 +527,6 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
 {
     if (!m_bar) return __super::WindowProc(message, wParam, lParam);
     switch (message) {
-    case WM_APP + 0x371:
-        m_foregroundPending = false; UpdateMaterialForeground(); return 0;
     case WM_NCCALCSIZE: return wParam ? WVR_REDRAW : 0;
     case WM_NCPAINT: return 0;
     case WM_NCACTIVATE: return DefWindowProc(message, wParam, -1);
@@ -524,6 +535,11 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
         if ((wParam & 0xfff0) == SC_MOVE || (wParam & 0xfff0) == SC_SIZE) return 0;
         break;
     case WM_TIMER:
+        if (wParam == 3) {
+            KillTimer(3); m_foregroundPending = false;
+            if (IsWindowVisible()) UpdateMaterialForeground();
+            return 0;
+        }
         if (wParam == 2) { TickReveal(); return 0; }
         if (wParam == 1) {
             if (m_bar->nativePopupActivity) m_bar->nativePopupActivity();
@@ -583,6 +599,7 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
         RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN);
         break;
     case WM_NCDESTROY:
+        KillTimer(3); m_foregroundPending = false; m_foregroundPixels.clear();
         EndReveal(false);
         m_systemMaterial.Reset();
         if (m_bufferedPaintReady) { ::BufferedPaintUnInit(); m_bufferedPaintReady = false; }
