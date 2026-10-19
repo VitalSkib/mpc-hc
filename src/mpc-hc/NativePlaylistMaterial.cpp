@@ -147,12 +147,14 @@ bool CNativePlaylistMaterial::Start(HWND window, int mode)
             if (!sb::DesktopAcrylicController::IsSupported()) { MaterialLog("Acrylic unsupported", E_NOTIMPL); return false; }
             state->acrylic = sb::DesktopAcrylicController();
             state->acrylic.SetSystemBackdropConfiguration(state->configuration);
+            state->acrylic.FallbackColor({255, 43, 43, 43});
             attached = state->acrylic.SetTarget(id, state->target);
             MaterialLog("Acrylic controller state", static_cast<HRESULT>(state->acrylic.State()));
         } else {
             if (!sb::MicaController::IsSupported()) { MaterialLog("Mica unsupported", E_NOTIMPL); return false; }
             state->mica = sb::MicaController();
             state->mica.SetSystemBackdropConfiguration(state->configuration);
+            state->mica.FallbackColor({255, 43, 43, 43});
             attached = state->mica.SetTarget(id, state->target);
             MaterialLog("Mica controller state", static_cast<HRESULT>(state->mica.State()));
         }
