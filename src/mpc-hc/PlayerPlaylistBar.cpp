@@ -74,8 +74,8 @@ LRESULT CPlaylistListFrame::WindowProc(UINT message, WPARAM wParam, LPARAM lPara
     if (message == WM_ERASEBKGND && wParam && nativeSurface) {
         // The native list is briefly hidden by WM_SETREDRAW during layout.
         // Its container must clear to the same key, never an uninitialized black surface.
-        auto bar = static_cast<CPlayerPlaylistBar*>(GetParent());
-        if (bar && bar->NativeMaterialActive()) return TRUE;
+        auto popup = static_cast<CNativePlaylistPopup*>(GetParent());
+        if (popup && popup->MaterialActive()) return TRUE;
         CRect rect; GetClientRect(rect);
         CDC::FromHandle(reinterpret_cast<HDC>(wParam))->FillSolidRect(rect, CNativePlaylistPopup::SurfaceColor());
         return TRUE;
@@ -83,8 +83,8 @@ LRESULT CPlaylistListFrame::WindowProc(UINT message, WPARAM wParam, LPARAM lPara
 #endif
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
     if (message == WM_PAINT && nativeSurface) {
-        auto bar = static_cast<CPlayerPlaylistBar*>(GetParent());
-        if (bar && bar->UsesNativePopup() && bar->NativeMaterialActive()) {
+        auto popup = static_cast<CNativePlaylistPopup*>(GetParent());
+        if (popup && popup->MaterialActive()) {
             CPaintDC dc(this); CRect rect; GetClientRect(rect);
             CNativePlaylistPopup::PaintMaterialBuffer(dc, rect, [rect](HDC buffer) {
                 CDC::FromHandle(buffer)->FillSolidRect(rect, CNativePlaylistPopup::SurfaceColor());
