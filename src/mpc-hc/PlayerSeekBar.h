@@ -27,6 +27,7 @@
 #include "EventDispatcher.h"
 #include "DSMPropertyBag.h"
 #include <memory>
+#include <vector>
 #include "CMPCThemeToolTipCtrl.h"
 
 class CMainFrame;
@@ -36,6 +37,9 @@ class CPlayerSeekBar : public CDialogBar
     DECLARE_DYNAMIC(CPlayerSeekBar)
 
 public:
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    bool CaptureChrome(std::vector<DWORD>& pixels, CSize& size) { return PaintNativeAlpha(&pixels, &size); }
+#endif
     CPlayerSeekBar(CMainFrame* pMainFrame);
     virtual ~CPlayerSeekBar();
     virtual BOOL Create(CWnd* pParentWnd);
@@ -161,7 +165,7 @@ private:
     NativeThumbAnimation m_thumbAnimation;
     ULONG_PTR m_seekbarGraphicsToken = 0;
     bool m_alphaPresentationFailed = false;
-    bool PaintNativeAlpha();
+    bool PaintNativeAlpha(std::vector<DWORD>* capture = nullptr, CSize* captureSize = nullptr);
     CRect m_alphaWindowRect = CRect(0, 0, 0, 0);
     afx_msg void OnWindowPosChanging(WINDOWPOS* position);
     afx_msg void OnWindowPosChanged(WINDOWPOS* position);

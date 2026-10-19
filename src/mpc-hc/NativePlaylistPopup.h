@@ -31,6 +31,12 @@ class CNativePlaylistPopup : public CWnd, public CDropClient {
     CRect m_revealRect = CRect(0, 0, 0, 0);
     ULONGLONG m_revealStart = 0;
     bool m_revealing = false, m_fading = false;
+    bool m_liveSliding = false;
+    CRect m_liveSlideRect = CRect(0, 0, 0, 0);
+    ULONGLONG m_liveSlideStart = 0;
+    bool BeginLiveSlide();
+    void TickLiveSlide();
+    void EndLiveSlide(bool show);
     bool BeginReveal(bool fading = false);
     bool DrawReveal(double progress);
     void TickReveal();
@@ -60,7 +66,7 @@ public:
     int m_foregroundWidth = 0, m_foregroundHeight = 0;
     static bool PaintMaterialBuffer(HDC target, const RECT& rect, const std::function<void(HDC)>& draw, BYTE tint);
 
-    bool Revealing() const { return m_revealing && !m_fading; }
+    bool Revealing() const { return (m_revealing && !m_fading) || m_liveSliding; }
     bool WantsReveal() const;
     void RequestOpen();
     void Refresh(const CRect& band, bool show, int dpi, bool controlsVisible);

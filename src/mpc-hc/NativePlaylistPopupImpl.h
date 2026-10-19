@@ -269,6 +269,7 @@ bool CNativePlaylistPopup::WantsReveal() const
 
 void CNativePlaylistPopup::HideEnabled(bool animate)
 {
+    if (m_liveSliding) { ::GetCursorPos(&m_hiddenPoint); EndLiveSlide(false); }
     if (m_fading) { if (!animate) EndReveal(false); return; }
     const bool visible = !!IsWindowVisible();
     if (visible || m_revealing) ::GetCursorPos(&m_hiddenPoint);
@@ -289,6 +290,7 @@ void CNativePlaylistPopup::Dismiss()
 
 void CNativePlaylistPopup::Refresh(const CRect& band, bool show, int dpi, bool controlsVisible)
 {
+    const bool sameLayout = m_band == band && m_dpi == dpi;
     m_band = band;
     if (m_dpi != dpi || !m_titleFont.GetSafeHandle()) {
         m_titleFont.DeleteObject();
@@ -301,6 +303,10 @@ void CNativePlaylistPopup::Refresh(const CRect& band, bool show, int dpi, bool c
         HideEnabled(!m_band.IsRectEmpty() && !m_bar->m_pMainFrame->IsIconic());
         KillTimer(1);
         return;
+    }
+    if (m_liveSliding) {
+        if (sameLayout) return;
+        EndLiveSlide(true);
     }
     Position();
     SetTimer(1, 100, nullptr); // hover/controls observation only; no independent hide timeout
@@ -328,7 +334,12 @@ void CNativePlaylistPopup::Refresh(const CRect& band, bool show, int dpi, bool c
     const bool opening = !IsWindowVisible();
     BOOL animations = TRUE;
     ::SystemParametersInfo(SPI_GETCLIENTAREAANIMATION, 0, &animations, 0);
-    if (opening && !MaterialLive() && !busy && animations && BeginReveal()) {
+    // A menu command can still hold the menu activity lock on first invocation.
+    // It protects visibility, but must not suppress the entrance animation.
+    const bool dragBusy = m_bar->m_bDragging || GetTickCount64() < m_dropUntil
+        || (capture && (capture == m_hWnd || ::IsChild(m_hWnd, capture)));
+    if (opening && !dragBusy && animations
+            && (m_materialActive ? BeginLiveSlide() : BeginReveal())) {
         m_forceReveal = false;
         return;
     }
@@ -377,6 +388,47 @@ void CNativePlaylistPopup::PaintSurface(CDC& dc)
     dc.MoveTo(center.x-half, center.y-half); dc.LineTo(center.x+half+1, center.y+half+1);
     dc.MoveTo(center.x+half, center.y-half); dc.LineTo(center.x-half-1, center.y+half+1);
     dc.SelectObject(previous);
+}
+
+bool CNativePlaylistPopup::BeginLiveSlide()
+{
+    GetWindowRect(m_liveSlideRect);
+    if (m_liveSlideRect.IsRectEmpty()) return false;
+    // Prepare the complete foreground before exposing any part of the material.
+    UpdateMaterialForeground();
+    if (!m_materialActive) return BeginReveal();
+    m_liveSliding = true; m_liveSlideStart = 0;
+    SetWindowRgn(::CreateRectRgn(0, 0, 0, 0), FALSE);
+    SetWindowPos(&wndTop, m_liveSlideRect.left, m_liveSlideRect.bottom, 0, 0,
+        SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    if (!SetTimer(4, 15, nullptr)) { EndLiveSlide(true); return false; }
+    return true;
+}
+
+void CNativePlaylistPopup::TickLiveSlide()
+{
+    if (!m_liveSliding) return;
+    if (!m_liveSlideStart) m_liveSlideStart = GetTickCount64();
+    const double progress = std::min(1.0, (GetTickCount64() - m_liveSlideStart) / 160.0);
+    const double eased = 1.0 - std::pow(1.0 - progress, 3.0);
+    const int offset = static_cast<int>(m_liveSlideRect.Height() * (1.0 - eased));
+    SetWindowPos(nullptr, m_liveSlideRect.left, m_liveSlideRect.top + offset, 0, 0,
+        SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    // The one live HWND contains both material and foreground. Clip it to the
+    // final band instead of moving individual layers or sampling the backdrop.
+    SetWindowRgn(::CreateRectRgn(0, 0, m_liveSlideRect.Width(),
+        std::max(0, m_liveSlideRect.Height() - offset)), TRUE);
+    if (progress >= 1.0) EndLiveSlide(true);
+}
+
+void CNativePlaylistPopup::EndLiveSlide(bool show)
+{
+    if (!m_liveSliding) return;
+    KillTimer(4); m_liveSliding = false;
+    if (!show) ShowWindow(SW_HIDE);
+    SetWindowPos(nullptr, m_liveSlideRect.left, m_liveSlideRect.top, 0, 0,
+        SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowRgn(nullptr, TRUE);
 }
 
 bool CNativePlaylistPopup::BeginReveal(bool fading)
@@ -463,7 +515,7 @@ bool CNativePlaylistPopup::BeginReveal(bool fading)
             WS_POPUP, m_revealRect, m_bar->m_pMainFrame, 0)) {
         EndReveal(false); return false;
     }
-    m_revealing = true; m_fading = fading; m_revealStart = GetTickCount64();
+    m_revealing = true; m_fading = fading; m_revealStart = 0;
     if (!DrawReveal(0.0)) { EndReveal(false); return false; }
     m_revealWindow.SetWindowPos(&wndTop, 0, 0, 0, 0,
         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
@@ -502,6 +554,7 @@ bool CNativePlaylistPopup::DrawReveal(double progress)
 void CNativePlaylistPopup::TickReveal()
 {
     if (!m_revealing) return;
+    if (!m_revealStart) m_revealStart = GetTickCount64();
     CRect current; GetWindowRect(current);
     if (current != m_revealRect) { EndReveal(!m_fading); return; }
     const double progress = std::min(1.0, (GetTickCount64() - m_revealStart) / (m_fading ? 83.0 : 160.0));
@@ -539,6 +592,7 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
         if ((wParam & 0xfff0) == SC_MOVE || (wParam & 0xfff0) == SC_SIZE) return 0;
         break;
     case WM_TIMER:
+        if (wParam == 4) { TickLiveSlide(); return 0; }
         if (wParam == 3) {
             KillTimer(3); m_foregroundPending = false;
             if (IsWindowVisible()) UpdateMaterialForeground();
@@ -603,6 +657,7 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
         RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN);
         break;
     case WM_NCDESTROY:
+        EndLiveSlide(false);
         KillTimer(3); m_foregroundPending = false; m_foregroundPixels.clear();
         EndReveal(false);
         m_systemMaterial.Reset();

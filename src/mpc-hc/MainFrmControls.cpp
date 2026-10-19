@@ -94,6 +94,10 @@ bool CMainFrameControls::ShowToolbars(UINT nCS)
 #else
     if (nCS != st.nVisibleCS) {
 #endif
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        // Cache the complete footer before native control visibility/layout changes.
+        m_pMainFrame->m_wndView.PrepareNativeControlsMotion();
+#endif
         m_pMainFrame->m_pLastBar = nullptr;
         int i = 1;
         for (const auto& pair : m_toolbars) {

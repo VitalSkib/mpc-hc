@@ -190,6 +190,41 @@ BOOL CChildView::PreTranslateMessage(MSG* pMsg)
 }
 
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+NativeChromeImage CChildView::CaptureBottomChrome(const CRect& screenBand)
+{
+    NativeChromeImage image;
+    image.rect = screenBand;
+    if (screenBand.IsRectEmpty()) return image;
+    image.pixels.assign(static_cast<size_t>(screenBand.Width()) * screenBand.Height(), 0x80000000);
+    std::vector<DWORD> pixels; CSize size;
+    auto& seekbar = m_pMainFrame->m_wndSeekBar;
+    if (seekbar.GetSafeHwnd() && (seekbar.GetStyle() & WS_VISIBLE)) {
+        CRect rect; seekbar.GetWindowRect(rect);
+        if (!seekbar.CaptureChrome(pixels, size) || pixels.empty()) { image.Clear(); return image; }
+        image.Blend(rect, size, pixels);
+    }
+    auto& toolbar = m_pMainFrame->m_wndToolBar;
+    if (toolbar.GetSafeHwnd() && (toolbar.GetStyle() & WS_VISIBLE)) {
+        CRect rect; toolbar.GetClientRect(rect); toolbar.ClientToScreen(rect);
+        if (!NativeChromeImage::PrintToolbar(toolbar, CMPCTheme::PlayerBGColor, pixels, size)) {
+            image.Clear(); return image;
+        }
+        image.Blend(rect, size, pixels);
+    }
+    return image;
+}
+
+void CChildView::PrepareNativeControlsMotion()
+{
+    if (m_refreshingNativeDecoration) return;
+    m_refreshingNativeDecoration = true;
+    struct ResetFlag { bool& flag; ~ResetFlag() { flag = false; } } reset{m_refreshingNativeDecoration};
+    m_topChromeSlide.Finish(); m_bottomChromeSlide.Finish();
+    m_preparedBottomChrome.Clear();
+    if (m_chromeKnown && m_chromeBottomVisible && !m_chromeBottomRect.IsRectEmpty())
+        m_preparedBottomChrome = CaptureBottomChrome(m_chromeBottomRect);
+}
+
 void CChildView::UpdateNativeDecoration()
 {
     if (m_refreshingNativeDecoration || !GetSafeHwnd()) return;
@@ -206,6 +241,8 @@ void CChildView::UpdateNativeDecoration()
         m_pMainFrame->m_wndPlaylistBar.PrepareNativePresentation(false);
         if (m_pMainFrame->m_wndPlaylistBar.UsesNativePopup())
             m_pMainFrame->m_wndPlaylistBar.RefreshNativePopup(CRect(0, 0, 0, 0), false, 96);
+        m_topChromeSlide.Finish(); m_bottomChromeSlide.Finish();
+        m_chromeKnown = false; m_preparedBottomChrome.Clear();
         m_nativeHeader.Hide(); m_nativeBackdrop.Hide(); return;
     }
     CString title; m_pMainFrame->GetWindowText(title);
@@ -251,6 +288,26 @@ void CChildView::UpdateNativeDecoration()
     }
     top.bottom = std::min(bottomVisible ? bottom.top : view.bottom, top.top + headerHeight);
     const bool headerVisible = !mediaLoaded || nativeVisible;
+    CRect screenView(view); ClientToScreen(screenView);
+    BOOL systemMotion = TRUE; SystemParametersInfo(SPI_GETCLIENTAREAANIMATION, 0, &systemMotion, 0);
+    const bool sameGeometry = m_chromeKnown && screenView == m_chromeViewRect;
+    const bool animateChrome = sameGeometry && mediaLoaded && systemMotion
+        && AfxGetApp()->GetProfileInt(L"Settings", L"FluentChromeAnimation", 1) != 0;
+    const bool topChanged = m_chromeKnown && headerVisible != m_chromeTopVisible;
+    const bool bottomChanged = m_chromeKnown && bottomVisible != m_chromeBottomVisible;
+    if (!sameGeometry || !systemMotion) {
+        m_topChromeSlide.Finish(); m_bottomChromeSlide.Finish();
+    }
+    NativeChromeImage headerImage;
+    if (animateChrome && topChanged && !headerVisible && m_nativeHeader.GetSafeHwnd()) {
+        CSize size; m_nativeHeader.GetWindowRect(headerImage.rect);
+        if (!m_nativeHeader.CaptureChrome(headerImage.pixels, size)) headerImage.Clear();
+    }
+    // Stamp native target visibility before region/paint callbacks can reenter.
+    m_chromeKnown = true; m_chromeViewRect = screenView;
+    m_chromeTopVisible = headerVisible; m_chromeBottomVisible = bottomVisible;
+    CRect screenBottom(bottom); ClientToScreen(screenBottom);
+    if (bottomVisible) m_chromeBottomRect = screenBottom;
     m_nativeBackdrop.shadedAreas.clear();
     if (bottomVisible) m_nativeBackdrop.shadedAreas.push_back(bottom);
     if (playlistTransparent && !playlistArea.IsRectEmpty()) m_nativeBackdrop.shadedAreas.push_back(playlistArea);
@@ -260,6 +317,21 @@ void CChildView::UpdateNativeDecoration()
     if (headerVisible) m_nativeHeader.Refresh(this, top, true,
         mediaLoaded ? title : CString(), dpi, m_pMainFrame->IsFullScreenMode() || m_pMainFrame->IsZoomed());
     else m_nativeHeader.Hide();
+    if (animateChrome && topChanged) {
+        if (headerVisible) {
+            CSize size; m_nativeHeader.GetWindowRect(headerImage.rect);
+            if (!m_nativeHeader.CaptureChrome(headerImage.pixels, size)) headerImage.Clear();
+        }
+        m_topChromeSlide.Begin(m_pMainFrame, std::move(headerImage), headerVisible, true,
+            {m_nativeHeader.GetSafeHwnd()});
+    }
+    if (animateChrome && bottomChanged) {
+        NativeChromeImage image = bottomVisible ? CaptureBottomChrome(screenBottom) : std::move(m_preparedBottomChrome);
+        m_bottomChromeSlide.Begin(m_pMainFrame, std::move(image), bottomVisible, false,
+            {m_pMainFrame->m_wndSeekBar.GetSafeHwnd(), m_pMainFrame->m_wndToolBar.GetSafeHwnd(),
+                m_nativeBackdrop.GetSafeHwnd()});
+    }
+    if (bottomChanged) m_preparedBottomChrome.Clear();
     if (playlist.UsesNativePopup()) {
         // Fill the stable band between caption and full footer, even while
         // those controls are hidden. Position adds the same 12-DIP margins.

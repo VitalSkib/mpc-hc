@@ -71,7 +71,7 @@ class CNativeControlsDecoration final : public CWnd
             graphics.DrawLine(&pen, x + radius, y - radius, x - radius, y + radius);
         }
     }
-    bool DrawSurface() {
+    bool DrawSurface(std::vector<DWORD>* capture = nullptr, CSize* captureSize = nullptr) {
         CRect bounds; GetWindowRect(bounds);
         const int width = bounds.Width(), height = bounds.Height();
         if (!m_graphics || width <= 0 || height <= 0) return false;
@@ -125,6 +125,14 @@ class CNativeControlsDecoration final : public CWnd
                 graphics.DrawString(m_title, -1, &font, title, &format, &text);
                 for (int button = 0; button < 3; ++button) DrawWindowButton(graphics, button);
             }
+        }
+        if (capture && captureSize) {
+            ::GdiFlush();
+            const auto data = static_cast<DWORD*>(pixels);
+            capture->assign(data, data + static_cast<size_t>(width) * height);
+            *captureSize = CSize(width, height);
+            ::SelectObject(memory, previous); ::DeleteDC(memory); ::DeleteObject(bitmap);
+            return true;
         }
         POINT source = {};
         SIZE size = {width, height};
@@ -186,6 +194,7 @@ class CNativeControlsDecoration final : public CWnd
     }
 
 public:
+    bool CaptureChrome(std::vector<DWORD>& pixels, CSize& size) { return DrawSurface(&pixels, &size); }
     std::function<bool(Gdiplus::Graphics&, const CRect&, LPCWSTR, bool)> customIcon;
     std::function<void(int)> windowCommand;
     bool semiboldTitle = true;
