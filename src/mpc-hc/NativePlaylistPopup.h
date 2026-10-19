@@ -6,8 +6,8 @@ class CNativePlaylistPopup : public CWnd, public CDropClient {
     CPlayerPlaylistBar* m_bar = nullptr;
     CRect m_band = CRect(0, 0, 0, 0);
     int m_dpi = 96;
-    ULONGLONG m_revealUntil = 0, m_dropUntil = 0;
-    CPoint m_lastInputPoint = CPoint(0, 0), m_hiddenPoint = CPoint(0, 0);
+    ULONGLONG m_dropUntil = 0;
+    CPoint m_hiddenPoint = CPoint(0, 0);
     bool m_forceReveal = false, m_entered = false, m_closeHot = false, m_closePressed = false;
     bool m_systemBorder = false;
     CFont m_titleFont;
@@ -27,7 +27,6 @@ public:
     void ConfigureSurface();
 
     bool WantsReveal() const;
-    void NoteInput();
     void RequestOpen();
     void Refresh(const CRect& band, bool show, int dpi, bool controlsVisible);
     void OnDropFiles(CAtlList<CStringW>& files, DROPEFFECT effect) override;

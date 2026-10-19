@@ -306,8 +306,6 @@ LRESULT CALLBACK CPlayerPlaylistBar::NativeListProcedure(HWND window, UINT messa
             TRACKMOUSEEVENT track = {sizeof(track), TME_LEAVE, window, 0}; ::TrackMouseEvent(&track);
         }
     }
-    if (bar->UsesNativePopup() && (message == WM_MOUSEMOVE || message == WM_MOUSEWHEEL
-            || message == WM_LBUTTONDOWN || message == WM_KEYDOWN)) bar->m_nativePopup.NoteInput();
     const LRESULT result = ::DefSubclassProc(window, message, wparam, lparam);
     if (message == WM_MOUSEWHEEL || message == WM_VSCROLL || message == WM_HSCROLL) bar->UpdateNativeHover();
     return result;
@@ -2249,7 +2247,7 @@ void CPlayerPlaylistBar::ScaleFont()
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
     if (UsesNativePopup()) {
         lf.lfHeight = -m_pMainFrame->m_dpi.ScaleY(14);
-        lf.lfWeight = FW_SEMIBOLD; lf.lfQuality = CLEARTYPE_QUALITY;
+        lf.lfWeight = FW_NORMAL; lf.lfQuality = CLEARTYPE_QUALITY;
         wcscpy_s(lf.lfFaceName, L"Segoe UI");
         m_numberFont.DeleteObject();
         LOGFONT numberFont = lf; numberFont.lfWeight = FW_BOLD;
@@ -2532,7 +2530,7 @@ void CPlayerPlaylistBar::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruc
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
     if (UsesNativePopup()) {
         pDC->SetBkMode(TRANSPARENT);
-        // Native owner draw may supply a playing-item font; always use our Semibold.
+        // Native owner draw may supply a playing-item font; always use the configured Regular font.
         if (m_font.GetSafeHandle()) pDC->SelectObject(&m_font);
     }
 #endif

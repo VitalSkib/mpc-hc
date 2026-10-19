@@ -29,6 +29,7 @@ void CNativePlaylistPopup::ConfigureSurface()
     DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(38), &none, sizeof(none));
     DwmExtendFrameIntoClientArea(m_hWnd, &solid);
     m_bar->m_listFrame.nativeSurface = true;
+    ::SetPropW(m_bar->m_list.m_hWnd, L"MPC.FluentPlaylistScroll", reinterpret_cast<HANDLE>(1));
     // Match the upstream non-layered floating playlist and native list buffering.
     m_bar->m_list.SetExtendedStyle(m_bar->m_list.GetExtendedStyle() | LVS_EX_DOUBLEBUFFER);
 }
@@ -58,19 +59,8 @@ void CNativePlaylistPopup::Position()
 
 void CNativePlaylistPopup::RequestOpen()
 {
-    ::GetCursorPos(&m_lastInputPoint);
-    m_revealUntil = GetTickCount64() + 4000;
     m_entered = false;
     m_forceReveal = true;
-}
-
-void CNativePlaylistPopup::NoteInput()
-{
-    CPoint cursor; ::GetCursorPos(&cursor);
-    if (cursor != m_lastInputPoint) {
-        m_lastInputPoint = cursor;
-        m_revealUntil = GetTickCount64() + 4000;
-    }
 }
 
 CRect CNativePlaylistPopup::HoverRect() const
@@ -121,7 +111,7 @@ void CNativePlaylistPopup::Refresh(const CRect& band, bool show, int dpi, bool c
         return;
     }
     Position();
-    SetTimer(1, 100, nullptr); // enabled hidden panels also watch their activation area
+    SetTimer(1, 100, nullptr); // hover/controls observation only; no independent hide timeout
     if (!IsWindowVisible() && WantsReveal()) RequestOpen();
     if (!IsWindowVisible() && !m_forceReveal) return;
     CPoint cursor; ::GetCursorPos(&cursor);
@@ -130,12 +120,11 @@ void CNativePlaylistPopup::Refresh(const CRect& band, bool show, int dpi, bool c
     const HWND capture = ::GetCapture();
     const bool busy = m_bar->HasActivePopup() || m_bar->m_bDragging || GetTickCount64() < m_dropUntil
         || (capture && (capture == m_hWnd || ::IsChild(m_hWnd, capture)));
-    if (busy) m_revealUntil = GetTickCount64() + 4000;
     const HWND owner = ::GetWindow(m_hWnd, GW_OWNER);
     CRect ownerBounds; ::GetWindowRect(owner, ownerBounds);
     if (!busy && ((!ownerBounds.PtInRect(cursor) && !hovered)
             || (!controlsVisible && !m_forceReveal)
-            || (m_entered && !hovered) || GetTickCount64() >= m_revealUntil)) {
+            || (m_entered && !hovered))) {
         HideEnabled();
         return;
     }
@@ -157,7 +146,6 @@ void CNativePlaylistPopup::OnDropFiles(CAtlList<CStringW>& files, DROPEFFECT eff
 DROPEFFECT CNativePlaylistPopup::OnDropAccept(COleDataObject* data, DWORD keys, CPoint point)
 {
     m_dropUntil = GetTickCount64() + 500;
-    m_revealUntil = GetTickCount64() + 4000;
     return m_bar ? static_cast<CDropClient*>(m_bar)->OnDropAccept(data, keys, point) : DROPEFFECT_NONE;
 }
 
@@ -219,7 +207,6 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
         return 0;
     }
     case WM_MOUSEMOVE: {
-        NoteInput();
         const bool hot = CloseRect().PtInRect(CPoint(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)));
         if (hot != m_closeHot) { m_closeHot = hot; Invalidate(FALSE); }
         TRACKMOUSEEVENT track = {sizeof(track), TME_LEAVE, m_hWnd, 0}; ::TrackMouseEvent(&track);
