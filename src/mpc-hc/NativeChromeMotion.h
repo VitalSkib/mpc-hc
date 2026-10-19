@@ -126,7 +126,9 @@ public:
             if (mask.original) ::DeleteObject(mask.original);
         }
         m_masks.clear();
-        if (GetSafeHwnd()) { ::DwmFlush(); DestroyWindow(); }
+        // Do not flush a frame containing both translucent copies: that would
+        // deliberately present a dark double-background frame at handoff.
+        if (GetSafeHwnd()) DestroyWindow();
         if (m_dc && m_old) ::SelectObject(m_dc, m_old);
         if (m_bitmap) ::DeleteObject(m_bitmap);
         if (m_dc) ::DeleteDC(m_dc);
