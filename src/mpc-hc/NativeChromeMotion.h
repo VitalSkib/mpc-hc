@@ -94,9 +94,9 @@ class CNativeChromeSlide final : public CWnd {
                 memcpy(m_bits + static_cast<size_t>(y) * width,
                     m_image.pixels.data() + static_cast<size_t>(sourceY) * width, width * sizeof(DWORD));
         }
-        POINT destination = m_image.rect.TopLeft(), source{};
+        POINT source{};
         SIZE size = {width, height}; BLENDFUNCTION blend = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
-        return !!::UpdateLayeredWindow(m_hWnd, nullptr, &destination, &size, m_dc, &source, 0, &blend, ULW_ALPHA);
+        return !!::UpdateLayeredWindow(m_hWnd, nullptr, nullptr, &size, m_dc, &source, 0, &blend, ULW_ALPHA);
     }
     LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam) override {
         if (message == WM_ERASEBKGND) return TRUE;
@@ -150,8 +150,12 @@ public:
         m_bitmap = ::CreateDIBSection(m_dc, &info, DIB_RGB_COLORS, reinterpret_cast<void**>(&m_bits), nullptr, 0);
         if (!m_dc || !m_bitmap || !m_bits) { Finish(); return false; }
         m_old = ::SelectObject(m_dc, m_bitmap);
-        if (!CreateEx(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
-                AfxRegisterWndClass(0), L"Native chrome motion", WS_POPUP, m_image.rect, owner, 0)) {
+        // Stay in the player's root HWND tree. An owned popup changes the root
+        // reported by WindowFromPoint and can feed false leave/enter decisions
+        // back into the native controls visibility policy during the animation.
+        CRect clientRect(m_image.rect); owner->ScreenToClient(clientRect);
+        if (!CreateEx(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE,
+                AfxRegisterWndClass(0), L"Native chrome motion", WS_CHILD, clientRect, owner, 0)) {
             Finish(); return false;
         }
         if (!Draw(0)) { Finish(); return false; }
