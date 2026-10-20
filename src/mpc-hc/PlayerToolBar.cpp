@@ -1098,8 +1098,24 @@ CSize CPlayerToolBar::CalcFixedLayout(BOOL stretch, BOOL horizontal)
     return size;
 }
 
+void CPlayerToolBar::PrepareNativePresentation()
+{
+    if (!GetSafeHwnd() || !m_volctrl.GetSafeHwnd() || !m_transportGraphicsToken || !AppIsThemeLoaded()
+            || m_arrangingTransport) return;
+    if (TransportGeometry() != m_transportGeometry) ArrangeControls();
+    // A hidden layered child may never receive WM_PAINT after a resize.
+    // Publish its current surface before the viewport exposes cached pixels.
+    if (m_nativeRenderedRevision != m_nativeSurfaceRevision) {
+        PaintNativeAlpha();
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+        NativeUiDiagnostics::Toolbar(*this, "surface.prepared");
+#endif
+    }
+}
+
 bool CPlayerToolBar::PaintNativeAlpha()
 {
+    const ULONGLONG revision = m_nativeSurfaceRevision;
     CRect bounds; GetWindowRect(bounds);
     const int width = bounds.Width(), height = bounds.Height();
     if (width <= 0 || height <= 0) return false;
@@ -1215,6 +1231,9 @@ bool CPlayerToolBar::PaintNativeAlpha()
     const bool result = !!::UpdateLayeredWindow(m_hWnd, nullptr, nullptr, &size,
         memory, &origin, 0, &blend, ULW_ALPHA);
     ::SelectObject(memory, previous); ::DeleteObject(dib); ::DeleteDC(memory);
+    // Do not consume a newer layout revision if publishing the layered surface
+    // synchronously caused another placement transaction.
+    if (result) m_nativeRenderedRevision = revision;
     return result;
 }
 
@@ -1305,6 +1324,7 @@ bool CPlayerToolBar::ArrangeTransportControls(const CRect& client)
     if (themedToolTip.GetSafeHwnd()) RegisterThemedToolTipTools();
     Invalidate(FALSE);
     m_transportGeometry = TransportGeometry();
+    ++m_nativeSurfaceRevision;
 #ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
     char detail[512] = {};
     _snprintf_s(detail, sizeof(detail), _TRUNCATE,

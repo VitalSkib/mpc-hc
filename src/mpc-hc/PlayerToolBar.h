@@ -93,6 +93,7 @@ private:
     int m_volumeGlyphState = -1;
     std::vector<UINT> m_overflowButtons;
     bool m_arrangingTransport = false;
+    ULONGLONG m_nativeSurfaceRevision = 1, m_nativeRenderedRevision = 0;
     std::vector<LONG> m_transportGeometry;
     std::vector<LONG> TransportGeometry();
     LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam) override;
@@ -160,6 +161,7 @@ public:
     void LoadButtonStrings();
     void ArrangeControls();
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    void PrepareNativePresentation();
     bool RouteTransparentButtonInput(MSG* message);
     bool DrawThemeIcon(Gdiplus::Graphics& graphics, const CRect& rect, LPCWSTR name, bool hot, bool disabled = false);
     bool VolumeFlyoutActive() const;

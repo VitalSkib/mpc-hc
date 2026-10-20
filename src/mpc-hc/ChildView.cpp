@@ -325,6 +325,10 @@ void CChildView::UpdateNativeDecoration()
                 m_nativeBackdrop.separators.push_back(rowTop);
             rowTop += row.second;
         }
+        // Complete layout and update the toolbar's layered bitmap while the
+        // viewport is still hidden/clipped. Showing it must not reuse an image
+        // rendered at the previous fullscreen width.
+        m_pMainFrame->m_wndToolBar.PrepareNativePresentation();
         const CRect footerClient(0, 0, footer.Width(), footer.Height());
         m_nativeBackdrop.shadedAreas = {footerClient}; m_nativeBackdrop.headerExclusion.SetRectEmpty();
         if (!footerClient.IsRectEmpty()) {
