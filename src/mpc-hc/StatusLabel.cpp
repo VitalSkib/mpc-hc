@@ -81,6 +81,7 @@ void CStatusLabel::DrawItem(LPDRAWITEMSTRUCT lpDrawItemStruct)
 #endif
     CDC dc;
     dc.Attach(lpDrawItemStruct->hDC);
+    const int saved = dc.SaveDC();
     dc.SetTextColor(CMPCTheme::InfoBarTextColor);
     dc.SetBkColor(CMPCTheme::InfoBarBGColor);
     CFont* old = dc.SelectObject(&m_font);
@@ -102,7 +103,8 @@ void CStatusLabel::DrawItem(LPDRAWITEMSTRUCT lpDrawItemStruct)
 #endif
     dc.ExcludeClipRect(textRect);
     dc.FillSolidRect(clientRect, CMPCTheme::InfoBarBGColor);
-    dc.SelectObject(&old);
+    if (saved) dc.RestoreDC(saved);
+    else dc.SelectObject(old);
 #ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
     NativeUiDiagnostics::Label(m_hWnd, lpDrawItemStruct->hDC, m_fRightAlign, lpDrawItemStruct->rcItem, "draw.end");
 #endif

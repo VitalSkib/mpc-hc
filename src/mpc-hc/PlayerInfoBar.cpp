@@ -65,6 +65,9 @@ bool CPlayerInfoBar::SetLine(CString label, CString info)
                 } else {
                     m_tooltip.UpdateTipText(info, m_info[idx]);
                 }
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+                InvalidateNativePresentation();
+#endif
             }
             return false;
         }
@@ -133,6 +136,9 @@ void CPlayerInfoBar::RemoveAllLines()
 {
     m_label.RemoveAll();
     m_info.RemoveAll();
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    InvalidateNativePresentation();
+#endif
 
     // invalidate and redraw bypassing message queue
     Invalidate();
@@ -169,6 +175,9 @@ LRESULT CPlayerInfoBar::OnMPCThemeChanged(WPARAM wParam, LPARAM lParam)
         m_info[i]->GetWindowText(info);
         tip.AddTool(m_info[i], info);
     }
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    InvalidateNativePresentation();
+#endif
     return 0;
 }
 
@@ -203,6 +212,9 @@ void CPlayerInfoBar::EventCallback(MpcEvent ev)
             for (size_t i = 0; i < m_info.GetCount(); i++) {
                 m_info[i]->ScaleFont(m_pMainFrame->m_dpi);
             }
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+            Relayout();
+#endif
             break;
 
         default:
@@ -253,7 +265,58 @@ void CPlayerInfoBar::Relayout()
         }
 #endif
     }
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    InvalidateNativePresentation();
+#endif
 }
+
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+void CPlayerInfoBar::InvalidateNativePresentation()
+{
+    ++m_textRevision;
+    if (GetSafeHwnd()) Invalidate(FALSE);
+}
+
+bool CPlayerInfoBar::PublishNativePresentation()
+{
+    if (!m_nativePresentation || m_nativePrinting) return false;
+    const ULONGLONG revision = m_textRevision;
+    m_nativePrinting = true;
+    const bool result = NativeTextBarPresentation::Publish(*this);
+    m_nativePrinting = false;
+    if (result) m_presentedTextRevision = revision;
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+    char state[256] = {};
+    _snprintf_s(state, sizeof(state), _TRUNCATE, "rows=%zu revision=%llu result=%d",
+        m_label.GetCount(), revision, int(result));
+    NativeUiDiagnostics::Write(m_hWnd, "text.native-print-published", state);
+#endif
+    return result;
+}
+
+void CPlayerInfoBar::PrepareNativePresentation()
+{
+    if (!GetSafeHwnd() || m_nativePrinting) return;
+    if (!m_nativePresentation) {
+        // Retire the old SetLayeredWindowAttributes surface before using ULW.
+        ModifyStyleEx(WS_EX_LAYERED, 0);
+        ModifyStyleEx(0, WS_EX_LAYERED);
+        m_nativePresentation = true;
+        InvalidateNativePresentation();
+    }
+    if (m_textRevision != m_presentedTextRevision) PublishNativePresentation();
+}
+
+LRESULT CPlayerInfoBar::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
+{
+    if (message == WM_PAINT && m_nativePresentation) {
+        CPaintDC paint(this);
+        if (!m_nativePrinting) PublishNativePresentation();
+        return 0;
+    }
+    return CDialogBar::WindowProc(message, wParam, lParam);
+}
+#endif
 
 BEGIN_MESSAGE_MAP(CPlayerInfoBar, CDialogBar)
     ON_MPCTHEMECHANGED()
@@ -285,6 +348,9 @@ BOOL CPlayerInfoBar::OnEraseBkgnd(CDC* pDC)
         return FALSE;
     }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    if (m_nativePresentation) return TRUE;
+#endif
     for (CWnd* pChild = GetWindow(GW_CHILD); pChild; pChild = pChild->GetNextWindow()) {
         CRect r;
         pChild->GetClientRect(&r);
@@ -305,13 +371,6 @@ BOOL CPlayerInfoBar::OnEraseBkgnd(CDC* pDC)
         r.InflateRect(1, 0, 1, 0);
     }
 
-#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-    if ((GetExStyle() & WS_EX_LAYERED) && NativeTextBarPresentation::Prepare(*this)) {
-        pDC->FillSolidRect(&r, CMPCTheme::InfoBarBGColor);
-        CRect separator(r.left, r.top, r.right, r.top + 1);
-        pDC->FillSolidRect(&separator, RGB(48, 48, 48));
-    } else
-#endif
     if (AppIsThemeLoaded()) {
         pDC->FillSolidRect(&r, CMPCTheme::InfoBarBorderColor);
     } else {
@@ -331,13 +390,7 @@ void CPlayerInfoBar::OnSize(UINT nType, int cx, int cy)
 
     Relayout();
 
-#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-    // Resizing a keyed bar invalidates its surface, including static names.
-    // Updating values alone cannot repair the unchanged left-hand column.
-    RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN);
-#else
     Invalidate();
-#endif
 }
 
 void CPlayerInfoBar::OnLButtonDown(UINT nFlags, CPoint point)
