@@ -45,11 +45,16 @@ void CNativePlaylistPopup::ConfigureSurface()
         L"EnableTransparency", RRF_RT_REG_DWORD, nullptr, &transparency, &size);
     const DWORD requested = m_bufferedPaintReady && transparency && !(contrast.dwFlags & HCF_HIGHCONTRASTON)
         ? m_materialMode : 1;
+    EndLiveSlide(false);
     m_systemMaterial.Reset();
+    // Composition owns every visible pixel. Native HWNDs retain their input,
+    // layout and WM_PRINT paths, but have no second GDI redirection surface.
+    ModifyStyleEx(WS_EX_COMPOSITED | WS_EX_NOREDIRECTIONBITMAP,
+        requested != 1 ? WS_EX_NOREDIRECTIONBITMAP : 0);
     const DWORD none = 1;
     DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(38), &none, sizeof(none));
     m_materialActive = requested != 1 && m_systemMaterial.Start(m_hWnd, static_cast<int>(requested));
-    const MARGINS margins = m_materialActive ? MARGINS{-1, -1, -1, -1} : MARGINS{};
+    const MARGINS margins{};
     if (FAILED(DwmExtendFrameIntoClientArea(m_hWnd, &margins))) m_materialActive = false;
     if (!m_materialActive) {
         m_systemMaterial.Reset();
@@ -63,10 +68,15 @@ void CNativePlaylistPopup::ConfigureSurface()
     const bool borderSet = SUCCEEDED(DwmSetWindowAttribute(m_hWnd,
         static_cast<DWMWINDOWATTRIBUTE>(34), &border, sizeof(border)));
     m_systemBorder = !m_materialActive && borderSet;
+    const DWMNCRENDERINGPOLICY nonclient = m_materialActive ? DWMNCRP_DISABLED : DWMNCRP_USEWINDOWSTYLE;
+    DwmSetWindowAttribute(m_hWnd, DWMWA_NCRENDERING_POLICY, &nonclient, sizeof(nonclient));
+    const DWORD corners = m_materialActive ? 1 : 2;
+    DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(33), &corners, sizeof(corners));
     // Win32 requires bottom-to-top composited painting and transparent child
     // paint ordering for alpha in descendant HWNDs. These are non-layered
     // windows: WS_EX_TRANSPARENT here changes paint order, not a color key.
-    ModifyStyleEx(WS_EX_COMPOSITED, m_materialActive ? WS_EX_COMPOSITED : 0);
+    ModifyStyleEx(WS_EX_COMPOSITED | WS_EX_NOREDIRECTIONBITMAP,
+        m_materialActive ? WS_EX_NOREDIRECTIONBITMAP : 0);
     m_bar->m_listFrame.ModifyStyleEx(WS_EX_TRANSPARENT, m_materialActive ? WS_EX_TRANSPARENT : 0);
     m_bar->m_list.ModifyStyleEx(WS_EX_TRANSPARENT, m_materialActive ? WS_EX_TRANSPARENT : 0);
     QueueMaterialForeground();
@@ -225,7 +235,7 @@ void CNativePlaylistPopup::UpdateMaterialForeground()
         // An unsupported/device-lost foreground must leave a readable Solid UI.
         m_systemMaterial.Reset(); m_materialActive = false;
         const MARGINS solid{}; DwmExtendFrameIntoClientArea(m_hWnd, &solid);
-        ModifyStyleEx(WS_EX_COMPOSITED, 0);
+        ModifyStyleEx(WS_EX_COMPOSITED | WS_EX_NOREDIRECTIONBITMAP, 0);
         m_bar->m_listFrame.ModifyStyleEx(WS_EX_TRANSPARENT, 0);
         m_bar->m_list.ModifyStyleEx(WS_EX_TRANSPARENT, 0);
         RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
@@ -417,53 +427,27 @@ void CNativePlaylistPopup::PaintSurface(CDC& dc)
 
 bool CNativePlaylistPopup::BeginLiveSlide()
 {
-    GetWindowRect(m_liveSlideRect);
-    if (m_liveSlideRect.IsRectEmpty()) return false;
-    // Prepare the complete, final-size panel once. Moving a full-size HWND
-    // preserves the backdrop, foreground texture and native child geometry.
-    // Its window region is the intersection with a fixed reveal viewport.
+    // The HWND stays at its final position and size for the entire reveal.
+    // Prepare native artwork and the material subtree before exposing it.
     UpdateMaterialForeground();
     if (!m_materialActive) return BeginReveal();
-    m_liveSliding = true; m_liveSlideStart = 0;
-    if (!ApplyLiveSlide(0.0)) { EndLiveSlide(false); return false; }
+    if (!m_systemMaterial.PrepareSlide(static_cast<float>(MulDiv(8, m_dpi, 96)))) return false;
+    m_liveSliding = true;
+    m_bar->m_listFrame.EnableWindow(FALSE);
     SetWindowPos(&wndTop, 0, 0, 0, 0,
         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
-    // Present the prepared starting geometry before starting the clock. There
-    // is no per-frame synchronous painting or backdrop/foreground handoff.
     ::DwmFlush();
-    if (!SetTimer(4, 15, nullptr)) { EndLiveSlide(true); return false; }
-    return true;
-}
-
-bool CNativePlaylistPopup::ApplyLiveSlide(double progress)
-{
-    const int width = m_liveSlideRect.Width(), height = m_liveSlideRect.Height();
-    const int offset = std::clamp(int(std::lround(height * (1.0-progress))), 0, height);
-    const int diameter = std::max(1, MulDiv(16, m_dpi, 96));
-    HRGN shape = CreateRoundRectRgn(0, 0, width, height, diameter, diameter);
-    HRGN viewport = CreateRoundRectRgn(0, -offset, width, height-offset, diameter, diameter);
-    if (!shape || !viewport || CombineRgn(shape, shape, viewport, RGN_AND) == ERROR) {
-        if (shape) DeleteObject(shape);
-        if (viewport) DeleteObject(viewport);
-        return false;
-    }
-    DeleteObject(viewport);
-    // Move before widening the clip: an intermediate update can only hide
-    // extra pixels, never expose the panel below its fixed bottom edge.
-    SetWindowPos(nullptr, m_liveSlideRect.left, m_liveSlideRect.top+offset, 0, 0,
-        SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS);
-    if (!SetWindowRgn(shape, TRUE)) { DeleteObject(shape); return false; }
-    // On success Windows owns the region, including its lifetime.
+    if (!m_systemMaterial.StartSlide()) { EndLiveSlide(true); return false; }
+    m_liveSlideStart = GetTickCount64();
+    // The compositor animates independently of WM_TIMER. This timer only
+    // restores native interaction after the 160 ms composition animation.
+    if (!SetTimer(4, 16, nullptr)) { EndLiveSlide(true); return false; }
     return true;
 }
 
 void CNativePlaylistPopup::TickLiveSlide()
 {
-    if (!m_liveSliding) return;
-    if (!m_liveSlideStart) m_liveSlideStart = GetTickCount64();
-    const double progress = std::min(1.0, (GetTickCount64() - m_liveSlideStart) / 160.0);
-    const double eased = 1.0 - std::pow(1.0 - progress, 3.0);
-    if (!ApplyLiveSlide(eased) || progress >= 1.0) EndLiveSlide(true);
+    if (m_liveSliding && GetTickCount64() - m_liveSlideStart >= 180) EndLiveSlide(true);
 }
 
 void CNativePlaylistPopup::EndLiveSlide(bool show)
@@ -471,10 +455,9 @@ void CNativePlaylistPopup::EndLiveSlide(bool show)
     if (!m_liveSliding) return;
     KillTimer(4);
     if (!show) ShowWindow(SW_HIDE);
-    SetWindowPos(nullptr, m_liveSlideRect.left, m_liveSlideRect.top,
-        0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS);
-    SetWindowRgn(nullptr, TRUE);
+    m_systemMaterial.FinishSlide();
     m_liveSliding = false;
+    m_bar->m_listFrame.EnableWindow(TRUE);
     if (show) QueueMaterialForeground();
 }
 
@@ -634,7 +617,7 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
     case WM_NCCALCSIZE: return wParam ? WVR_REDRAW : 0;
     case WM_NCPAINT: return 0;
     case WM_NCACTIVATE: return DefWindowProc(message, wParam, -1);
-    case WM_NCHITTEST: return HTCLIENT;
+    case WM_NCHITTEST: return m_liveSliding ? HTTRANSPARENT : HTCLIENT;
     case WM_SYSCOMMAND:
         if ((wParam & 0xfff0) == SC_MOVE || (wParam & 0xfff0) == SC_SIZE) return 0;
         break;

@@ -6,6 +6,7 @@
 #include <cstring>
 #include <cwchar>
 #include <cstdint>
+#include <chrono>
 #include "NativePlaylistMaterial.h"
 
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
@@ -18,6 +19,7 @@
 #include <d2d1_1.h>
 #include <winrt/Windows.Graphics.DirectX.h>
 #include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.System.h>
 #include <winrt/Windows.UI.Composition.Desktop.h>
 #include <winrt/Microsoft.UI.Composition.SystemBackdrops.h>
@@ -95,7 +97,11 @@ struct CNativePlaylistMaterial::State {
     winrt::Windows::UI::Composition::CompositionGraphicsDevice graphics{nullptr};
     winrt::Windows::UI::Composition::CompositionDrawingSurface foreground{nullptr};
     winrt::Windows::UI::Composition::SpriteVisual artwork{nullptr};
+    winrt::Windows::UI::Composition::ContainerVisual viewport{nullptr}, panel{nullptr}, content{nullptr};
+    winrt::Windows::UI::Composition::SpriteVisual shadowVisual{nullptr};
+    winrt::Windows::UI::Composition::CompositionDrawingSurface shadowMask{nullptr};
     int width = 0, height = 0;
+    float radius = 8.f;
     winrt::Microsoft::UI::Composition::SystemBackdrops::SystemBackdropConfiguration configuration{nullptr};
     winrt::Microsoft::UI::Composition::SystemBackdrops::DesktopAcrylicController acrylic{nullptr};
     winrt::Microsoft::UI::Composition::SystemBackdrops::MicaController mica{nullptr};
@@ -165,6 +171,26 @@ bool CNativePlaylistMaterial::Start(HWND window, int mode)
         }
         MaterialLog("SetTarget; input active = true", attached ? S_OK : E_FAIL);
         if (!attached) return false;
+        // SetTarget installs the material below the application's artwork. Move
+        // that complete subtree under a stationary viewport, rather than moving
+        // an HWND and asking DWM to follow a changing window region.
+        state->viewport = state->target.Root().as<winrt::Windows::UI::Composition::ContainerVisual>();
+        state->panel = state->compositor.CreateContainerVisual();
+        state->content = state->compositor.CreateContainerVisual();
+        std::vector<winrt::Windows::UI::Composition::Visual> materialVisuals;
+        for (auto const& visual : state->viewport.Children()) materialVisuals.push_back(visual);
+        if (materialVisuals.empty()) {
+            MaterialLog("Backdrop is not in the root subtree; composition slide unavailable", E_NOTIMPL);
+            return false;
+        }
+        for (auto const& visual : materialVisuals) {
+            state->viewport.Children().Remove(visual);
+            state->content.Children().InsertAtTop(visual);
+        }
+        state->panel.Children().InsertAtTop(state->content);
+        state->viewport.Children().InsertAtTop(state->panel);
+        state->viewport.Clip(state->compositor.CreateInsetClip());
+        MaterialLog("Material subtree in fixed composition viewport", S_OK);
         // The controller's visual is above HWND GDI. Keep the complete native
         // artwork in the same visual tree, explicitly above the backdrop.
         winrt::com_ptr<ID3D11Device> d3d;
@@ -182,7 +208,13 @@ bool CNativePlaylistMaterial::Start(HWND window, int mode)
         winrt::check_hresult(state->compositor.as<ABI::Windows::UI::Composition::ICompositorInterop>()->CreateGraphicsDevice(
             d2d.get(), reinterpret_cast<ABI::Windows::UI::Composition::ICompositionGraphicsDevice**>(winrt::put_abi(state->graphics))));
         state->artwork = state->compositor.CreateSpriteVisual();
-        state->target.Root().as<winrt::Windows::UI::Composition::ContainerVisual>().Children().InsertAtTop(state->artwork);
+        state->content.Children().InsertAtTop(state->artwork);
+        state->shadowVisual = state->compositor.CreateSpriteVisual();
+        auto shadow = state->compositor.CreateDropShadow();
+        shadow.Color({255, 0, 0, 0}); shadow.Opacity(.3f);
+        shadow.BlurRadius(12.f); shadow.Offset({0.f, 3.f, 0.f});
+        state->shadowVisual.Shadow(shadow);
+        state->panel.Children().InsertAtBottom(state->shadowVisual);
         MaterialLog("Foreground visual above material", S_OK);
         m_state = std::move(state);
         return true;
@@ -203,6 +235,14 @@ bool CNativePlaylistMaterial::UpdateForeground(const void* pixels, int width, in
                 dx::DirectXPixelFormat::B8G8R8A8UIntNormalized, dx::DirectXAlphaMode::Premultiplied);
             state.artwork.Brush(state.compositor.CreateSurfaceBrush(state.foreground));
             state.artwork.Size({static_cast<float>(width), static_cast<float>(height)});
+            state.viewport.Size({static_cast<float>(width), static_cast<float>(height)});
+            state.panel.Size({static_cast<float>(width), static_cast<float>(height)});
+            state.content.Size({static_cast<float>(width), static_cast<float>(height)});
+            state.shadowVisual.Size({static_cast<float>(width), static_cast<float>(height)});
+            auto shape = state.compositor.CreateRoundedRectangleGeometry();
+            shape.Size({static_cast<float>(width), static_cast<float>(height)});
+            shape.CornerRadius({state.radius, state.radius});
+            state.content.Clip(state.compositor.CreateGeometricClip(shape));
             state.width = width; state.height = height;
         }
         auto surface = state.foreground.as<ABI::Windows::UI::Composition::ICompositionDrawingSurfaceInterop>();
@@ -227,6 +267,71 @@ bool CNativePlaylistMaterial::UpdateForeground(const void* pixels, int width, in
     return false;
 }
 
+bool CNativePlaylistMaterial::PrepareSlide(float radius)
+{
+    if (!m_state || !m_state->foreground) return false;
+    try {
+        auto& s = *m_state;
+        s.radius = radius;
+        auto shape = s.compositor.CreateRoundedRectangleGeometry();
+        shape.Size({static_cast<float>(s.width), static_cast<float>(s.height)});
+        shape.CornerRadius({radius, radius});
+        s.content.Clip(s.compositor.CreateGeometricClip(shape));
+        // Shadow and content share the moving parent. The explicit stationary
+        // viewport clips both, including the blur outside the panel's bounds.
+        namespace dx = winrt::Windows::Graphics::DirectX;
+        s.shadowMask = s.graphics.CreateDrawingSurface(
+            {static_cast<float>(s.width), static_cast<float>(s.height)},
+            dx::DirectXPixelFormat::B8G8R8A8UIntNormalized, dx::DirectXAlphaMode::Premultiplied);
+        auto surface = s.shadowMask.as<ABI::Windows::UI::Composition::ICompositionDrawingSurfaceInterop>();
+        winrt::com_ptr<ID2D1DeviceContext> dc; POINT offset{};
+        winrt::check_hresult(surface->BeginDraw(nullptr, __uuidof(ID2D1DeviceContext), dc.put_void(), &offset));
+        winrt::com_ptr<ID2D1SolidColorBrush> white;
+        const HRESULT brushResult = dc->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White), white.put());
+        if (SUCCEEDED(brushResult)) {
+            dc->SetDpi(96, 96);
+            dc->SetTransform(D2D1::Matrix3x2F::Translation(static_cast<float>(offset.x), static_cast<float>(offset.y)));
+            dc->Clear(D2D1::ColorF(0, 0, 0, 0));
+            dc->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(0.f, 0.f,
+                static_cast<float>(s.width), static_cast<float>(s.height)), radius, radius), white.get());
+        }
+        const HRESULT end = surface->EndDraw();
+        winrt::check_hresult(brushResult); winrt::check_hresult(end);
+        s.shadowVisual.Shadow().as<winrt::Windows::UI::Composition::DropShadow>().Mask(
+            s.compositor.CreateSurfaceBrush(s.shadowMask));
+        s.panel.StopAnimation(L"Offset.Y");
+        s.panel.Offset({0.f, static_cast<float>(s.height), 0.f});
+        return true;
+    } catch (const winrt::hresult_error& error) { MaterialLog("Prepare composition slide failed", error.code()); }
+    return false;
+}
+
+bool CNativePlaylistMaterial::StartSlide()
+{
+    if (!m_state) return false;
+    try {
+        auto& s = *m_state;
+        auto animation = s.compositor.CreateScalarKeyFrameAnimation();
+        animation.Duration(std::chrono::milliseconds(160));
+        animation.InsertKeyFrame(0.f, static_cast<float>(s.height));
+        animation.InsertKeyFrame(1.f, 0.f, s.compositor.CreateCubicBezierEasingFunction(
+            {1.f / 3.f, 1.f}, {2.f / 3.f, 1.f}));
+        s.panel.Offset({0.f, 0.f, 0.f});
+        s.panel.StartAnimation(L"Offset.Y", animation);
+        return true;
+    } catch (const winrt::hresult_error& error) { MaterialLog("Start composition slide failed", error.code()); }
+    return false;
+}
+
+void CNativePlaylistMaterial::FinishSlide()
+{
+    if (!m_state) return;
+    try {
+        m_state->panel.StopAnimation(L"Offset.Y");
+        m_state->panel.Offset({0.f, 0.f, 0.f});
+    } catch (...) {}
+}
+
 bool CNativePlaylistMaterial::Active() const
 {
     if (!m_state) return false;
@@ -247,6 +352,9 @@ struct CNativePlaylistMaterial::State {};
 bool CNativePlaylistMaterial::Start(HWND, int) { return false; }
 bool CNativePlaylistMaterial::Active() const { return false; }
 bool CNativePlaylistMaterial::UpdateForeground(const void*, int, int) { return false; }
+bool CNativePlaylistMaterial::PrepareSlide(float) { return false; }
+bool CNativePlaylistMaterial::StartSlide() { return false; }
+void CNativePlaylistMaterial::FinishSlide() {}
 #endif
 
 CNativePlaylistMaterial::CNativePlaylistMaterial() = default;

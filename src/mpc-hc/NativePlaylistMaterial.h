@@ -12,4 +12,7 @@ public:
     void Reset();
     bool Active() const;
     bool UpdateForeground(const void* premultipliedBGRA, int width, int height);
+    bool PrepareSlide(float radius);
+    bool StartSlide();
+    void FinishSlide();
 };
