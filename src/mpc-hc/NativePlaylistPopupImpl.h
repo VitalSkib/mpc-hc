@@ -78,9 +78,9 @@ void CNativePlaylistPopup::ConfigureSurface()
     // Native children remain input/WM_PRINT sources only. Their own redirected
     // GDI surfaces would remain stationary underneath the animated artwork.
     m_bar->m_listFrame.ModifyStyleEx(WS_EX_TRANSPARENT | WS_EX_NOREDIRECTIONBITMAP,
-        m_materialActive ? WS_EX_NOREDIRECTIONBITMAP : 0);
+        m_materialActive ? WS_EX_NOREDIRECTIONBITMAP : 0, SWP_FRAMECHANGED | SWP_NOACTIVATE);
     m_bar->m_list.ModifyStyleEx(WS_EX_TRANSPARENT | WS_EX_NOREDIRECTIONBITMAP,
-        m_materialActive ? WS_EX_NOREDIRECTIONBITMAP : 0);
+        m_materialActive ? WS_EX_NOREDIRECTIONBITMAP : 0, SWP_FRAMECHANGED | SWP_NOACTIVATE);
     QueueMaterialForeground();
     m_bar->m_listFrame.nativeSurface = true;
     ::SetPropW(m_bar->m_list.m_hWnd, L"MPC.FluentPlaylistScroll", reinterpret_cast<HANDLE>(1));
@@ -378,6 +378,7 @@ void CNativePlaylistPopup::Refresh(const CRect& band, bool show, int dpi, bool c
     // Do not repeatedly raise an already visible owned popup over its menu.
     // Fullscreen makes the owner/top-level popup topmost, so HWND_TOP here
     // can cover the native menu on each hover observation tick.
+    if (!opening && m_materialActive) m_systemMaterial.SetVisible(true);
     if (opening) {
         m_systemMaterial.SetVisible(true);
         SetWindowPos(&wndTop, 0, 0, 0, 0,
