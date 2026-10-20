@@ -1086,7 +1086,7 @@ void CPlayerSeekBar::OnWindowPosChanged(WINDOWPOS* position)
     }
 }
 
-bool CPlayerSeekBar::PaintNativeAlpha(std::vector<DWORD>* capture, CSize* captureSize)
+bool CPlayerSeekBar::PaintNativeAlpha()
 {
     CRect bounds;
     GetWindowRect(bounds);
@@ -1216,14 +1216,6 @@ bool CPlayerSeekBar::PaintNativeAlpha(std::vector<DWORD>* capture, CSize* captur
             }
         }
         graphics.Flush(Gdiplus::FlushIntentionSync);
-    }
-    if (capture && captureSize) {
-        ::GdiFlush();
-        const auto data = static_cast<DWORD*>(bits);
-        capture->assign(data, data + static_cast<size_t>(width) * height);
-        *captureSize = CSize(width, height);
-        ::SelectObject(memory.GetSafeHdc(), previous); ::DeleteObject(bitmap);
-        return true;
     }
     POINT origin = {0, 0};
     SIZE size = {width, height};

@@ -227,18 +227,6 @@ bool CNativePlaylistMaterial::UpdateForeground(const void* pixels, int width, in
     return false;
 }
 
-bool CNativePlaylistMaterial::SetRevealOffset(float offset)
-{
-    if (!m_state) return false;
-    try {
-        // Move the complete tree, including the controller's backdrop visual.
-        // The desktop target remains fixed and clips to its HWND client bounds.
-        m_state->target.Root().Offset({0.f, offset, 0.f});
-        return true;
-    } catch (const winrt::hresult_error& error) { MaterialLog("Reveal offset failed", error.code()); }
-    return false;
-}
-
 bool CNativePlaylistMaterial::Active() const
 {
     if (!m_state) return false;
@@ -258,7 +246,6 @@ bool CNativePlaylistMaterial::Active() const
 struct CNativePlaylistMaterial::State {};
 bool CNativePlaylistMaterial::Start(HWND, int) { return false; }
 bool CNativePlaylistMaterial::Active() const { return false; }
-bool CNativePlaylistMaterial::SetRevealOffset(float) { return false; }
 bool CNativePlaylistMaterial::UpdateForeground(const void*, int, int) { return false; }
 #endif
 

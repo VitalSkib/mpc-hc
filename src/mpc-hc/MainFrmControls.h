@@ -103,6 +103,9 @@ public:
 
     void UpdateToolbarsVisibility();
     unsigned GetVisibleToolbarsHeight() const;
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    unsigned GetVisibleHostedToolbarsHeight() const;
+#endif
     unsigned GetToolbarsHeight() const;
 
     void DelayShowNotLoaded(bool bDoDelay);

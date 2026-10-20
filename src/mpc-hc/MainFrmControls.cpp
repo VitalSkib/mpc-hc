@@ -95,8 +95,8 @@ bool CMainFrameControls::ShowToolbars(UINT nCS)
     if (nCS != st.nVisibleCS) {
 #endif
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-        // Cache the complete footer before native control visibility/layout changes.
-        m_pMainFrame->m_wndView.PrepareNativeControlsMotion(nCS == CS_NONE);
+        const bool hosted = m_pMainFrame->m_wndView.EnsureNativeChromeHosts();
+        const UINT selected = GetEffectiveToolbarsSelection();
 #endif
         m_pMainFrame->m_pLastBar = nullptr;
         int i = 1;
@@ -107,7 +107,16 @@ bool CMainFrameControls::ShowToolbars(UINT nCS)
                 const bool migrated = pair.first == Toolbar::CONTROLS || pair.first == Toolbar::SEEKBAR;
                 if ((nCS & i) && !migrated) {
 #else
-                if (nCS & i) {
+                bool show = (nCS & i) != 0;
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+                // Native bars stay mounted and painted inside a clipped host.
+                // Only the host handles transient show/hide. Selection and the
+                // upstream visibility state/deadlines remain independent.
+                if (hosted && m_pMainFrame->GetLoadState() == MLS::LOADED
+                        && (pair.first == Toolbar::CONTROLS || pair.first == Toolbar::SEEKBAR))
+                    show = (selected & i) != 0;
+#endif
+                if (show) {
 #endif
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
                     if (pair.first == Toolbar::INFO || pair.first == Toolbar::STATS || pair.first == Toolbar::STATUS) {
@@ -129,6 +138,13 @@ bool CMainFrameControls::ShowToolbars(UINT nCS)
     }
     return bRecalcLayout;
 }
+
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+unsigned CMainFrameControls::GetVisibleHostedToolbarsHeight() const
+{
+    return GetToolbarsHeight(m_controlsVisibilityState.nVisibleCS & (CS_SEEKBAR | CS_TOOLBAR));
+}
+#endif
 
 unsigned CMainFrameControls::GetToolbarsHeight(UINT nCS) const
 {

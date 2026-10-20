@@ -40,13 +40,8 @@ class CChildView : public CMouseWndWithArtView
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
     CNativeControlsDecoration m_nativeHeader, m_nativeBackdrop;
     bool m_refreshingNativeDecoration = false;
-    CNativeChromeSlide m_topChromeSlide, m_bottomChromeSlide;
-    NativeChromeImage m_preparedBottomChrome;
-    CRect m_chromeViewRect = CRect(0, 0, 0, 0), m_chromeBottomRect = CRect(0, 0, 0, 0);
-    bool m_chromeKnown = false, m_chromeTopVisible = false, m_chromeBottomVisible = false;
-    bool m_preparedHideMotion = false;
-    bool m_preparedShowMotion = false;
-    NativeChromeImage CaptureBottomChrome(const CRect& screenBand);
+    CNativeChromeHost m_topChromeHost, m_bottomChromeHost;
+    bool m_chromeHosted = false;
 #endif
     bool m_bSwitchingFullscreen;
     bool m_bFirstMedia;
@@ -61,7 +56,8 @@ class CChildView : public CMouseWndWithArtView
 public:
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
     void UpdateNativeDecoration();
-    void PrepareNativeControlsMotion(bool hiding);
+    bool EnsureNativeChromeHosts();
+    bool NativeChromeHosted() const { return m_chromeHosted; }
     bool IsNativeHeaderWindow(HWND window) const {
         return window && window == m_nativeHeader.GetSafeHwnd();
     }
