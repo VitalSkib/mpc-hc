@@ -154,7 +154,7 @@ bool CNativePlaylistMaterial::Start(HWND window, int mode)
         winrt::check_hresult(DwmSetWindowAttribute(window, static_cast<DWMWINDOWATTRIBUTE>(17), &enable, sizeof(enable)));
         state->compositor = winrt::Windows::UI::Composition::Compositor();
         auto interop = state->compositor.as<ABI::Windows::UI::Composition::Desktop::ICompositorDesktopInterop>();
-        winrt::check_hresult(interop->CreateDesktopWindowTarget(window, false,
+        winrt::check_hresult(interop->CreateDesktopWindowTarget(window, true,
             reinterpret_cast<ABI::Windows::UI::Composition::Desktop::IDesktopWindowTarget**>(winrt::put_abi(state->target))));
         state->target.Root(state->compositor.CreateContainerVisual());
         MaterialLog("Composition target and root", S_OK);
@@ -186,6 +186,9 @@ bool CNativePlaylistMaterial::Start(HWND window, int mode)
         // backdrop slot, outside Root. Route that public brush into our own
         // SpriteVisual so it follows the same transform and clip as artwork.
         state->viewport = state->target.Root().as<winrt::Windows::UI::Composition::ContainerVisual>();
+        // A hidden popup keeps an empty composition tree ready for the next
+        // reveal, rather than retaining a fully visible cached first frame.
+        state->viewport.IsVisible(false);
         state->panel = state->compositor.CreateContainerVisual();
         state->content = state->compositor.CreateContainerVisual();
         state->material = state->compositor.CreateSpriteVisual();
@@ -331,6 +334,7 @@ bool CNativePlaylistMaterial::StartSlide()
             {1.f / 3.f, 1.f}, {2.f / 3.f, 1.f}));
         s.panel.Offset({0.f, 0.f, 0.f});
         s.panel.StartAnimation(L"Offset.Y", animation);
+        s.viewport.IsVisible(true);
         return true;
     } catch (const winrt::hresult_error& error) { MaterialLog("Start composition slide failed", error.code()); }
     return false;
@@ -343,6 +347,18 @@ void CNativePlaylistMaterial::FinishSlide()
         m_state->panel.StopAnimation(L"Offset.Y");
         m_state->panel.Offset({0.f, 0.f, 0.f});
     } catch (...) {}
+}
+
+void CNativePlaylistMaterial::SetVisible(bool visible)
+{
+    if (!m_state) return;
+    try {
+        m_state->viewport.IsVisible(visible);
+        if (!visible) {
+            m_state->panel.StopAnimation(L"Offset.Y");
+            m_state->panel.Offset({0.f, static_cast<float>(m_state->height), 0.f});
+        } else m_state->panel.Offset({0.f, 0.f, 0.f});
+    } catch (const winrt::hresult_error& error) { MaterialLog("Set composition visibility failed", error.code()); }
 }
 
 bool CNativePlaylistMaterial::Active() const
@@ -370,6 +386,7 @@ bool CNativePlaylistMaterial::Ready() const { return false; }
 bool CNativePlaylistMaterial::PrepareSlide(float) { return false; }
 bool CNativePlaylistMaterial::StartSlide() { return false; }
 void CNativePlaylistMaterial::FinishSlide() {}
+void CNativePlaylistMaterial::SetVisible(bool) {}
 #endif
 
 CNativePlaylistMaterial::CNativePlaylistMaterial() = default;

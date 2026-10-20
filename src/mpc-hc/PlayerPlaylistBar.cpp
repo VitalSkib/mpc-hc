@@ -71,6 +71,17 @@ void CPlaylistListFrame::OnNcPaint()
 LRESULT CPlaylistListFrame::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
 {
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (nativeSurface && (message == WM_PAINT || message == WM_NCPAINT)) {
+        auto popup = static_cast<CNativePlaylistPopup*>(GetParent());
+        if (popup && popup->MaterialActive()) {
+            // Composition owns the entire visible panel. This HWND supplies
+            // layout/input only; even a translucent GDI fill here creates a
+            // separate stationary rectangle when the panel moves away.
+            if (message == WM_PAINT) { CPaintDC dc(this); }
+            popup->QueueMaterialForeground();
+            return 0;
+        }
+    }
     if (message == WM_ERASEBKGND && wParam && nativeSurface) {
         // The native list is briefly hidden by WM_SETREDRAW during layout.
         // Its container must clear to the same key, never an uninitialized black surface.
@@ -79,18 +90,6 @@ LRESULT CPlaylistListFrame::WindowProc(UINT message, WPARAM wParam, LPARAM lPara
         CRect rect; GetClientRect(rect);
         CDC::FromHandle(reinterpret_cast<HDC>(wParam))->FillSolidRect(rect, CNativePlaylistPopup::SurfaceColor());
         return TRUE;
-    }
-#endif
-#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-    if (message == WM_PAINT && nativeSurface) {
-        auto popup = static_cast<CNativePlaylistPopup*>(GetParent());
-        if (popup && popup->MaterialActive()) {
-            CPaintDC dc(this); CRect rect; GetClientRect(rect);
-            CNativePlaylistPopup::PaintMaterialBuffer(dc, rect, [rect](HDC buffer) {
-                CDC::FromHandle(buffer)->FillSolidRect(rect, CNativePlaylistPopup::SurfaceColor());
-            }, static_cast<BYTE>(popup->MaterialTint()));
-            return 0;
-        }
     }
 #endif
     if (CWnd* pBar = GetParent()) {

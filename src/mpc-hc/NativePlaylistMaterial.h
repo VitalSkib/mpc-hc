@@ -16,4 +16,5 @@ public:
     bool PrepareSlide(float radius);
     bool StartSlide();
     void FinishSlide();
+    void SetVisible(bool visible);
 };

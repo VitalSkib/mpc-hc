@@ -72,13 +72,15 @@ void CNativePlaylistPopup::ConfigureSurface()
     DwmSetWindowAttribute(m_hWnd, DWMWA_NCRENDERING_POLICY, &nonclient, sizeof(nonclient));
     const DWORD corners = m_materialActive ? 1 : 2;
     DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(33), &corners, sizeof(corners));
-    // Win32 requires bottom-to-top composited painting and transparent child
-    // paint ordering for alpha in descendant HWNDs. These are non-layered
-    // windows: WS_EX_TRANSPARENT here changes paint order, not a color key.
+    // Composition is the sole visible renderer in material mode.
     ModifyStyleEx(WS_EX_COMPOSITED | WS_EX_NOREDIRECTIONBITMAP,
         m_materialActive ? WS_EX_NOREDIRECTIONBITMAP : 0);
-    m_bar->m_listFrame.ModifyStyleEx(WS_EX_TRANSPARENT, m_materialActive ? WS_EX_TRANSPARENT : 0);
-    m_bar->m_list.ModifyStyleEx(WS_EX_TRANSPARENT, m_materialActive ? WS_EX_TRANSPARENT : 0);
+    // Native children remain input/WM_PRINT sources only. Their own redirected
+    // GDI surfaces would remain stationary underneath the animated artwork.
+    m_bar->m_listFrame.ModifyStyleEx(WS_EX_TRANSPARENT | WS_EX_NOREDIRECTIONBITMAP,
+        m_materialActive ? WS_EX_NOREDIRECTIONBITMAP : 0);
+    m_bar->m_list.ModifyStyleEx(WS_EX_TRANSPARENT | WS_EX_NOREDIRECTIONBITMAP,
+        m_materialActive ? WS_EX_NOREDIRECTIONBITMAP : 0);
     QueueMaterialForeground();
     m_bar->m_listFrame.nativeSurface = true;
     ::SetPropW(m_bar->m_list.m_hWnd, L"MPC.FluentPlaylistScroll", reinterpret_cast<HANDLE>(1));
@@ -236,8 +238,8 @@ void CNativePlaylistPopup::UpdateMaterialForeground()
         m_systemMaterial.Reset(); m_materialActive = false;
         const MARGINS solid{}; DwmExtendFrameIntoClientArea(m_hWnd, &solid);
         ModifyStyleEx(WS_EX_COMPOSITED | WS_EX_NOREDIRECTIONBITMAP, 0);
-        m_bar->m_listFrame.ModifyStyleEx(WS_EX_TRANSPARENT, 0);
-        m_bar->m_list.ModifyStyleEx(WS_EX_TRANSPARENT, 0);
+        m_bar->m_listFrame.ModifyStyleEx(WS_EX_TRANSPARENT | WS_EX_NOREDIRECTIONBITMAP, 0);
+        m_bar->m_list.ModifyStyleEx(WS_EX_TRANSPARENT | WS_EX_NOREDIRECTIONBITMAP, 0);
         RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
     }
 }
@@ -290,6 +292,7 @@ bool CNativePlaylistPopup::WantsReveal() const
 
 void CNativePlaylistPopup::HideEnabled(bool animate)
 {
+    m_systemMaterial.SetVisible(false);
     if (m_liveSliding) { ::GetCursorPos(&m_hiddenPoint); EndLiveSlide(false); }
     if (m_fading) { if (!animate) EndReveal(false); return; }
     const bool visible = !!IsWindowVisible();
@@ -357,7 +360,10 @@ void CNativePlaylistPopup::Refresh(const CRect& band, bool show, int dpi, bool c
     // The controller supplies its initial brush asynchronously. Keep the HWND
     // hidden until that brush is routed under our clip; never expose a separate
     // full-size backdrop while the foreground is still being prepared.
-    if (m_materialActive && !m_systemMaterial.Ready()) return;
+    if (m_materialActive) {
+        if (!m_systemMaterial.Ready()) return;
+        if (opening) UpdateMaterialForeground();
+    }
     BOOL animations = TRUE;
     ::SystemParametersInfo(SPI_GETCLIENTAREAANIMATION, 0, &animations, 0);
     // A menu command can still hold the menu activity lock on first invocation.
@@ -372,8 +378,11 @@ void CNativePlaylistPopup::Refresh(const CRect& band, bool show, int dpi, bool c
     // Do not repeatedly raise an already visible owned popup over its menu.
     // Fullscreen makes the owner/top-level popup topmost, so HWND_TOP here
     // can cover the native menu on each hover observation tick.
-    if (opening) SetWindowPos(&wndTop, 0, 0, 0, 0,
-        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    if (opening) {
+        m_systemMaterial.SetVisible(true);
+        SetWindowPos(&wndTop, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    }
     m_forceReveal = false;
 }
 
@@ -438,10 +447,11 @@ bool CNativePlaylistPopup::BeginLiveSlide()
     if (!m_systemMaterial.PrepareSlide(static_cast<float>(MulDiv(8, m_dpi, 96)))) return false;
     m_liveSliding = true;
     m_bar->m_listFrame.EnableWindow(FALSE);
+    // Submit the initial transform, animation and visibility together before
+    // exposing the HWND. Never force a presentation between Show and Start.
+    if (!m_systemMaterial.StartSlide()) { EndLiveSlide(false); return false; }
     SetWindowPos(&wndTop, 0, 0, 0, 0,
         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
-    ::DwmFlush();
-    if (!m_systemMaterial.StartSlide()) { EndLiveSlide(true); return false; }
     m_liveSlideStart = GetTickCount64();
     // The compositor animates independently of WM_TIMER. This timer only
     // restores native interaction after the 160 ms composition animation.
@@ -458,7 +468,7 @@ void CNativePlaylistPopup::EndLiveSlide(bool show)
 {
     if (!m_liveSliding) return;
     KillTimer(4);
-    if (!show) ShowWindow(SW_HIDE);
+    if (!show) { m_systemMaterial.SetVisible(false); ShowWindow(SW_HIDE); }
     m_systemMaterial.FinishSlide();
     m_liveSliding = false;
     m_bar->m_listFrame.EnableWindow(TRUE);
