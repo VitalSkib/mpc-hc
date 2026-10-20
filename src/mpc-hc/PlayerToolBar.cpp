@@ -1137,6 +1137,10 @@ bool CPlayerToolBar::ArrangeTransportControls(const CRect& client)
     // CToolBar owns a deferred button layout after SetSizes/image changes.
     // Use its public accessor before reading common-control rectangles.
     if (tb.GetButtonCount() > 0) { CRect rect; GetItemRect(0, rect); }
+    const int wantedHeight = m_pMainFrame->m_dpi.ScaleY(
+        m_pMainFrame->m_controls.ControlChecked(CMainFrameControls::Toolbar::SEEKBAR) ? 63 : 78);
+    if (AppIsThemeLoaded() && HIWORD(tb.GetButtonSize()) != wantedHeight)
+        SetSizes(CSize(m_nButtonHeight+7, wantedHeight), CSize(m_nButtonHeight, m_nButtonHeight));
     HideVolumeFlyout();
     if (AppIsThemeLoaded()) {
         for (UINT id : {ID_PLAY_PLAY, ID_PLAY_PAUSE}) {
