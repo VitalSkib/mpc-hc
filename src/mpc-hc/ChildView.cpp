@@ -299,7 +299,8 @@ void CChildView::UpdateNativeDecoration()
         m_nativeBackdrop.shadedAreas = {footerClient}; m_nativeBackdrop.headerExclusion.SetRectEmpty();
         if (!footerClient.IsRectEmpty()) {
             m_nativeBackdrop.Refresh(m_bottomChromeHost.Content(), footerClient, false, CString(), dpi);
-            m_nativeBackdrop.SetWindowPos(&wndBottom, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            if (::GetWindow(m_nativeBackdrop.m_hWnd, GW_HWNDNEXT))
+                m_nativeBackdrop.SetWindowPos(&wndBottom, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         }
         m_nativeHeader.Refresh(m_topChromeHost.Content(), CRect(0, 0, top.Width(), top.Height()), true,
             mediaLoaded ? title : CString(), dpi, m_pMainFrame->IsFullScreenMode() || m_pMainFrame->IsZoomed());

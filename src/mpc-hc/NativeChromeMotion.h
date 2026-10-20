@@ -9,6 +9,7 @@ public:
     CWnd* frame = nullptr;
 protected:
     LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam) override {
+        if (message == WM_NCHITTEST) return HTTRANSPARENT;
         if (message == WM_ERASEBKGND) return TRUE;
         if (message == WM_PAINT) { CPaintDC dc(this); return 0; }
         // Keep native command and seek notifications at their original frame.
@@ -45,6 +46,7 @@ class CNativeChromeHost final : public CWnd {
     }
 protected:
     LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam) override {
+        if (message == WM_NCHITTEST) return HTTRANSPARENT;
         if (message == WM_ERASEBKGND) return TRUE;
         if (message == WM_PAINT) { CPaintDC dc(this); return 0; }
         if (message == WM_DESTROY) { KillTimer(1); DetachControls(); }
@@ -69,10 +71,13 @@ public:
         if (GetSafeHwnd()) return m_content.GetSafeHwnd() != nullptr;
         m_top = top;
         const auto cls = AfxRegisterWndClass(0, ::LoadCursor(nullptr, IDC_ARROW));
-        if (!CreateEx(WS_EX_TRANSPARENT | WS_EX_NOACTIVATE, cls, L"Native chrome viewport",
+        if (!CreateEx(WS_EX_NOREDIRECTIONBITMAP | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE, cls, L"Native chrome viewport",
                 WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, CRect(0, 0, 0, 0), view, 0)) return false;
+        // The two containers have geometry and input routing only. Their
+        // visible descendants own the alpha/keyed surfaces; no opaque parent
+        // redirection bitmap is allowed to cover the live video underneath.
         m_content.frame = frame;
-        if (!m_content.CreateEx(WS_EX_TRANSPARENT | WS_EX_NOACTIVATE, cls, L"Native chrome content",
+        if (!m_content.CreateEx(WS_EX_NOREDIRECTIONBITMAP | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE, cls, L"Native chrome content",
                 WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
                 CRect(0, 0, 0, 0), this, 0)) { DestroyWindow(); return false; }
         return true;
