@@ -354,6 +354,10 @@ void CNativePlaylistPopup::Refresh(const CRect& band, bool show, int dpi, bool c
     }
     if (m_revealing) return;
     const bool opening = !IsWindowVisible();
+    // The controller supplies its initial brush asynchronously. Keep the HWND
+    // hidden until that brush is routed under our clip; never expose a separate
+    // full-size backdrop while the foreground is still being prepared.
+    if (m_materialActive && !m_systemMaterial.Ready()) return;
     BOOL animations = TRUE;
     ::SystemParametersInfo(SPI_GETCLIENTAREAANIMATION, 0, &animations, 0);
     // A menu command can still hold the menu activity lock on first invocation.

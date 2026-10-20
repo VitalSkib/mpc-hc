@@ -98,7 +98,7 @@ struct CNativePlaylistMaterial::State {
     winrt::Windows::UI::Composition::CompositionDrawingSurface foreground{nullptr};
     winrt::Windows::UI::Composition::SpriteVisual artwork{nullptr};
     winrt::Windows::UI::Composition::ContainerVisual viewport{nullptr}, panel{nullptr}, content{nullptr};
-    winrt::Windows::UI::Composition::SpriteVisual shadowVisual{nullptr};
+    winrt::Windows::UI::Composition::SpriteVisual shadowVisual{nullptr}, material{nullptr};
     winrt::Windows::UI::Composition::CompositionDrawingSurface shadowMask{nullptr};
     int width = 0, height = 0;
     float radius = 8.f;
@@ -107,11 +107,22 @@ struct CNativePlaylistMaterial::State {
     winrt::Microsoft::UI::Composition::SystemBackdrops::MicaController mica{nullptr};
     bool apartment = false;
     int lastState = -1;
+    bool SynchronizeBrush() {
+        auto backdrop = target.as<winrt::Windows::UI::Composition::ICompositionSupportsSystemBackdrop>();
+        if (auto brush = backdrop.SystemBackdrop()) {
+            material.Brush(brush);
+            backdrop.SystemBackdrop(nullptr);
+            MaterialLog("System material brush routed into clipped panel", S_OK);
+        }
+        return material && material.Brush();
+    }
     ~State() {
         try { if (acrylic) acrylic.Close(); if (mica) mica.Close(); } catch (...) {}
         acrylic = nullptr; mica = nullptr; configuration = nullptr;
         try { if (target) { target.Root(nullptr); target.Close(); } } catch (...) {}
-        artwork = nullptr; foreground = nullptr; graphics = nullptr; target = nullptr;
+        artwork = nullptr; foreground = nullptr; shadowMask = nullptr;
+        material = nullptr; shadowVisual = nullptr; content = nullptr; panel = nullptr; viewport = nullptr;
+        graphics = nullptr; target = nullptr;
         try { if (compositor) compositor.Close(); } catch (...) {}
         compositor = nullptr;
         if (apartment) RoUninitialize();
@@ -171,22 +182,14 @@ bool CNativePlaylistMaterial::Start(HWND window, int mode)
         }
         MaterialLog("SetTarget; input active = true", attached ? S_OK : E_FAIL);
         if (!attached) return false;
-        // SetTarget installs the material below the application's artwork. Move
-        // that complete subtree under a stationary viewport, rather than moving
-        // an HWND and asking DWM to follow a changing window region.
+        // The legacy controller writes its brush to the target's system
+        // backdrop slot, outside Root. Route that public brush into our own
+        // SpriteVisual so it follows the same transform and clip as artwork.
         state->viewport = state->target.Root().as<winrt::Windows::UI::Composition::ContainerVisual>();
         state->panel = state->compositor.CreateContainerVisual();
         state->content = state->compositor.CreateContainerVisual();
-        std::vector<winrt::Windows::UI::Composition::Visual> materialVisuals;
-        for (auto const& visual : state->viewport.Children()) materialVisuals.push_back(visual);
-        if (materialVisuals.empty()) {
-            MaterialLog("Backdrop is not in the root subtree; composition slide unavailable", E_NOTIMPL);
-            return false;
-        }
-        for (auto const& visual : materialVisuals) {
-            state->viewport.Children().Remove(visual);
-            state->content.Children().InsertAtTop(visual);
-        }
+        state->material = state->compositor.CreateSpriteVisual();
+        state->content.Children().InsertAtBottom(state->material);
         state->panel.Children().InsertAtTop(state->content);
         state->viewport.Children().InsertAtTop(state->panel);
         state->viewport.Clip(state->compositor.CreateInsetClip());
@@ -228,6 +231,7 @@ bool CNativePlaylistMaterial::UpdateForeground(const void* pixels, int width, in
     if (!m_state || !pixels || width <= 0 || height <= 0) return false;
     try {
         auto& state = *m_state;
+        state.SynchronizeBrush();
         if (!state.foreground || state.width != width || state.height != height) {
             namespace dx = winrt::Windows::Graphics::DirectX;
             state.foreground = state.graphics.CreateDrawingSurface(
@@ -239,6 +243,7 @@ bool CNativePlaylistMaterial::UpdateForeground(const void* pixels, int width, in
             state.panel.Size({static_cast<float>(width), static_cast<float>(height)});
             state.content.Size({static_cast<float>(width), static_cast<float>(height)});
             state.shadowVisual.Size({static_cast<float>(width), static_cast<float>(height)});
+            state.material.Size({static_cast<float>(width), static_cast<float>(height)});
             auto shape = state.compositor.CreateRoundedRectangleGeometry();
             shape.Size({static_cast<float>(width), static_cast<float>(height)});
             shape.CornerRadius({state.radius, state.radius});
@@ -264,6 +269,14 @@ bool CNativePlaylistMaterial::UpdateForeground(const void* pixels, int width, in
         winrt::check_hresult(upload); winrt::check_hresult(end);
         return true;
     } catch (const winrt::hresult_error& error) { MaterialLog("Foreground update failed", error.code()); }
+    return false;
+}
+
+bool CNativePlaylistMaterial::Ready() const
+{
+    if (!m_state) return false;
+    try { return m_state->SynchronizeBrush(); }
+    catch (const winrt::hresult_error& error) { MaterialLog("Route system material brush failed", error.code()); }
     return false;
 }
 
@@ -336,6 +349,7 @@ bool CNativePlaylistMaterial::Active() const
 {
     if (!m_state) return false;
     try {
+        m_state->SynchronizeBrush();
         namespace sb = winrt::Microsoft::UI::Composition::SystemBackdrops;
         const auto current = m_state->acrylic ? m_state->acrylic.State() : m_state->mica.State();
         const int value = static_cast<int>(current);
@@ -352,6 +366,7 @@ struct CNativePlaylistMaterial::State {};
 bool CNativePlaylistMaterial::Start(HWND, int) { return false; }
 bool CNativePlaylistMaterial::Active() const { return false; }
 bool CNativePlaylistMaterial::UpdateForeground(const void*, int, int) { return false; }
+bool CNativePlaylistMaterial::Ready() const { return false; }
 bool CNativePlaylistMaterial::PrepareSlide(float) { return false; }
 bool CNativePlaylistMaterial::StartSlide() { return false; }
 void CNativePlaylistMaterial::FinishSlide() {}
