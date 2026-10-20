@@ -32,6 +32,7 @@
 #include "ImageGrayer.h"
 #include "CMPCTheme.h"
 #include "CMPCThemeMenu.h"
+#include "PPageAccelTbl.h"
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
 #include <gdiplus.h>
 #endif
@@ -2252,6 +2253,20 @@ BOOL CPlayerToolBar::OnToolTipNotify(UINT id, NMHDR* pNMHDR, LRESULT* pResult)
         strTipText.LoadStringW(ID_VOLUME_MUTE_OFF);
     } else {
         return FALSE;
+    }
+    // Overflow menu labels reuse this handler with a synthetic notification.
+    // Add shortcuts only to actual tooltips, leaving native menu accelerators
+    // and labels unchanged. Read current bindings rather than caching defaults.
+    if (pNMHDR->code == TTN_NEEDTEXT) {
+        const UINT command = nID >= ID_CUSTOM_ACTION1 && nID <= ID_CUSTOM_ACTION4
+            ? CustomToCMD(nID, VK_LBUTTON) : static_cast<UINT>(nID);
+        CString shortcut = CPPageAccelTbl::MakeAccelShortcutLabel(command);
+        // The visible Play/Pause buttons use separate commands; Space normally
+        // belongs to the shared toggle. Prefer an explicit per-action binding.
+        if (shortcut.IsEmpty() && (command == ID_PLAY_PLAY || command == ID_PLAY_PAUSE)) {
+            shortcut = CPPageAccelTbl::MakeAccelShortcutLabel(ID_PLAY_PLAYPAUSE);
+        }
+        if (!shortcut.IsEmpty()) strTipText += L" (" + shortcut + L")";
     }
     pTTT->lpszText = (LPWSTR)(LPCWSTR)strTipText;
 
