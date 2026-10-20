@@ -448,14 +448,17 @@ void CChildView::OnWindowPosChanging(WINDOWPOS* position)
     if (m_pMainFrame->m_nativeVideoLayout && !(position->flags & SWP_NOSIZE)) {
         unsigned top = 0, left = 0, right = 0, bottom = 0;
         unsigned toolbarHeight = 0;
+        unsigned hostedOverlap = 0;
         if (!m_pMainFrame->HasDedicatedFSVideoWindow()
                 && m_pMainFrame->m_controls.ToolbarsCoverVideo()) {
             toolbarHeight = m_pMainFrame->m_controls.GetVisibleToolbarsHeight();
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
             // Hosted bars are no longer direct frame children and therefore
             // consume no native client layout space that the view must cover.
-            if (m_chromeHosted) toolbarHeight -= std::min(toolbarHeight,
-                m_pMainFrame->m_controls.GetVisibleHostedToolbarsHeight());
+            if (m_chromeHosted) {
+                hostedOverlap = std::min(toolbarHeight, m_pMainFrame->m_controls.GetVisibleHostedToolbarsHeight());
+                toolbarHeight -= hostedOverlap;
+            }
 #endif
             bottom = toolbarHeight;
             const auto& playlist = m_pMainFrame->m_wndPlaylistBar;
@@ -474,8 +477,10 @@ void CChildView::OnWindowPosChanging(WINDOWPOS* position)
         // left beneath full-width controls when a side panel consumes width.
         position->x -= left; position->y -= top;
         position->cx += left + right; position->cy += top + bottom;
-        m_pMainFrame->m_nativeToolbarOverlapHeight = toolbarHeight;
-        m_pMainFrame->m_nativeDockOverlap = CRect(left, top, right, bottom);
+        // Both already-covered areas count for video/aspect calculations:
+        // hosted controls are inside the view; other bars use the extension.
+        m_pMainFrame->m_nativeToolbarOverlapHeight = toolbarHeight + hostedOverlap;
+        m_pMainFrame->m_nativeDockOverlap = CRect(left, top, right, bottom + hostedOverlap);
         if (left || top) position->flags &= ~SWP_NOMOVE;
         if (left || top || right || bottom) {
             position->hwndInsertAfter = HWND_BOTTOM;
