@@ -1025,7 +1025,8 @@ LRESULT CPlayerToolBar::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
 CSize CPlayerToolBar::CalcFixedLayout(BOOL stretch, BOOL horizontal)
 {
     CSize size = CToolBar::CalcFixedLayout(stretch, horizontal);
-    if (AppIsThemeLoaded()) size.cy = m_pMainFrame->m_dpi.ScaleY(78);
+    if (AppIsThemeLoaded()) size.cy = m_pMainFrame->m_dpi.ScaleY(
+        m_pMainFrame->m_controls.ControlChecked(CMainFrameControls::Toolbar::SEEKBAR) ? 63 : 78);
     return size;
 }
 
@@ -1054,7 +1055,8 @@ bool CPlayerToolBar::PaintNativeAlpha()
         graphics.Clear(Gdiplus::Color(1, 0, 0, 0));
         graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
         auto& toolbar = GetToolBarCtrl();
-        const int centreY = m_pMainFrame->m_dpi.ScaleY(39);
+        const int centreY = m_pMainFrame->m_dpi.ScaleY(
+            m_pMainFrame->m_controls.ControlChecked(CMainFrameControls::Toolbar::SEEKBAR) ? 24 : 39);
         const int hotItem = toolbar.GetHotItem();
         for (int i = 0; i < toolbar.GetButtonCount(); ++i) {
             TBBUTTON button = {};
