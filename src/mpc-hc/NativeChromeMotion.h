@@ -62,6 +62,11 @@ protected:
             if (p >= 1.0) {
                 KillTimer(1); m_running = false;
                 if (!m_target) ShowWindow(SW_HIDE);
+                else {
+                    // A static child may have painted while still outside the
+                    // viewport clip. Refresh once at the fully visible endpoint.
+                    RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_NOERASE);
+                }
             }
             return 0;
         }
