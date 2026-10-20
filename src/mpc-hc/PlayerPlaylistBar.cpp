@@ -3025,10 +3025,6 @@ void CPlayerPlaylistBar::OnContextMenu(CWnd* /*pWnd*/, CPoint point)
         M_POSITION_RIGHT,
         M_POSITION_BOTTOM,
         M_POSITION_FLOAT,
-        M_MATERIAL_SOLID,
-        M_MATERIAL_MICA,
-        M_MATERIAL_ACRYLIC,
-        M_TINT_NONE, M_TINT_HALF, M_TINT_DARK, M_TINT_OLD
     };
 
     CAppSettings& s = AfxGetAppSettings();
@@ -3112,11 +3108,11 @@ void CPlayerPlaylistBar::OnContextMenu(CWnd* /*pWnd*/, CPoint point)
         m.AppendMenu(MF_STRING | MF_ENABLED | (s.bShufflePlaylistItems ? MF_CHECKED : MF_UNCHECKED), M_SHUFFLE, ResStr(IDS_PLAYLIST_SHUFFLE));
         m.AppendMenu(MF_SEPARATOR);
         m.AppendMenu(MF_STRING | MF_ENABLED | (s.bHidePlaylistFullScreen ? MF_CHECKED : MF_UNCHECKED), M_HIDEFULLSCREEN, ResStr(IDS_PLAYLIST_HIDEFS));
-        m.AppendMenu(MF_SEPARATOR);
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
         if (!UsesNativePopup())
 #endif
         {
+            m.AppendMenu(MF_SEPARATOR);
             const UINT dockBarID = GetParent()->GetDlgCtrlID();
             CMenu positionMenu;
             positionMenu.CreatePopupMenu();
@@ -3128,27 +3124,6 @@ void CPlayerPlaylistBar::OnContextMenu(CWnd* /*pWnd*/, CPoint point)
             m.AppendMenu(MF_STRING | MF_POPUP | MF_ENABLED, (UINT_PTR)positionMenu.GetSafeHmenu(), ResStr(IDS_PLAYLIST_POSITION));
             positionMenu.Detach();
         }
-#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-        if (UsesNativePopup()) {
-            CMenu material; material.CreatePopupMenu();
-            const int selected = m_nativePopup.MaterialMode();
-            if (selected != 1 && !m_nativePopup.MaterialLive()) {
-                material.AppendMenu(MF_STRING | MF_DISABLED, 0, L"Unavailable: solid fallback (see material log)");
-                material.AppendMenu(MF_SEPARATOR);
-            }
-            material.AppendMenu(MF_STRING | (selected == 1 ? MF_CHECKED : 0), M_MATERIAL_SOLID, L"Solid");
-            material.AppendMenu(MF_STRING | (selected == 2 ? MF_CHECKED : 0), M_MATERIAL_MICA, L"Mica");
-            material.AppendMenu(MF_STRING | (selected == 3 ? MF_CHECKED : 0), M_MATERIAL_ACRYLIC, L"Acrylic");
-            material.AppendMenu(MF_SEPARATOR);
-            const int tint = m_nativePopup.MaterialTint();
-            material.AppendMenu(MF_STRING | (tint == 0 ? MF_CHECKED : 0), M_TINT_NONE, L"Dark tint: 0% (system material)");
-            material.AppendMenu(MF_STRING | (tint == 128 ? MF_CHECKED : 0), M_TINT_HALF, L"Dark tint: 50%");
-            material.AppendMenu(MF_STRING | (tint == 192 ? MF_CHECKED : 0), M_TINT_DARK, L"Dark tint: 75%");
-            material.AppendMenu(MF_STRING | (tint == 232 ? MF_CHECKED : 0), M_TINT_OLD, L"Dark tint: 91% (previous test)");
-            m.AppendMenu(MF_POPUP, reinterpret_cast<UINT_PTR>(material.GetSafeHmenu()), L"Panel background");
-            material.Detach();
-        }
-#endif
         if (AppIsThemeLoaded()) {
             m.fulfillThemeReqs();
         }
@@ -3173,15 +3148,6 @@ void CPlayerPlaylistBar::OnContextMenu(CWnd* /*pWnd*/, CPoint point)
     }
 
     switch (nID) {
-#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-        case M_TINT_NONE: m_nativePopup.SetMaterialTint(0); return;
-        case M_TINT_HALF: m_nativePopup.SetMaterialTint(128); return;
-        case M_TINT_DARK: m_nativePopup.SetMaterialTint(192); return;
-        case M_TINT_OLD: m_nativePopup.SetMaterialTint(232); return;
-        case M_MATERIAL_SOLID: m_nativePopup.SetMaterialMode(1); return;
-        case M_MATERIAL_MICA: m_nativePopup.SetMaterialMode(2); return;
-        case M_MATERIAL_ACRYLIC: m_nativePopup.SetMaterialMode(3); return;
-#endif
         case M_OPEN:
             {
                 CAutoLock pledit(&m_plEditLock);

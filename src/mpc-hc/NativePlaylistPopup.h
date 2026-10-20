@@ -15,7 +15,7 @@ class CNativePlaylistPopup : public CWnd, public CDropClient {
     bool m_systemBorder = false;
     bool m_materialActive = false, m_materialPainting = false, m_bufferedPaintReady = false;
     CNativePlaylistMaterial m_systemMaterial;
-    int m_materialTint = 0;
+    int m_materialTint = 128;
     int m_materialMode = 3; // documented DWM: 1 = solid, 2 = Mica, 3 = Acrylic
     CFont m_titleFont;
     ULONG_PTR m_graphicsToken = 0;
@@ -58,10 +58,6 @@ public:
     void ConfigureSurface();
     bool MaterialActive() const { return m_materialActive; }
     bool MaterialLive() const { return m_materialActive && m_systemMaterial.Active(); }
-    int MaterialMode() const { return m_materialMode; }
-    void SetMaterialMode(int mode);
-    int MaterialTint() const { return m_materialTint; }
-    void SetMaterialTint(int tint);
     bool PaintMaterialList();
     void QueueMaterialForeground();
     void UpdateMaterialForeground();

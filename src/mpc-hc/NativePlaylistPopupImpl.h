@@ -11,8 +11,9 @@
 bool CNativePlaylistPopup::Create(CWnd* owner, CPlayerPlaylistBar* bar)
 {
     m_bar = bar;
-    m_materialMode = std::clamp(static_cast<int>(AfxGetApp()->GetProfileInt(L"Settings", L"FluentPlaylistMaterial", 3)), 1, 3);
-    m_materialTint = std::clamp(static_cast<int>(AfxGetApp()->GetProfileInt(L"Settings", L"FluentPlaylistTint", 0)), 0, 255);
+    // Product default: one tested material, independent of old probe settings.
+    m_materialMode = 3;
+    m_materialTint = 128;
     m_bufferedPaintReady = SUCCEEDED(::BufferedPaintInit());
     // Give the native erase path the same background as our explicit paint path.
     static const HBRUSH background = ::CreateSolidBrush(SurfaceColor());
@@ -129,24 +130,6 @@ bool CNativePlaylistPopup::PaintMaterialBuffer(HDC target, const RECT& rect,
         }
     }
     return SUCCEEDED(EndBufferedPaint(paint, TRUE));
-}
-
-void CNativePlaylistPopup::SetMaterialTint(int tint)
-{
-    EndReveal(false);
-    m_materialTint = std::clamp(tint, 0, 255);
-    AfxGetApp()->WriteProfileInt(L"Settings", L"FluentPlaylistTint", m_materialTint);
-    RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN | RDW_UPDATENOW);
-}
-
-void CNativePlaylistPopup::SetMaterialMode(int mode)
-{
-    if (mode < 1 || mode > 3) return;
-    EndReveal(false);
-    m_materialMode = mode;
-    AfxGetApp()->WriteProfileInt(L"Settings", L"FluentPlaylistMaterial", mode);
-    ConfigureSurface();
-    RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN | RDW_UPDATENOW);
 }
 
 void CNativePlaylistPopup::QueueMaterialForeground()
