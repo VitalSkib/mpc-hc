@@ -1651,6 +1651,9 @@ BOOL CMainFrame::PreCreateWindow(CREATESTRUCT& cs)
         return FALSE;
     }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    cs.style &= ~WS_CAPTION; // The animated client caption is our only caption.
+#endif
     cs.dwExStyle &= ~WS_EX_CLIENTEDGE;
     cs.lpszClass = MPC_WND_CLASS_NAME; //AfxRegisterWndClass(nullptr);
 
@@ -8869,6 +8872,10 @@ void CMainFrame::SetCaptionState(MpcCaptionState eState)
         }
     }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    dwAdd &= ~WS_CAPTION;
+    dwRemove |= WS_CAPTION;
+#endif
     UINT uFlags = SWP_NOZORDER;
     if (dwRemove != dwAdd) {
         uFlags |= SWP_FRAMECHANGED;
@@ -12882,6 +12889,9 @@ void CMainFrame::SetDefaultWindowRect(int iMonitor)
 {
     const CAppSettings& s = AfxGetAppSettings();
     CRect rcLastWindowPos = s.rcLastWindowPos;
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    ModifyStyle(WS_CAPTION, 0, SWP_FRAMECHANGED | SWP_NOZORDER | SWP_NOACTIVATE);
+#endif
 
     if (s.eCaptionMenuMode != MODE_SHOWCAPTIONMENU) {
         if (s.eCaptionMenuMode == MODE_FRAMEONLY) {
@@ -13527,6 +13537,10 @@ void CMainFrame::ToggleFullscreen(bool fToNearest, bool fSwitchScreenResWhenHasT
             m_bNeedZoomAfterFullscreenExit = false;
         }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        dwAdd &= ~WS_CAPTION;
+        dwRemove |= WS_CAPTION;
+#endif
         ModifyStyle(dwRemove, dwAdd, SWP_NOZORDER);
         SetWindowPos(pInsertAfter, windowRect.left, windowRect.top, windowRect.Width(), windowRect.Height(),
             SWP_NOSENDCHANGING | SWP_FRAMECHANGED);

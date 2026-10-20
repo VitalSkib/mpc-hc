@@ -59,7 +59,8 @@ public:
     bool EnsureNativeChromeHosts();
     bool NativeChromeHosted() const { return m_chromeHosted; }
     bool IsNativeHeaderWindow(HWND window) const {
-        return window && window == m_nativeHeader.GetSafeHwnd();
+        return window && (window == m_nativeHeader.GetSafeHwnd()
+            || window == m_topChromeHost.GetSafeHwnd() || window == m_bottomChromeHost.GetSafeHwnd());
     }
 #endif
 #ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
