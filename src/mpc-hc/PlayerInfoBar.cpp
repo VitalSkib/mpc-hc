@@ -317,7 +317,13 @@ void CPlayerInfoBar::OnSize(UINT nType, int cx, int cy)
 
     Relayout();
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    // Resizing a keyed bar invalidates its surface, including static names.
+    // Updating values alone cannot repair the unchanged left-hand column.
+    RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN);
+#else
     Invalidate();
+#endif
 }
 
 void CPlayerInfoBar::OnLButtonDown(UINT nFlags, CPoint point)

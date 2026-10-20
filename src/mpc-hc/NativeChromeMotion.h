@@ -106,15 +106,22 @@ public:
     void Present(bool visible, bool animate) {
         if (m_rect.IsRectEmpty()) visible = false;
         if (m_known && m_target == visible && (animate || !m_running)) return;
+        const bool revealing = visible && (!m_known || !m_target);
         m_known = true; m_target = visible;
         KillTimer(1); m_running = false;
         if (!animate) {
             m_position = visible ? 1.0 : 0.0; Apply();
-            ShowWindow(visible ? SW_SHOWNOACTIVATE : SW_HIDE); return;
+            ShowWindow(visible ? SW_SHOWNOACTIVATE : SW_HIDE);
+            if (revealing) RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_NOERASE);
+            return;
         }
         m_from = m_position; m_start = 0;
         Apply();
         if (visible || m_position > 0) ShowWindow(SW_SHOWNOACTIVATE);
+        // A hidden ancestor may discard a keyed descendant's backing surface.
+        // Refresh the complete subtree once per reveal, not on animation ticks
+        // or mouse movement; static labels and changing values stay in sync.
+        if (revealing) RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_NOERASE);
         if (m_position == (visible ? 1.0 : 0.0)) return;
         m_running = SetTimer(1, 15, nullptr) != 0;
         if (!m_running) {

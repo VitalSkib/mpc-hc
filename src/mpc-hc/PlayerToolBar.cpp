@@ -1021,6 +1021,9 @@ std::vector<LONG> CPlayerToolBar::TransportGeometry()
     geometry.insert(geometry.end(), {rect.left, rect.top, rect.right, rect.bottom});
     m_pMainFrame->GetClientRect(rect);
     geometry.insert(geometry.end(), {rect.left, rect.top, rect.right, rect.bottom});
+    CPoint frameOrigin(0, 0);
+    m_pMainFrame->MapWindowPoints(this, &frameOrigin, 1);
+    geometry.insert(geometry.end(), {frameOrigin.x, LONG(GetParent() == m_pMainFrame)});
     GetClientRect(rect);
     geometry.insert(geometry.end(), {rect.left, rect.top, rect.right, rect.bottom});
     auto& tb = GetToolBarCtrl();
@@ -1223,9 +1226,14 @@ bool CPlayerToolBar::ArrangeTransportControls(const CRect& client)
     const int inset = m_pMainFrame->m_dpi.ScaleX(9);
     const int layoutWidth = std::max(0, static_cast<int>(client.Width()) - inset);
     const int mute = widthOf(ID_VOLUME_MUTE), overflow = widthOf(ID_TRANSPORT_OVERFLOW);
-    CRect frame; m_pMainFrame->GetClientRect(frame);
-    CPoint middle(frame.CenterPoint().x, 0);
-    m_pMainFrame->ClientToScreen(&middle); ScreenToClient(&middle);
+    // Hosted bars fill their viewport. Their layout must not depend on the
+    // frame's transient screen origin during a fullscreen placement transaction.
+    CPoint middle(client.CenterPoint().x, 0);
+    if (GetParent() == m_pMainFrame) {
+        CRect frame; m_pMainFrame->GetClientRect(frame);
+        middle.x = frame.CenterPoint().x;
+        m_pMainFrame->MapWindowPoints(this, &middle, 1);
+    }
     const int wantedLeft = static_cast<int>(middle.x) - beforePlay - play / 2;
     // Exact window centring when there is room. At the narrowest size reserve
     // just the hamburger and mute, letting the transport move towards the left.
