@@ -309,6 +309,9 @@ void CPlayerInfoBar::PrepareNativePresentation()
 
 LRESULT CPlayerInfoBar::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
 {
+    // The container background is already keyed; let WM_PRINT dispatch all
+    // child painters without an opaque default dialog fill over that background.
+    if (message == WM_PRINTCLIENT && m_nativePrinting) return 0;
     if (message == WM_PAINT && m_nativePresentation) {
         CPaintDC paint(this);
         if (!m_nativePrinting) PublishNativePresentation();
