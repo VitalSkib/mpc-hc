@@ -36,8 +36,10 @@ class CNativeChromeHost final : public CWnd {
         const int offset = static_cast<int>(std::lround((1.0 - m_position) * m_rect.Height())) * (m_top ? -1 : 1);
         CRect before; m_content.GetWindowRect(before); ScreenToClient(before);
         const CRect after(0, offset, m_rect.Width(), offset + m_rect.Height());
+        // Transparent hosts have no pixels to preserve. Copying valid bits
+        // between animation positions can accumulate stale horizontal bands.
         if (before != after) m_content.SetWindowPos(nullptr, after.left, after.top, after.Width(), after.Height(),
-            SWP_NOZORDER | SWP_NOACTIVATE);
+            SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS);
     }
     void DetachControls() {
         for (const auto& item : m_hosted) if (::IsWindow(item.window) && ::IsWindow(item.parent))
@@ -96,7 +98,7 @@ public:
     void Layout(const CRect& rectangle) {
         if (rectangle.IsRectEmpty() || m_rect == rectangle) return;
         m_rect = rectangle;
-        SetWindowPos(&wndTop, rectangle.left, rectangle.top, rectangle.Width(), rectangle.Height(), SWP_NOACTIVATE);
+        SetWindowPos(&wndTop, rectangle.left, rectangle.top, rectangle.Width(), rectangle.Height(), SWP_NOACTIVATE | SWP_NOCOPYBITS);
         if (m_known) { KillTimer(1); m_running = false; m_position = m_target ? 1.0 : 0.0; }
         Apply();
         if (m_known && !m_target) ShowWindow(SW_HIDE);
