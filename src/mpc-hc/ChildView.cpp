@@ -202,8 +202,10 @@ bool CChildView::EnsureNativeChromeHosts()
             || !m_bottomChromeHost.Adopt(m_pMainFrame->m_wndToolBar, m_pMainFrame)) {
         m_bottomChromeHost.RestoreControls(); return false;
     }
-    if (m_nativeHeader.GetSafeHwnd()) m_nativeHeader.SetParent(m_topChromeHost.Content());
-    if (m_nativeBackdrop.GetSafeHwnd()) m_nativeBackdrop.SetParent(m_bottomChromeHost.Content());
+    // Layered artwork must not carry an already presented surface across
+    // parents. Recreate only when adopting a previous fallback presentation.
+    if (m_nativeHeader.GetSafeHwnd()) m_nativeHeader.DestroyWindow();
+    if (m_nativeBackdrop.GetSafeHwnd()) m_nativeBackdrop.DestroyWindow();
     m_chromeHosted = true;
     return true;
 }
@@ -213,6 +215,13 @@ void CChildView::UpdateNativeDecoration()
     if (m_refreshingNativeDecoration || !GetSafeHwnd()) return;
     m_refreshingNativeDecoration = true;
     struct ResetFlag { bool& flag; ~ResetFlag() { flag = false; } } reset{m_refreshingNativeDecoration};
+    // Mount before the first artwork allocation, not after its first paint.
+    // During frame construction native bars may not exist yet; wait for them.
+    if (!m_chromeHosted && !m_pMainFrame->HasDedicatedFSVideoWindow()) {
+        if (!m_pMainFrame->m_wndSeekBar.GetSafeHwnd()
+                || !m_pMainFrame->m_wndToolBar.GetSafeHwnd()) return;
+        EnsureNativeChromeHosts();
+    }
     CRect view; GetClientRect(view);
     const unsigned height = m_pMainFrame->m_controls.GetVisibleToolbarsHeight();
     const bool mediaLoaded = m_pMainFrame->GetLoadState() == MLS::LOADED;
