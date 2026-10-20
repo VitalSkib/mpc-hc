@@ -278,9 +278,9 @@ void CChildView::UpdateNativeDecoration()
             && AfxGetApp()->GetProfileInt(L"Settings", L"FluentChromeAnimation", 1) != 0;
         auto& controls = m_pMainFrame->m_controls;
         const int seekHeight = controls.ControlChecked(CMainFrameControls::Toolbar::SEEKBAR)
-            ? m_pMainFrame->m_wndSeekBar.CalcFixedLayout(TRUE, TRUE).cy : 0;
+            ? static_cast<CControlBar&>(m_pMainFrame->m_wndSeekBar).CalcFixedLayout(TRUE, TRUE).cy : 0;
         const int buttonsHeight = controls.ControlChecked(CMainFrameControls::Toolbar::CONTROLS)
-            ? m_pMainFrame->m_wndToolBar.CalcFixedLayout(TRUE, TRUE).cy : 0;
+            ? static_cast<CControlBar&>(m_pMainFrame->m_wndToolBar).CalcFixedLayout(TRUE, TRUE).cy : 0;
         const unsigned visibleHosted = controls.GetVisibleHostedToolbarsHeight();
         const int otherHeight = static_cast<int>(height - std::min(height, visibleHosted));
         CRect footer(view); footer.bottom -= otherHeight;
