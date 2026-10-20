@@ -21,6 +21,7 @@
 
 #include "stdafx.h"
 #include "mplayerc.h"
+#include "NativeUiDiagnostics.h"
 #include "PlayerInfoBar.h"
 #include "MainFrm.h"
 #include "CMPCTheme.h"
@@ -238,6 +239,19 @@ void CPlayerInfoBar::Relayout()
     for (size_t i = 0; i < m_label.GetCount(); i++, y += h) {
         m_label[i]->MoveWindow(1, y, w - sep, h);
         m_info[i]->MoveWindow(w + sep, y, r.Width() - w - sep - 1, h);
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+        CStatusLabel* columns[] = {m_label[i], m_info[i]};
+        for (CStatusLabel* child : columns) {
+            CRect bounds; child->GetWindowRect(bounds);
+            char state[512] = {};
+            _snprintf_s(state, sizeof(state), _TRUNCATE,
+                "row=%zu column=%s textLength=%d parent=%p visible=%d labelWidth=%d separator=%d parentWidth=%ld screen=[%ld,%ld,%ld,%ld]",
+                i, child == columns[0] ? "name" : "value", child->GetWindowTextLength(),
+                static_cast<void*>(::GetParent(child->m_hWnd)), int(child->IsWindowVisible()), w, sep, r.Width(),
+                bounds.left, bounds.top, bounds.right, bounds.bottom);
+            NativeUiDiagnostics::Write(child->m_hWnd, "stats.layout", state);
+        }
+#endif
     }
 }
 

@@ -21,6 +21,7 @@
 
 #include "stdafx.h"
 #include "mplayerc.h"
+#include "NativeUiDiagnostics.h"
 #include <cmath>
 #include <atlbase.h>
 #include <afxpriv.h>
@@ -1038,6 +1039,24 @@ std::vector<LONG> CPlayerToolBar::TransportGeometry()
 
 LRESULT CPlayerToolBar::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
 {
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+    const bool traceMutation = message == TB_SETBUTTONINFOW || message == TB_SETBUTTONINFOA
+        || message == TB_SETBUTTONSIZE || message == TB_AUTOSIZE || message == TB_HIDEBUTTON
+        || message == WM_SIZE || message == WM_WINDOWPOSCHANGED;
+    char tracePhase[96] = {};
+    if (traceMutation && m_transportGraphicsToken) {
+        _snprintf_s(tracePhase, sizeof(tracePhase), _TRUNCATE, "before.%04x", message);
+        NativeUiDiagnostics::Toolbar(*this, tracePhase);
+        char detail[256] = {};
+        if ((message == TB_SETBUTTONINFOW || message == TB_SETBUTTONINFOA) && lParam) {
+            const auto* info = reinterpret_cast<const TBBUTTONINFO*>(lParam);
+            _snprintf_s(detail, sizeof(detail), _TRUNCATE, "idOrIndex=%llu mask=%08lx width=%u image=%d arranging=%d",
+                static_cast<unsigned long long>(wParam), info->dwMask, unsigned(info->cx), info->iImage, int(m_arrangingTransport));
+        } else _snprintf_s(detail, sizeof(detail), _TRUNCATE, "wParam=%llu lParam=%llu arranging=%d",
+            static_cast<unsigned long long>(wParam), static_cast<unsigned long long>(lParam), int(m_arrangingTransport));
+        NativeUiDiagnostics::Write(m_hWnd, tracePhase, detail);
+    }
+#endif
     // Native command-UI updates and deferred MFC layout can change the toolbar
     // after the frame has been placed. Reconcile before drawing, never during
     // NM_CUSTOMDRAW or by repainting the video. Stable paints do no rearranging.
@@ -1047,9 +1066,21 @@ LRESULT CPlayerToolBar::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
     }
     if (message == WM_PAINT && AppIsThemeLoaded() && m_transportGraphicsToken) {
         CPaintDC paint(this);
-        if (PaintNativeAlpha()) return 0;
+        if (PaintNativeAlpha()) {
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+            NativeUiDiagnostics::Toolbar(*this, "painted");
+#endif
+            return 0;
+        }
     }
-    return CToolBar::WindowProc(message, wParam, lParam);
+    const LRESULT result = CToolBar::WindowProc(message, wParam, lParam);
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+    if (traceMutation && m_transportGraphicsToken) {
+        _snprintf_s(tracePhase, sizeof(tracePhase), _TRUNCATE, "after.%04x", message);
+        NativeUiDiagnostics::Toolbar(*this, tracePhase);
+    }
+#endif
+    return result;
 }
 
 CSize CPlayerToolBar::CalcFixedLayout(BOOL stretch, BOOL horizontal)
@@ -1184,6 +1215,9 @@ bool CPlayerToolBar::ArrangeTransportControls(const CRect& client)
 {
     if (m_arrangingTransport) return true;
     m_arrangingTransport = true;
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+    NativeUiDiagnostics::Toolbar(*this, "arrange.begin");
+#endif
     auto& tb = GetToolBarCtrl();
     // CToolBar owns a deferred button layout after SetSizes/image changes.
     // Use its public accessor before reading common-control rectangles.
@@ -1264,6 +1298,14 @@ bool CPlayerToolBar::ArrangeTransportControls(const CRect& client)
     if (themedToolTip.GetSafeHwnd()) RegisterThemedToolTipTools();
     Invalidate(FALSE);
     m_transportGeometry = TransportGeometry();
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+    char detail[512] = {};
+    _snprintf_s(detail, sizeof(detail), _TRUNCATE,
+        "clientWidth=%ld anchor=%ld wantedLeft=%d left=%d core=%d beforePlay=%d play=%d secondary=%d mute=%d overflow=%d",
+        client.Width(), middle.x, wantedLeft, left, core, beforePlay, play, secondary, mute, overflow);
+    NativeUiDiagnostics::Write(m_hWnd, "toolbar.arrange.inputs", detail);
+    NativeUiDiagnostics::Toolbar(*this, "arrange.end");
+#endif
     m_arrangingTransport = false;
     return true;
 }
