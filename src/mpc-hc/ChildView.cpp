@@ -214,7 +214,7 @@ bool CChildView::EnsureNativeChromeHosts()
 
 void CChildView::UpdateNativeDecoration()
 {
-    if (m_refreshingNativeDecoration || !GetSafeHwnd()) return;
+    if (m_refreshingNativeDecoration || !GetSafeHwnd() || !m_pMainFrame->CanHoverControls()) return;
     m_refreshingNativeDecoration = true;
     struct ResetFlag { bool& flag; ~ResetFlag() { flag = false; } } reset{m_refreshingNativeDecoration};
     // Mount before the first artwork allocation, not after its first paint.

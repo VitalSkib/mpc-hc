@@ -1,6 +1,7 @@
 /* Native list flyout implementation, included by PlayerPlaylistBar.cpp. GPLv3+. */
 #pragma once
 #include <dwmapi.h>
+#include "MouseTouch.h"
 
 #include <gdiplus.h>
 #include <cmath>
@@ -20,6 +21,8 @@ bool CNativePlaylistPopup::Create(CWnd* owner, CPlayerPlaylistBar* bar)
     Gdiplus::GdiplusStartupInput graphicsStartup;
     Gdiplus::GdiplusStartup(&m_graphicsToken, &graphicsStartup, nullptr);
     const DWORD corners = 2; const BOOL dark = TRUE;
+    const BOOL noTransitions = TRUE;
+    DwmSetWindowAttribute(m_hWnd, DWMWA_TRANSITIONS_FORCEDISABLED, &noTransitions, sizeof(noTransitions));
     const COLORREF border = BorderColor();
     m_systemBorder = SUCCEEDED(DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(34), &border, sizeof(border)));
     DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(33), &corners, sizeof(corners));
@@ -54,6 +57,12 @@ void CNativePlaylistPopup::ConfigureSurface()
         DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(38), &none, sizeof(none));
         DwmExtendFrameIntoClientArea(m_hWnd, &solid);
     }
+    // A material panel carries its border in the same foreground surface.
+    // DWM's separate nonclient border must not precede that surface.
+    const COLORREF border = m_materialActive ? 0xfffffffe : BorderColor();
+    const bool borderSet = SUCCEEDED(DwmSetWindowAttribute(m_hWnd,
+        static_cast<DWMWINDOWATTRIBUTE>(34), &border, sizeof(border)));
+    m_systemBorder = !m_materialActive && borderSet;
     // Win32 requires bottom-to-top composited painting and transparent child
     // paint ordering for alpha in descendant HWNDs. These are non-layered
     // windows: WS_EX_TRANSPARENT here changes paint order, not a color key.
@@ -262,9 +271,11 @@ CRect CNativePlaylistPopup::HoverRect() const
 
 bool CNativePlaylistPopup::WantsReveal() const
 {
-    if (!m_bar->m_nativePopupSelected || m_band.IsRectEmpty()) return false;
+    if (!m_bar->m_pMainFrame->CanHoverControls()
+            || !m_bar->m_nativePopupSelected || m_band.IsRectEmpty()) return false;
     CPoint cursor; ::GetCursorPos(&cursor);
-    return m_forceReveal || (!IsWindowVisible() && cursor != m_hiddenPoint && HoverRect().PtInRect(cursor));
+    return m_forceReveal || (!IsWindowVisible() && cursor != m_hiddenPoint && HoverRect().PtInRect(cursor)
+        && CMouse::CursorOnRootWindow(cursor, *m_bar->m_pMainFrame));
 }
 
 void CNativePlaylistPopup::HideEnabled(bool animate)
@@ -290,6 +301,7 @@ void CNativePlaylistPopup::Dismiss()
 
 void CNativePlaylistPopup::Refresh(const CRect& band, bool show, int dpi, bool controlsVisible)
 {
+    if (!m_bar->m_pMainFrame->CanHoverControls()) { HideEnabled(false); return; }
     const bool sameLayout = m_band == band && m_dpi == dpi;
     m_band = band;
     if (m_dpi != dpi || !m_titleFont.GetSafeHandle()) {
@@ -374,7 +386,6 @@ void CNativePlaylistPopup::PaintSurface(CDC& dc)
     dc.FillSolidRect(client, SurfaceColor());
     CRect header(client); header.bottom = std::min<LONG>(client.bottom, MulDiv(32, m_dpi, 96));
     dc.FillSolidRect(0, header.bottom - 1, client.Width(), 1, BorderColor());
-    CBrush border(BorderColor()); if (!m_systemBorder) dc.FrameRect(client, &border);
     CRect close = CloseRect();
     if (m_closeHot) dc.FillSolidRect(close, SelectionColor());
     dc.SetBkMode(TRANSPARENT); dc.SetTextColor(RGB(210, 210, 210));
@@ -388,24 +399,61 @@ void CNativePlaylistPopup::PaintSurface(CDC& dc)
     dc.MoveTo(center.x-half, center.y-half); dc.LineTo(center.x+half+1, center.y+half+1);
     dc.MoveTo(center.x+half, center.y-half); dc.LineTo(center.x-half-1, center.y+half+1);
     dc.SelectObject(previous);
+    if (!m_systemBorder && client.Width() > 1 && client.Height() > 1) {
+        Gdiplus::Graphics graphics(dc.GetSafeHdc());
+        graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+        const float w = float(client.Width()-1), h = float(client.Height()-1);
+        const float diameter = std::min(float(MulDiv(16, m_dpi, 96)), std::min(w, h));
+        Gdiplus::GraphicsPath path;
+        path.AddArc(.5f, .5f, diameter, diameter, 180, 90);
+        path.AddArc(w-diameter+.5f, .5f, diameter, diameter, 270, 90);
+        path.AddArc(w-diameter+.5f, h-diameter+.5f, diameter, diameter, 0, 90);
+        path.AddArc(.5f, h-diameter+.5f, diameter, diameter, 90, 90);
+        path.CloseFigure();
+        Gdiplus::Pen border(Gdiplus::Color(255, 60, 60, 60), 1.f);
+        graphics.DrawPath(&border, &path);
+    }
 }
 
 bool CNativePlaylistPopup::BeginLiveSlide()
 {
     GetWindowRect(m_liveSlideRect);
     if (m_liveSlideRect.IsRectEmpty()) return false;
-    // Prepare full-size artwork once. During the transition the native child
-    // layout and composition foreground stay at that size and are clipped by
-    // the single growing HWND, together with its backdrop and nonclient frame.
+    // Prepare the complete, final-size panel once. Moving a full-size HWND
+    // preserves the backdrop, foreground texture and native child geometry.
+    // Its window region is the intersection with a fixed reveal viewport.
     UpdateMaterialForeground();
     if (!m_materialActive) return BeginReveal();
     m_liveSliding = true; m_liveSlideStart = 0;
-    SetWindowPos(&wndTop, m_liveSlideRect.left, m_liveSlideRect.bottom - 1,
-        m_liveSlideRect.Width(), 1, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    if (!ApplyLiveSlide(0.0)) { EndLiveSlide(false); return false; }
+    SetWindowPos(&wndTop, 0, 0, 0, 0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
     // Present the prepared starting geometry before starting the clock. There
     // is no per-frame synchronous painting or backdrop/foreground handoff.
     ::DwmFlush();
     if (!SetTimer(4, 15, nullptr)) { EndLiveSlide(true); return false; }
+    return true;
+}
+
+bool CNativePlaylistPopup::ApplyLiveSlide(double progress)
+{
+    const int width = m_liveSlideRect.Width(), height = m_liveSlideRect.Height();
+    const int offset = std::clamp(int(std::lround(height * (1.0-progress))), 0, height);
+    const int diameter = std::max(1, MulDiv(16, m_dpi, 96));
+    HRGN shape = CreateRoundRectRgn(0, 0, width, height, diameter, diameter);
+    HRGN viewport = CreateRoundRectRgn(0, -offset, width, height-offset, diameter, diameter);
+    if (!shape || !viewport || CombineRgn(shape, shape, viewport, RGN_AND) == ERROR) {
+        if (shape) DeleteObject(shape);
+        if (viewport) DeleteObject(viewport);
+        return false;
+    }
+    DeleteObject(viewport);
+    // Move before widening the clip: an intermediate update can only hide
+    // extra pixels, never expose the panel below its fixed bottom edge.
+    SetWindowPos(nullptr, m_liveSlideRect.left, m_liveSlideRect.top+offset, 0, 0,
+        SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS);
+    if (!SetWindowRgn(shape, TRUE)) { DeleteObject(shape); return false; }
+    // On success Windows owns the region, including its lifetime.
     return true;
 }
 
@@ -415,10 +463,7 @@ void CNativePlaylistPopup::TickLiveSlide()
     if (!m_liveSlideStart) m_liveSlideStart = GetTickCount64();
     const double progress = std::min(1.0, (GetTickCount64() - m_liveSlideStart) / 160.0);
     const double eased = 1.0 - std::pow(1.0 - progress, 3.0);
-    const int height = std::max(1, static_cast<int>(std::lround(m_liveSlideRect.Height() * eased)));
-    SetWindowPos(nullptr, m_liveSlideRect.left, m_liveSlideRect.bottom - height,
-        m_liveSlideRect.Width(), height, SWP_NOZORDER | SWP_NOACTIVATE);
-    if (progress >= 1.0) EndLiveSlide(true);
+    if (!ApplyLiveSlide(eased) || progress >= 1.0) EndLiveSlide(true);
 }
 
 void CNativePlaylistPopup::EndLiveSlide(bool show)
@@ -427,7 +472,8 @@ void CNativePlaylistPopup::EndLiveSlide(bool show)
     KillTimer(4);
     if (!show) ShowWindow(SW_HIDE);
     SetWindowPos(nullptr, m_liveSlideRect.left, m_liveSlideRect.top,
-        m_liveSlideRect.Width(), m_liveSlideRect.Height(), SWP_NOZORDER | SWP_NOACTIVATE);
+        0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS);
+    SetWindowRgn(nullptr, TRUE);
     m_liveSliding = false;
     if (show) QueueMaterialForeground();
 }
@@ -593,6 +639,7 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
         if ((wParam & 0xfff0) == SC_MOVE || (wParam & 0xfff0) == SC_SIZE) return 0;
         break;
     case WM_TIMER:
+        if (!m_bar->m_pMainFrame->CanHoverControls()) { HideEnabled(false); return 0; }
         if (wParam == 4) { TickLiveSlide(); return 0; }
         if (wParam == 3) {
             KillTimer(3); m_foregroundPending = false;
@@ -680,7 +727,7 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
 
 bool CPlayerPlaylistBar::NativePopupInputActive() const
 {
-    if (!UsesNativePopup()) return false;
+    if (!UsesNativePopup() || !m_pMainFrame->CanHoverControls()) return false;
     if (!m_nativePopup.IsWindowVisible()) return m_nativePopup.Revealing() || m_nativePopup.WantsReveal();
     if (HasActivePopup() || m_bDragging) return true;
     HWND capture = ::GetCapture();

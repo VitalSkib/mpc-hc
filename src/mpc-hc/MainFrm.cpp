@@ -22,6 +22,9 @@
 #include "stdafx.h"
 #include <optional>
 #include "MainFrm.h"
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+#include "../DSUtil/GeometryDiagnostics.h"
+#endif
 #include "mplayerc.h"
 #include "version.h"
 
@@ -23984,6 +23987,17 @@ LRESULT CMainFrame::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
         ASSERT(false);
         return 0;
     }
+
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+    // Observe the real frame/style during the empty-window -> first-file path.
+    // Do not force caption styles: Normal/Compact/Minimal retain native policy.
+    if (message == WM_STYLECHANGED || message == WM_WINDOWPOSCHANGED) {
+        char tag[64] = {};
+        sprintf_s(tag, "frame.msg-%04x.mode-%d.load-%d", message,
+            int(AfxGetAppSettings().eCaptionMenuMode), int(GetLoadState()));
+        GeometryDiagnostics::Record(tag, m_hWnd);
+    }
+#endif
 
     // A message sent from another thread leaves that thread blocked in its stack
     // while we run, so releasing the graph or the frame here is the same hazard

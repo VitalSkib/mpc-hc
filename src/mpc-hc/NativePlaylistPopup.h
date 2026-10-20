@@ -35,6 +35,7 @@ class CNativePlaylistPopup : public CWnd, public CDropClient {
     CRect m_liveSlideRect = CRect(0, 0, 0, 0);
     ULONGLONG m_liveSlideStart = 0;
     bool BeginLiveSlide();
+    bool ApplyLiveSlide(double progress);
     void TickLiveSlide();
     void EndLiveSlide(bool show);
     bool BeginReveal(bool fading = false);

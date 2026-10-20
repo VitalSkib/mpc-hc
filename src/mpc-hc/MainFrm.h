@@ -650,6 +650,7 @@ private:
     DROPEFFECT OnDropAccept(COleDataObject* pDataObject, DWORD dwKeyState, CPoint point) override;
 
 public:
+    bool CanHoverControls() { return IsWindowEnabled() && GetModalParent()->IsWindowEnabled(); }
     void StartWebServer(int nPort);
     void StopWebServer();
 

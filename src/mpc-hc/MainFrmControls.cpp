@@ -447,6 +447,9 @@ bool ToolbarInputActive(CPlayerBar *bar) {
 void CMainFrameControls::UpdateToolbarsVisibility()
 {
     ASSERT(GetCurrentThreadId() == AfxGetApp()->m_nThreadID);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (!m_pMainFrame->CanHoverControls()) return;
+#endif
 
     const auto& s = AfxGetAppSettings();
     auto& st = m_controlsVisibilityState;

@@ -895,7 +895,7 @@ bool CPlayerToolBar::DrawThemeIcon(Gdiplus::Graphics& graphics, const CRect& rec
 
 bool CPlayerToolBar::RouteTransparentButtonInput(MSG* message)
 {
-    if (!GetSafeHwnd() || !IsWindowVisible() || !IsWindowEnabled()
+    if (!m_pMainFrame->CanHoverControls() || !GetSafeHwnd() || !IsWindowVisible() || !IsWindowEnabled()
             || message->hwnd == m_hWnd || ::IsChild(m_hWnd, message->hwnd)
             || (::GetCapture() && ::GetCapture() != m_hWnd)) return false;
     switch (message->message) {
