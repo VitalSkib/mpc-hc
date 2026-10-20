@@ -41,6 +41,27 @@
 
 void drawButtonBG(NMCUSTOMDRAW nmcd, COLORREF c);
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+// Both native custom-draw and the alpha surface use this same hover geometry.
+static void DrawFluentToolbarHover(Gdiplus::Graphics& graphics, const CRect& cell,
+    int centreY, int dpi, const Gdiplus::Color& color)
+{
+    const float side = float(std::max(1, std::min({cell.Width(), cell.Height(), MulDiv(36, dpi, 96)})));
+    const float diameter = std::min(side, float(MulDiv(10, dpi, 96)));
+    const float x = float(cell.CenterPoint().x) - side / 2, y = float(centreY) - side / 2;
+    Gdiplus::GraphicsPath shape;
+    shape.AddArc(x, y, diameter, diameter, 180, 90);
+    shape.AddArc(x+side-diameter, y, diameter, diameter, 270, 90);
+    shape.AddArc(x+side-diameter, y+side-diameter, diameter, diameter, 0, 90);
+    shape.AddArc(x, y+side-diameter, diameter, diameter, 90, 90);
+    shape.CloseFigure();
+    Gdiplus::SolidBrush background(color);
+    graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+    graphics.FillPath(&background, &shape);
+}
+#endif
+
+
 // CPlayerToolBar
 /*
 Each toolbar image contains 4 rows of 26 buttons.
@@ -1082,9 +1103,8 @@ bool CPlayerToolBar::PaintNativeAlpha()
                 Gdiplus::Pen ring(enabled ? Gdiplus::Color(255, 76, 194, 255) : Gdiplus::Color(255, 145, 180, 195), float(m_pMainFrame->m_dpi.ScaleY(3)));
                 graphics.DrawEllipse(&ring, cx-diameter/2, cy-diameter/2, diameter, diameter);
             } else if (hot || pressed) {
-                Gdiplus::SolidBrush hover(Gdiplus::Color(pressed ? 65 : 40, 255, 255, 255));
-                graphics.FillRectangle(&hover, rect.left, centreY-m_nButtonHeight/2-5,
-                    rect.Width(), m_nButtonHeight+10);
+                DrawFluentToolbarHover(graphics, rect, centreY, m_pMainFrame->m_dpi.ScaleY(96),
+                    Gdiplus::Color(pressed ? 65 : 40, 255, 255, 255));
             }
             // Extract the current native image: toggle, custom and disabled states
             // remain owned by the toolbar. Recolour coverage, never blend against
@@ -1618,17 +1638,9 @@ void drawButtonBG(NMCUSTOMDRAW nmcd, COLORREF c)
     br.CopyRect(&nmcd.rc);
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
     const int dpi = ::GetDeviceCaps(nmcd.hdc, LOGPIXELSX);
-    const int side = std::min({br.Width(), br.Height(), MulDiv(36, dpi, 96)});
-    const CPoint centre = br.CenterPoint();
-    br.SetRect(centre.x - side / 2, centre.y - side / 2,
-        centre.x - side / 2 + side, centre.y - side / 2 + side);
-    const int shade = c == CMPCTheme::PlayerButtonClickedColor ? 58 : 72;
-    CBrush background(RGB(shade, shade, shade));
-    const auto oldBrush = dc.SelectObject(&background);
-    const HGDIOBJ oldPen = ::SelectObject(dc.GetSafeHdc(), ::GetStockObject(NULL_PEN));
-    const int corner = MulDiv(10, dpi, 96); // 5 logical pixels radius.
-    dc.RoundRect(br, CPoint(corner, corner));
-    ::SelectObject(dc.GetSafeHdc(), oldPen); dc.SelectObject(oldBrush);
+    const BYTE shade = c == CMPCTheme::PlayerButtonClickedColor ? 58 : 72;
+    Gdiplus::Graphics graphics(nmcd.hdc);
+    DrawFluentToolbarHover(graphics, br, br.CenterPoint().y, dpi, Gdiplus::Color(255, shade, shade, shade));
     dc.Detach();
     return;
 #endif

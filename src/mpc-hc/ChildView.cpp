@@ -26,6 +26,7 @@
 #include "CMPCTheme.h"
 #include "CMPCThemeUtil.h"
 #include "ColorProfileUtil.h"
+#include "PathUtils.h"
 #ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
 #include "../DSUtil/GeometryDiagnostics.h"
 #endif
@@ -241,14 +242,27 @@ void CChildView::UpdateNativeDecoration()
         m_nativeHeader.Hide(); m_nativeBackdrop.Hide(); return;
     }
     CString title; m_pMainFrame->GetWindowText(title);
-    const int dot = title.ReverseFind(L'.');
-    if (dot >= 0) {
-        CString suffix = title.Mid(dot); suffix.MakeLower();
-        for (LPCWSTR extension : {L".mp4", L".mkv", L".avi", L".mov", L".wmv", L".webm", L".m4v",
-                L".mpg", L".mpeg", L".ts", L".m2ts", L".mp3", L".flac", L".wav", L".aac", L".ogg", L".m4a"}) {
-            if (suffix == extension) { title.Truncate(dot); break; }
-        }
+    // Remove the suffix of an actual resource name, not the last dotted
+    // word of an arbitrary metadata/stream title. No format allow-list.
+    CString source = m_pMainFrame->m_wndPlaylistBar.GetCurFileName();
+    CString cleanSource(source);
+    const int scheme = source.Find(L"://");
+    const bool url = scheme > 1;
+    if (url) {
+        const int query = cleanSource.FindOneOf(L"?#");
+        if (query >= 0) cleanSource.Truncate(query);
     }
+    CString filename = PathUtils::StripPathOrUrl(cleanSource);
+    const int urlPath = url ? cleanSource.Find(L'/', scheme + 3) : -1;
+    const bool resourceName = !url || (urlPath >= 0 && cleanSource.Right(1) != L"/");
+    CString candidate;
+    if (resourceName && !source.IsEmpty() && (title.CompareNoCase(source) == 0 || title.CompareNoCase(cleanSource) == 0))
+        candidate = cleanSource;
+    else if (resourceName && !filename.IsEmpty() && (title.CompareNoCase(filename) == 0
+            || title.CompareNoCase(m_pMainFrame->GetFileName()) == 0)) candidate = filename;
+    const int dot = candidate.ReverseFind(L'.');
+    const int separator = std::max(candidate.ReverseFind(L'/'), candidate.ReverseFind(L'\\'));
+    if (dot > separator + 1 && dot < candidate.GetLength() - 1) title = candidate.Left(dot);
     const int dpi = m_pMainFrame->m_dpi.ScaleY(96);
     CRect bottom(view); bottom.top = std::max(view.top, view.bottom - int(height));
     const bool bottomVisible = nativeVisible && (videoLoaded || m_pMainFrame->IsStatusBarForcedForMessage());
