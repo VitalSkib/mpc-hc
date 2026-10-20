@@ -340,6 +340,22 @@ bool CNativePlaylistMaterial::StartSlide()
     return false;
 }
 
+bool CNativePlaylistMaterial::StartFade()
+{
+    if (!m_state) return false;
+    try {
+        auto& s = *m_state;
+        auto animation = s.compositor.CreateScalarKeyFrameAnimation();
+        animation.Duration(std::chrono::milliseconds(FadeDurationMs));
+        animation.InsertKeyFrame(0.f, 1.f);
+        animation.InsertKeyFrame(1.f, 0.f, s.compositor.CreateLinearEasingFunction());
+        s.panel.Opacity(0.f);
+        s.panel.StartAnimation(L"Opacity", animation);
+        return true;
+    } catch (const winrt::hresult_error& error) { MaterialLog("Start composition fade failed", error.code()); }
+    return false;
+}
+
 void CNativePlaylistMaterial::FinishSlide()
 {
     if (!m_state) return;
@@ -355,6 +371,8 @@ void CNativePlaylistMaterial::SetVisible(bool visible)
     try {
         m_state->viewport.IsVisible(visible);
         if (!visible) {
+            m_state->panel.StopAnimation(L"Opacity");
+            m_state->panel.Opacity(1.f);
             m_state->panel.StopAnimation(L"Offset.Y");
             m_state->panel.Offset({0.f, static_cast<float>(m_state->height), 0.f});
         } else m_state->panel.Offset({0.f, 0.f, 0.f});
@@ -385,6 +403,7 @@ bool CNativePlaylistMaterial::UpdateForeground(const void*, int, int) { return f
 bool CNativePlaylistMaterial::Ready() const { return false; }
 bool CNativePlaylistMaterial::PrepareSlide(float) { return false; }
 bool CNativePlaylistMaterial::StartSlide() { return false; }
+bool CNativePlaylistMaterial::StartFade() { return false; }
 void CNativePlaylistMaterial::FinishSlide() {}
 void CNativePlaylistMaterial::SetVisible(bool) {}
 #endif

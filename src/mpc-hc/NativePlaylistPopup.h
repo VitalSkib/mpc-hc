@@ -32,6 +32,11 @@ class CNativePlaylistPopup : public CWnd, public CDropClient {
     ULONGLONG m_revealStart = 0;
     bool m_revealing = false, m_fading = false;
     bool m_liveSliding = false;
+    bool m_liveFading = false;
+    ULONGLONG m_liveFadeStart = 0;
+    bool BeginLiveFade();
+    void TickLiveFade();
+    void EndLiveFade();
     ULONGLONG m_liveSlideStart = 0;
     bool BeginLiveSlide();
     void TickLiveSlide();

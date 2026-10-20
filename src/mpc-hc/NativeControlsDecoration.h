@@ -127,8 +127,12 @@ class CNativeControlsDecoration final : public CWnd
                 // Paint app artwork into this same surface, so the background,
                 // icon, title and caption buttons remain one animated header.
                 const int iconSize = std::min(Scale(28), height);
-                const CRect icon(Scale(12), (height-iconSize)/2,
-                    Scale(12)+iconSize, (height-iconSize)/2+iconSize);
+                // The SVG has equal internal padding on both axes. Matching
+                // its canvas inset to the vertical inset also aligns its
+                // visible circle equally from the left, top and bottom.
+                const int iconInset = (height-iconSize)/2;
+                const CRect icon(iconInset, iconInset,
+                    iconInset+iconSize, iconInset+iconSize);
                 if (customIcon && customIcon(graphics, icon, L"top-icon", false))
                     titleLeft = icon.right + Scale(8);
                 const Gdiplus::RectF title(float(titleLeft), top,
