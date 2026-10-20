@@ -868,7 +868,7 @@ bool CPlayerToolBar::DrawThemeIcon(Gdiplus::Graphics& graphics, const CRect& rec
         0,0,brightness,0,0, 0,0,0,!atlas && disabled ? 0.5f : 1.0f,0, 0,0,0,0,1};
     Gdiplus::ImageAttributes attributes;
     attributes.SetColorMatrix(&matrix);
-    if (!wcscmp(name, L"overflow")) {
+    if (!wcscmp(name, L"overflow") || wcsncmp(name, L"volume-", 7) == 0) {
         const float ink = disabled ? 184.0f/255.0f : hot ? 1.0f : 242.0f/255.0f;
         Gdiplus::ColorMatrix colour = {0,0,0,0,0, 0,0,0,0,0, 0,0,0,0,0, 0,0,0,1,0, ink,ink,ink,0,1};
         attributes.SetColorMatrix(&colour);
@@ -1084,6 +1084,14 @@ bool CPlayerToolBar::PaintNativeAlpha()
             // a colour-key matte (which leaves dark antialiasing fringes).
             CImageList* images = enabled ? toolbar.GetImageList() : toolbar.GetDisabledImageList();
             if (!images) images = toolbar.GetImageList();
+            if (button.idCommand == ID_VOLUME_MUTE) {
+                const int volume = m_volctrl.GetPos();
+                const LPCWSTR resource = IsMuted() || volume <= 0 ? L"volume-muted"
+                    : volume <= 33 ? L"volume-low" : volume <= 66 ? L"volume-medium" : L"volume-high";
+                const CRect artwork(int(cx)-m_nButtonHeight/2, centreY-m_nButtonHeight/2,
+                    int(cx)-m_nButtonHeight/2+m_nButtonHeight, centreY-m_nButtonHeight/2+m_nButtonHeight);
+                if (DrawThemeIcon(graphics, artwork, resource, hot, !enabled)) continue;
+            }
             if (button.idCommand == ID_TRANSPORT_OVERFLOW) {
                 const CRect icon(int(cx)-m_nButtonHeight/2, centreY-m_nButtonHeight/2,
                     int(cx)-m_nButtonHeight/2+m_nButtonHeight, centreY-m_nButtonHeight/2+m_nButtonHeight);
