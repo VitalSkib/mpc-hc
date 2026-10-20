@@ -1042,6 +1042,8 @@ LRESULT CPlayerToolBar::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
 #ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
     const bool traceMutation = message == TB_SETBUTTONINFOW || message == TB_SETBUTTONINFOA
         || message == TB_SETBUTTONSIZE || message == TB_AUTOSIZE || message == TB_HIDEBUTTON
+        || message == TB_DELETEBUTTON || message == TB_INSERTBUTTONA || message == TB_INSERTBUTTONW
+        || message == TB_ADDBUTTONSA || message == TB_ADDBUTTONSW
         || message == WM_SIZE || message == WM_WINDOWPOSCHANGED;
     char tracePhase[96] = {};
     if (traceMutation && m_transportGraphicsToken) {
@@ -1052,6 +1054,11 @@ LRESULT CPlayerToolBar::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
             const auto* info = reinterpret_cast<const TBBUTTONINFO*>(lParam);
             _snprintf_s(detail, sizeof(detail), _TRUNCATE, "idOrIndex=%llu mask=%08lx width=%u image=%d arranging=%d",
                 static_cast<unsigned long long>(wParam), info->dwMask, unsigned(info->cx), info->iImage, int(m_arrangingTransport));
+        } else if ((message == TB_INSERTBUTTONA || message == TB_INSERTBUTTONW) && lParam) {
+            const auto* button = reinterpret_cast<const TBBUTTON*>(lParam);
+            _snprintf_s(detail, sizeof(detail), _TRUNCATE, "index=%llu id=%d imageOrSeparatorWidth=%d style=%02x state=%02x arranging=%d",
+                static_cast<unsigned long long>(wParam), button->idCommand, button->iBitmap,
+                unsigned(button->fsStyle), unsigned(button->fsState), int(m_arrangingTransport));
         } else _snprintf_s(detail, sizeof(detail), _TRUNCATE, "wParam=%llu lParam=%llu arranging=%d",
             static_cast<unsigned long long>(wParam), static_cast<unsigned long long>(lParam), int(m_arrangingTransport));
         NativeUiDiagnostics::Write(m_hWnd, tracePhase, detail);
