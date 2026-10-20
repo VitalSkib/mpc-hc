@@ -47,7 +47,7 @@ inline bool Publish(CWnd& bar) {
     dc.Attach(memory);
     dc.FillSolidRect(0, 0, bounds.Width(), 1, RGB(48, 48, 48));
     dc.Detach();
-    const SIZE size = {bounds.Width(), bounds.Height()}; const POINT origin = {};
+    SIZE size = {bounds.Width(), bounds.Height()}; POINT origin = {};
     const bool result = !!::UpdateLayeredWindow(bar.m_hWnd, nullptr, nullptr, &size,
         memory, &origin, CMPCTheme::InfoBarBGColor, nullptr, ULW_COLORKEY);
     ::SelectObject(memory, previous); ::DeleteObject(bitmap); ::DeleteDC(memory);
