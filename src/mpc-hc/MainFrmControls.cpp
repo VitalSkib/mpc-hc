@@ -123,9 +123,19 @@ bool CMainFrameControls::ShowToolbars(UINT nCS)
                         NativeTextBarPresentation::Prepare(*pCB);
                     }
 #endif
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+                    if (hosted && (pair.first == Toolbar::CONTROLS || pair.first == Toolbar::SEEKBAR))
+                        pCB->ShowWindow(SW_SHOWNOACTIVATE);
+                    else
+#endif
                     m_pMainFrame->ShowControlBar(pCB, TRUE, TRUE);
                     m_pMainFrame->m_pLastBar = pCB;
                 } else {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+                    if (hosted && (pair.first == Toolbar::CONTROLS || pair.first == Toolbar::SEEKBAR))
+                        pCB->ShowWindow(SW_HIDE);
+                    else
+#endif
                     m_pMainFrame->ShowControlBar(pCB, FALSE, TRUE);
                 }
             } else {
