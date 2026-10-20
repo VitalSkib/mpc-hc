@@ -123,8 +123,16 @@ class CNativeControlsDecoration final : public CWnd
                 // Avoid fractional vertical centring of the layout rectangle.
                 // Keep the same font size and smoothing for a weight-only A/B.
                 const float top = std::max(0.0f, std::floor((float(height) - font.GetHeight(&graphics)) * 0.5f + 0.5f));
-                const Gdiplus::RectF title(float(Scale(16)), top,
-                    float(std::max<LONG>(0, m_buttons[0].left - Scale(24))), float(height) - top);
+                int titleLeft = Scale(16);
+                // Paint app artwork into this same surface, so the background,
+                // icon, title and caption buttons remain one animated header.
+                const int iconSize = std::min(Scale(28), height);
+                const CRect icon(Scale(12), (height-iconSize)/2,
+                    Scale(12)+iconSize, (height-iconSize)/2+iconSize);
+                if (customIcon && customIcon(graphics, icon, L"top-icon", false))
+                    titleLeft = icon.right + Scale(8);
+                const Gdiplus::RectF title(float(titleLeft), top,
+                    float(std::max<LONG>(0, m_buttons[0].left - Scale(8) - titleLeft)), float(height) - top);
                 graphics.DrawString(m_title, -1, &font, title, &format, &text);
                 for (int button = 0; button < 3; ++button) DrawWindowButton(graphics, button);
             }

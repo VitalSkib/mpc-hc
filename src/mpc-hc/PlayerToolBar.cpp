@@ -852,6 +852,10 @@ bool CPlayerToolBar::DrawThemeIcon(Gdiplus::Graphics& graphics, const CRect& rec
                 if (loaded) break;
             }
         }
+        if (!loaded && !wcscmp(name, L"top-icon")) {
+            loaded = SUCCEEDED(SVGImage::Load(IDF_SVG_TOP_ICON, *image, float(size) / 100.0f))
+                && image->GetWidth() == size && image->GetHeight() == size;
+        }
         if (!loaded && column >= 0) {
             loaded = LoadExternalToolBar(*image, float(size) / 32.0f, L"32");
             if (!loaded) loaded = SUCCEEDED(SVGImage::Load(IDF_SVG_BUTTONS32, *image, float(size) / 32.0f));
