@@ -16,6 +16,7 @@ class CNativeControlsDecoration final : public CWnd
     int m_hot = -1, m_pressed = -1;
     CString m_title;
     std::vector<CRect> m_paintedAreas;
+    std::vector<int> m_paintedSeparators;
     CRect m_paintedExclusion = CRect(0, 0, 0, 0);
     int m_scale = 96;
     CRect m_buttons[3] = {CRect(0, 0, 0, 0), CRect(0, 0, 0, 0), CRect(0, 0, 0, 0)};
@@ -102,8 +103,10 @@ class CNativeControlsDecoration final : public CWnd
                 }
                 if (!headerExclusion.IsRectEmpty()) region.Exclude(Gdiplus::Rect(headerExclusion.left,
                     headerExclusion.top, headerExclusion.Width(), headerExclusion.Height()));
-                Gdiplus::SolidBrush shade(Gdiplus::Color(128, 0, 0, 0));
+                Gdiplus::SolidBrush shade(Gdiplus::Color(153, 0, 0, 0));
                 graphics.FillRegion(&shade, &region);
+                Gdiplus::Pen separator(Gdiplus::Color(255, 60, 60, 60), 1.0f);
+                for (int y : separators) graphics.DrawLine(&separator, 0.0f, float(y), float(width), float(y));
             }
             if (m_header) {
                 graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
@@ -190,6 +193,7 @@ public:
     std::function<void(int)> windowCommand;
     bool semiboldTitle = true;
     std::vector<CRect> shadedAreas;
+    std::vector<int> separators;
     CRect headerExclusion = CRect(0, 0, 0, 0);
     CNativeControlsDecoration() {
         Gdiplus::GdiplusStartupInput input;
@@ -225,10 +229,10 @@ public:
         }
         CRect current; GetWindowRect(current); view->ScreenToClient(current);
         const bool changed = current != rectangle || m_title != title || m_scale != dpi || m_restore != restore
-            || m_paintedAreas != shadedAreas || m_paintedExclusion != headerExclusion || !(GetStyle() & WS_VISIBLE);
+            || m_paintedAreas != shadedAreas || m_paintedSeparators != separators || m_paintedExclusion != headerExclusion || !(GetStyle() & WS_VISIBLE);
         if (!changed) return;
         m_title = title; m_scale = dpi; m_restore = restore;
-        m_paintedAreas = shadedAreas; m_paintedExclusion = headerExclusion;
+        m_paintedAreas = shadedAreas; m_paintedSeparators = separators; m_paintedExclusion = headerExclusion;
         const int side = std::min(Scale(40), rectangle.Height());
         for (int button = 0; button < 3; ++button) {
             const int right = rectangle.Width() - (2 - button) * side;

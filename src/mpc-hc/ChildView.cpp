@@ -195,12 +195,14 @@ bool CChildView::EnsureNativeChromeHosts()
     if (m_chromeHosted) return true;
     if (!GetSafeHwnd() || !m_pMainFrame->m_wndSeekBar.GetSafeHwnd()
             || !m_pMainFrame->m_wndToolBar.GetSafeHwnd()
+            || m_pMainFrame->m_controls.m_toolbars.size() != 5
             || m_pMainFrame->HasDedicatedFSVideoWindow()) return false;
     if (!m_topChromeHost.Ensure(this, m_pMainFrame, true)
             || !m_bottomChromeHost.Ensure(this, m_pMainFrame, false)) return false;
-    if (!m_bottomChromeHost.Adopt(m_pMainFrame->m_wndSeekBar, m_pMainFrame)
-            || !m_bottomChromeHost.Adopt(m_pMainFrame->m_wndToolBar, m_pMainFrame)) {
-        m_bottomChromeHost.RestoreControls(); return false;
+    for (const auto& entry : m_pMainFrame->m_controls.m_toolbars) {
+        if (!m_bottomChromeHost.Adopt(*entry.second, m_pMainFrame)) {
+            m_bottomChromeHost.RestoreControls(); return false;
+        }
     }
     // Layered artwork must not carry an already presented surface across
     // parents. Recreate only when adopting a previous fallback presentation.
@@ -286,24 +288,29 @@ void CChildView::UpdateNativeDecoration()
         const bool animate = mediaLoaded && systemMotion
             && AfxGetApp()->GetProfileInt(L"Settings", L"FluentChromeAnimation", 1) != 0;
         auto& controls = m_pMainFrame->m_controls;
-        const int seekHeight = controls.ControlChecked(CMainFrameControls::Toolbar::SEEKBAR)
-            ? static_cast<CControlBar&>(m_pMainFrame->m_wndSeekBar).CalcFixedLayout(TRUE, TRUE).cy : 0;
-        const int buttonsHeight = controls.ControlChecked(CMainFrameControls::Toolbar::CONTROLS)
-            ? static_cast<CControlBar&>(m_pMainFrame->m_wndToolBar).CalcFixedLayout(TRUE, TRUE).cy : 0;
+        std::vector<std::pair<CControlBar*, int>> rows;
+        int totalHeight = 0;
+        for (const auto& entry : controls.m_toolbars) {
+            const bool text = entry.first != CMainFrameControls::Toolbar::SEEKBAR
+                && entry.first != CMainFrameControls::Toolbar::CONTROLS;
+            if (!controls.ControlChecked(entry.first) || (!mediaLoaded && !text)) continue;
+            const int rowHeight = entry.second->CalcFixedLayout(TRUE, TRUE).cy;
+            rows.push_back({entry.second, rowHeight}); totalHeight += rowHeight;
+        }
         const unsigned visibleHosted = controls.GetVisibleHostedToolbarsHeight();
-        const int otherHeight = static_cast<int>(height - std::min(height, visibleHosted));
-        CRect footer(view); footer.bottom -= otherHeight;
-        footer.top = std::max(footer.top, footer.bottom - seekHeight - buttonsHeight);
+        CRect footer(view); footer.top = std::max(footer.top, footer.bottom-totalHeight);
         m_topChromeHost.Layout(top); m_bottomChromeHost.Layout(footer);
-        const auto place = [](CWnd& window, const CRect& rect) {
-            CRect before; window.GetWindowRect(before);
-            window.GetParent()->ScreenToClient(before);
-            if (before != rect) window.SetWindowPos(nullptr, rect.left, rect.top, rect.Width(), rect.Height(),
-                SWP_NOZORDER | SWP_NOACTIVATE);
-        };
-        if (seekHeight > 0) place(m_pMainFrame->m_wndSeekBar, CRect(0, 0, footer.Width(), seekHeight));
-        if (buttonsHeight > 0) place(m_pMainFrame->m_wndToolBar,
-            CRect(0, seekHeight, footer.Width(), seekHeight + buttonsHeight));
+        m_nativeBackdrop.separators.clear();
+        int rowTop = 0;
+        for (const auto& row : rows) {
+            CRect rect(0, rowTop, footer.Width(), rowTop+row.second);
+            CRect before; row.first->GetWindowRect(before); row.first->GetParent()->ScreenToClient(before);
+            if (before != rect) row.first->SetWindowPos(nullptr, rect.left, rect.top, rect.Width(), rect.Height(),
+                SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS);
+            if (row.first != &m_pMainFrame->m_wndSeekBar && row.first != &m_pMainFrame->m_wndToolBar)
+                m_nativeBackdrop.separators.push_back(rowTop);
+            rowTop += row.second;
+        }
         const CRect footerClient(0, 0, footer.Width(), footer.Height());
         m_nativeBackdrop.shadedAreas = {footerClient}; m_nativeBackdrop.headerExclusion.SetRectEmpty();
         if (!footerClient.IsRectEmpty()) {

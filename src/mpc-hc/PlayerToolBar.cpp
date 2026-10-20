@@ -298,8 +298,9 @@ void CPlayerToolBar::MakeImageList(bool createCustomizeButtons, int buttonSize, 
             if (!createCustomizeButtons) {
                 // the manual specifies that sizeButton should be sizeImage inflated by (7, 6)
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-                const int rowHeight = AppIsThemeLoaded() ? std::max(height + 6, m_pMainFrame->m_dpi.ScaleY(42)) : height + 6;
-                SetBorders(0, 0, 0, m_pMainFrame->m_dpi.ScaleY(4));
+                const int rowHeight = AppIsThemeLoaded() ? m_pMainFrame->m_dpi.ScaleY(78) : height + 6;
+                SetBarStyle(GetBarStyle() & ~CBRS_BORDER_ANY);
+                SetBorders(0, 0, 0, 0);
                 SetSizes(CSize(height + 7, rowHeight), CSize(height, height));
 #else
                 SetSizes(CSize(height + 7, height + 6), CSize(height, height));
@@ -441,14 +442,12 @@ void CPlayerToolBar::RegisterThemedToolTipTools()
 #ifdef MPC_EXPERIMENTAL_NO_BACKDROP
 void CPlayerToolBar::UpdateBackdropTransparency()
 {
-    // Preserve native drawing and commands. Let Windows remove only the
-    // background colour; do not mix UpdateLayeredWindow with this HWND.
     if (!GetSafeHwnd()) return;
-    const COLORREF background = AppIsThemeLoaded() ? CMPCTheme::PlayerBGColor : ::GetSysColor(COLOR_BTNFACE);
+    COLORREF key = 0; BYTE alpha = 0; DWORD flags = 0;
+    // UpdateLayeredWindow owns this surface. Remove any prior colour-key mode.
+    if (::GetLayeredWindowAttributes(m_hWnd, &key, &alpha, &flags))
+        ModifyStyleEx(WS_EX_LAYERED, 0);
     ModifyStyleEx(0, WS_EX_LAYERED);
-    if (!::SetLayeredWindowAttributes(m_hWnd, background, 255, LWA_COLORKEY)) {
-        ModifyStyleEx(WS_EX_LAYERED, 0); // retain the native opaque toolbar on failure
-    }
     Invalidate(FALSE);
 }
 #endif
@@ -869,6 +868,11 @@ bool CPlayerToolBar::DrawThemeIcon(Gdiplus::Graphics& graphics, const CRect& rec
         0,0,brightness,0,0, 0,0,0,!atlas && disabled ? 0.5f : 1.0f,0, 0,0,0,0,1};
     Gdiplus::ImageAttributes attributes;
     attributes.SetColorMatrix(&matrix);
+    if (!wcscmp(name, L"overflow")) {
+        const float ink = disabled ? 184.0f/255.0f : hot ? 1.0f : 242.0f/255.0f;
+        Gdiplus::ColorMatrix colour = {0,0,0,0,0, 0,0,0,0,0, 0,0,0,0,0, 0,0,0,1,0, ink,ink,ink,0,1};
+        attributes.SetColorMatrix(&colour);
+    }
     // Raster pixels are centred at (size - 1) / 2, whereas the vector ring is
     // centred on the native button point. Integer placement shifts even-sized
     // Play/Pause artwork half a pixel up/left. Keep the existing size and align
@@ -1011,7 +1015,116 @@ LRESULT CPlayerToolBar::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
             && m_volctrl.GetSafeHwnd() && TransportGeometry() != m_transportGeometry) {
         ArrangeControls();
     }
+    if (message == WM_PAINT && AppIsThemeLoaded() && m_transportGraphicsToken) {
+        CPaintDC paint(this);
+        if (PaintNativeAlpha()) return 0;
+    }
     return CToolBar::WindowProc(message, wParam, lParam);
+}
+
+CSize CPlayerToolBar::CalcFixedLayout(BOOL stretch, BOOL horizontal)
+{
+    CSize size = CToolBar::CalcFixedLayout(stretch, horizontal);
+    if (AppIsThemeLoaded()) size.cy = m_pMainFrame->m_dpi.ScaleY(78);
+    return size;
+}
+
+bool CPlayerToolBar::PaintNativeAlpha()
+{
+    CRect bounds; GetWindowRect(bounds);
+    const int width = bounds.Width(), height = bounds.Height();
+    if (width <= 0 || height <= 0) return false;
+    BITMAPINFO info = {};
+    info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth = width; info.bmiHeader.biHeight = -height;
+    info.bmiHeader.biPlanes = 1; info.bmiHeader.biBitCount = 32;
+    void* bits = nullptr;
+    HDC memory = ::CreateCompatibleDC(nullptr);
+    HBITMAP dib = ::CreateDIBSection(memory, &info, DIB_RGB_COLORS, &bits, nullptr, 0);
+    if (!memory || !dib || !bits) {
+        if (dib) ::DeleteObject(dib);
+        if (memory) ::DeleteDC(memory);
+        return false;
+    }
+    const auto previous = ::SelectObject(memory, dib);
+    {
+        Gdiplus::Bitmap surface(width, height, width * 4, PixelFormat32bppPARGB, static_cast<BYTE*>(bits));
+        Gdiplus::Graphics graphics(&surface);
+        // Retain native hit testing over the full control row, with no visible fill.
+        graphics.Clear(Gdiplus::Color(1, 0, 0, 0));
+        graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+        auto& toolbar = GetToolBarCtrl();
+        const int centreY = m_pMainFrame->m_dpi.ScaleY(39);
+        const int hotItem = toolbar.GetHotItem();
+        for (int i = 0; i < toolbar.GetButtonCount(); ++i) {
+            TBBUTTON button = {};
+            if (!toolbar.GetButton(i, &button) || (button.fsState & TBSTATE_HIDDEN)
+                    || (button.fsStyle & BTNS_SEP)) continue;
+            CRect rect; toolbar.GetItemRect(i, rect);
+            const bool enabled = (button.fsState & TBSTATE_ENABLED) != 0;
+            const bool hot = enabled && i == hotItem;
+            const bool pressed = enabled && (button.fsState & TBSTATE_PRESSED);
+            const bool main = button.idCommand == ID_PLAY_PLAY || button.idCommand == ID_PLAY_PAUSE;
+            const float cx = float(rect.CenterPoint().x), cy = float(centreY);
+            if (main) {
+                const float diameter = float(m_pMainFrame->m_dpi.ScaleY(45)); // 48px including 3px stroke
+                Gdiplus::SolidBrush face(Gdiplus::Color(pressed ? 130 : hot ? 90 : 55, 0, 0, 0));
+                graphics.FillEllipse(&face, cx-diameter/2, cy-diameter/2, diameter, diameter);
+                Gdiplus::Pen ring(enabled ? Gdiplus::Color(255, 76, 194, 255) : Gdiplus::Color(255, 145, 180, 195), float(m_pMainFrame->m_dpi.ScaleY(3)));
+                graphics.DrawEllipse(&ring, cx-diameter/2, cy-diameter/2, diameter, diameter);
+            } else if (hot || pressed) {
+                Gdiplus::SolidBrush hover(Gdiplus::Color(pressed ? 65 : 40, 255, 255, 255));
+                graphics.FillRectangle(&hover, rect.left, centreY-m_nButtonHeight/2-5,
+                    rect.Width(), m_nButtonHeight+10);
+            }
+            // Extract the current native image: toggle, custom and disabled states
+            // remain owned by the toolbar. Recolour coverage, never blend against
+            // a colour-key matte (which leaves dark antialiasing fringes).
+            CImageList* images = enabled ? toolbar.GetImageList() : toolbar.GetDisabledImageList();
+            if (!images) images = toolbar.GetImageList();
+            if (button.idCommand == ID_TRANSPORT_OVERFLOW) {
+                const CRect icon(int(cx)-m_nButtonHeight/2, centreY-m_nButtonHeight/2,
+                    int(cx)-m_nButtonHeight/2+m_nButtonHeight, centreY-m_nButtonHeight/2+m_nButtonHeight);
+                DrawThemeIcon(graphics, icon, L"overflow", hot, !enabled);
+                continue;
+            }
+            if (!images || button.iBitmap < 0) continue;
+            HICON icon = images->ExtractIcon(button.iBitmap);
+            ICONINFO iconInfo = {};
+            if (icon && ::GetIconInfo(icon, &iconInfo) && iconInfo.hbmColor) {
+                BITMAP bitmap = {}; ::GetObject(iconInfo.hbmColor, sizeof(bitmap), &bitmap);
+                const int iw = bitmap.bmWidth, ih = bitmap.bmHeight;
+                if (iw > 0 && ih > 0) {
+                    std::vector<DWORD> pixels(static_cast<size_t>(iw) * ih);
+                    BITMAPINFO source = {};
+                    source.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+                    source.bmiHeader.biWidth = iw; source.bmiHeader.biHeight = -ih;
+                    source.bmiHeader.biPlanes = 1; source.bmiHeader.biBitCount = 32;
+                    if (::GetDIBits(memory, iconInfo.hbmColor, 0, ih, pixels.data(), &source, DIB_RGB_COLORS)) {
+                        const unsigned ink = !enabled ? 184 : hot ? 255 : 242;
+                        for (auto& pixel : pixels) {
+                            const unsigned alpha = pixel >> 24;
+                            const unsigned value = (ink * alpha + 127) / 255;
+                            pixel = (alpha << 24) | (value << 16) | (value << 8) | value;
+                        }
+                        Gdiplus::Bitmap artwork(iw, ih, iw*4, PixelFormat32bppPARGB,
+                            reinterpret_cast<BYTE*>(pixels.data()));
+                        const int iconSize = main ? m_pMainFrame->m_dpi.ScaleY(29) : iw;
+                        graphics.DrawImage(&artwork, int(cx)-iconSize/2, centreY-iconSize/2, iconSize, iconSize);
+                    }
+                }
+            }
+            if (iconInfo.hbmColor) ::DeleteObject(iconInfo.hbmColor);
+            if (iconInfo.hbmMask) ::DeleteObject(iconInfo.hbmMask);
+            if (icon) ::DestroyIcon(icon);
+        }
+    }
+    SIZE size = {width, height}; POINT origin = {};
+    BLENDFUNCTION blend = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+    const bool result = !!::UpdateLayeredWindow(m_hWnd, nullptr, nullptr, &size,
+        memory, &origin, 0, &blend, ULW_ALPHA);
+    ::SelectObject(memory, previous); ::DeleteObject(dib); ::DeleteDC(memory);
+    return result;
 }
 
 bool CPlayerToolBar::ArrangeTransportControls(const CRect& client)
@@ -1026,7 +1139,7 @@ bool CPlayerToolBar::ArrangeTransportControls(const CRect& client)
     if (AppIsThemeLoaded()) {
         for (UINT id : {ID_PLAY_PLAY, ID_PLAY_PAUSE}) {
             TBBUTTONINFO info = {sizeof(info)}; info.dwMask = TBIF_SIZE;
-            info.cx = static_cast<WORD>(std::max(m_nButtonHeight + 7, m_pMainFrame->m_dpi.ScaleX(48)));
+            info.cx = static_cast<WORD>(std::max(m_nButtonHeight + 7, m_pMainFrame->m_dpi.ScaleX(54)));
             tb.SetButtonInfo(id, &info);
         }
     }
@@ -1201,7 +1314,7 @@ void CPlayerToolBar::ArrangeControls() {
         for (UINT id : {ID_PLAY_PLAY, ID_PLAY_PAUSE}) {
             if (GetToolBarCtrl().CommandToIndex(id) >= 0) {
                 TBBUTTONINFO info = {sizeof(info)}; info.dwMask = TBIF_SIZE;
-                info.cx = static_cast<WORD>(std::max(m_nButtonHeight + 7, m_pMainFrame->m_dpi.ScaleX(48)));
+                info.cx = static_cast<WORD>(std::max(m_nButtonHeight + 7, m_pMainFrame->m_dpi.ScaleX(54)));
                 GetToolBarCtrl().SetButtonInfo(id, &info);
             }
         }
@@ -1357,7 +1470,7 @@ int CPlayerToolBar::GetMinWidth() const
     // Measure the actual native button widths, including theme/DPI sizing.
     // Optional controls and the hover slider do not contribute to this minimum.
     const int button = m_nButtonHeight + TOOLBAR_BUTTON_HORIZONTAL_PADDING;
-    const int play = std::max(button, m_pMainFrame->m_dpi.ScaleX(48));
+    const int play = std::max(button, m_pMainFrame->m_dpi.ScaleX(54));
     const auto measuredWidth = [&](UINT id, int fallback) {
         const int index = GetToolBarCtrl().CommandToIndex(id);
         CRect rect(0, 0, 0, 0);
@@ -1384,7 +1497,7 @@ int CPlayerToolBar::GetMinWidth() const
     int width = buttonCount * (m_nButtonHeight + 1 + TOOLBAR_BUTTON_HORIZONTAL_PADDING) + 2 * groupSpacing + m_volumeCtrlSize;
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
     if (AppIsThemeLoaded() && GetToolBarCtrl().CommandToIndex(ID_PLAY_PLAY) >= 0) {
-        width += std::max(0, m_pMainFrame->m_dpi.ScaleX(48) - m_nButtonHeight - 7);
+        width += std::max(0, m_pMainFrame->m_dpi.ScaleX(54) - m_nButtonHeight - 7);
     }
 #endif
     return width;

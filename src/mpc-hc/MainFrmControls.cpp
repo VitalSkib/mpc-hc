@@ -112,8 +112,7 @@ bool CMainFrameControls::ShowToolbars(UINT nCS)
                 // Native bars stay mounted and painted inside a clipped host.
                 // Only the host handles transient show/hide. Selection and the
                 // upstream visibility state/deadlines remain independent.
-                if (hosted && m_pMainFrame->GetLoadState() == MLS::LOADED
-                        && (pair.first == Toolbar::CONTROLS || pair.first == Toolbar::SEEKBAR))
+                if (hosted && m_pMainFrame->GetLoadState() == MLS::LOADED)
                     show = (selected & i) != 0;
 #endif
                 if (show) {
@@ -124,7 +123,7 @@ bool CMainFrameControls::ShowToolbars(UINT nCS)
                     }
 #endif
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-                    if (hosted && (pair.first == Toolbar::CONTROLS || pair.first == Toolbar::SEEKBAR))
+                    if (hosted)
                         pCB->ShowWindow(SW_SHOWNOACTIVATE);
                     else
 #endif
@@ -132,7 +131,7 @@ bool CMainFrameControls::ShowToolbars(UINT nCS)
                     m_pMainFrame->m_pLastBar = pCB;
                 } else {
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-                    if (hosted && (pair.first == Toolbar::CONTROLS || pair.first == Toolbar::SEEKBAR))
+                    if (hosted)
                         pCB->ShowWindow(SW_HIDE);
                     else
 #endif
@@ -152,7 +151,7 @@ bool CMainFrameControls::ShowToolbars(UINT nCS)
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
 unsigned CMainFrameControls::GetVisibleHostedToolbarsHeight() const
 {
-    return GetToolbarsHeight(m_controlsVisibilityState.nVisibleCS & (CS_SEEKBAR | CS_TOOLBAR));
+    return GetVisibleToolbarsHeight();
 }
 #endif
 

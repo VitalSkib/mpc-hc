@@ -166,6 +166,9 @@ BOOL CPlayerSeekBar::PreCreateWindow(CREATESTRUCT& cs)
 CSize CPlayerSeekBar::CalcFixedLayout(BOOL bStretch, BOOL bHorz)
 {
     CSize ret = __super::CalcFixedLayout(bStretch, bHorz);
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    ret.cy = m_pMainFrame->m_dpi.ScaleY(33);
+#else
     const CAppSettings& s = AfxGetAppSettings();
     if (AppIsThemeLoaded()) {
         ret.cy = m_pMainFrame->m_dpi.ScaleY(5 + s.iModernSeekbarHeight); //expand the toolbar if using "fill" mode
@@ -175,6 +178,7 @@ CSize CPlayerSeekBar::CalcFixedLayout(BOOL bStretch, BOOL bHorz)
     if (!m_pMainFrame->m_controls.ControlChecked(CMainFrameControls::Toolbar::CONTROLS)) {
         ret.cy += ADD_TO_BOTTOM_WITHOUT_CONTROLBAR;
     }
+#endif
     return ret;
 }
 

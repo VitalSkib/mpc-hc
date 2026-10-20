@@ -86,6 +86,8 @@ private:
     bool ArrangeTransportControls(const CRect& client);
     void HideVolumeFlyout();
     void DrawVolumeButton(const NMCUSTOMDRAW& draw);
+    bool PaintNativeAlpha();
+    CSize CalcFixedLayout(BOOL stretch, BOOL horizontal) override;
     CNativeVolumeFlyout m_volumeFlyout;
     bool m_updatingVolumeFlyout = false;
     int m_volumeGlyphState = -1;
