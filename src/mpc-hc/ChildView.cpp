@@ -305,7 +305,9 @@ void CChildView::UpdateNativeDecoration()
         m_nativeHeader.Refresh(m_topChromeHost.Content(), CRect(0, 0, top.Width(), top.Height()), true,
             mediaLoaded ? title : CString(), dpi, m_pMainFrame->IsFullScreenMode() || m_pMainFrame->IsZoomed());
         m_topChromeHost.Present(headerVisible, animate);
-        m_bottomChromeHost.Present(bottomVisible && visibleHosted > 0, animate);
+        // The old video-only condition controlled decoration, not the real
+        // toolbar. The hosted native controls must remain available for audio.
+        m_bottomChromeHost.Present(nativeVisible && visibleHosted > 0, animate);
     } else {
         m_nativeBackdrop.shadedAreas.clear();
         if (bottomVisible) m_nativeBackdrop.shadedAreas.push_back(bottom);
