@@ -192,6 +192,10 @@ struct FileFavorite {
 class CMainFrame : public CFrameWnd, public CDropClient
 {
 public:
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    bool NativeSeekbarSelected() { return m_controls.ControlChecked(CMainFrameControls::Toolbar::SEEKBAR); }
+#endif
+
 
     DpiHelper m_dpi;
 
