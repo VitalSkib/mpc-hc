@@ -876,27 +876,13 @@ bool CPlayerToolBar::DrawThemeIcon(Gdiplus::Graphics& graphics, const CRect& rec
         Gdiplus::ColorMatrix colour = {0,0,0,0,0, 0,0,0,0,0, 0,0,0,0,0, 0,0,0,1,0, ink,ink,ink,0,1};
         attributes.SetColorMatrix(&colour);
     }
-    // Centre transport coverage rather than the atlas cell: Play is asymmetric.
-    // Use the final-size raster and its pixel-centre coordinates, so no second
-    // scaling step or icon-specific alignment constant is required.
+    // Transport artwork is centred in its SVG cell. Align that cell's raster
+    // centre with the ring; no per-frame coverage scan or icon-specific offset.
     const bool transport = column == 0 || column == 1;
-    float left = float(rect.CenterPoint().x - size / 2);
-    float top = float(rect.CenterPoint().y - size / 2);
-    if (transport) {
-        double coverage = 0, momentX = 0, momentY = 0;
-        for (int y = 0; y < size; ++y) {
-            const BYTE* pixels = static_cast<const BYTE*>(image.GetPixelAddress(atlas ? column * size : 0,
-                (atlas ? row * size : 0) + y));
-            for (int x = 0; x < size; ++x) {
-                const double alpha = pixels[x * 4 + 3];
-                coverage += alpha; momentX += x * alpha; momentY += y * alpha;
-            }
-        }
-        if (coverage > 0) {
-            left = float(rect.CenterPoint().x - momentX / coverage);
-            top = float(rect.CenterPoint().y - momentY / coverage);
-        }
-    }
+    const float left = transport ? float(rect.CenterPoint().x) + 0.5f - float(size) * 0.5f
+        : float(rect.CenterPoint().x - size / 2);
+    const float top = transport ? float(rect.CenterPoint().y) + 0.5f - float(size) * 0.5f
+        : float(rect.CenterPoint().y - size / 2);
     const Gdiplus::RectF destination(left, top, float(size), float(size));
     return graphics.DrawImage(&bitmap, destination, float(atlas ? column * size : 0),
         float(atlas ? row * size : 0), float(size), float(size), Gdiplus::UnitPixel, &attributes) == Gdiplus::Ok;
