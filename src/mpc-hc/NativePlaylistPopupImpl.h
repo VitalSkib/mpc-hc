@@ -455,14 +455,14 @@ bool CNativePlaylistPopup::BeginLiveSlide()
         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
     m_liveSlideStart = GetTickCount64();
     // The compositor animates independently of WM_TIMER. This timer only
-    // restores native interaction after the 160 ms composition animation.
+    // restores native interaction after the composition animation.
     if (!SetTimer(4, 16, nullptr)) { EndLiveSlide(true); return false; }
     return true;
 }
 
 void CNativePlaylistPopup::TickLiveSlide()
 {
-    if (m_liveSliding && GetTickCount64() - m_liveSlideStart >= 180) EndLiveSlide(true);
+    if (m_liveSliding && GetTickCount64() - m_liveSlideStart >= CNativePlaylistMaterial::SlideDurationMs + 20) EndLiveSlide(true);
 }
 
 void CNativePlaylistPopup::EndLiveSlide(bool show)
@@ -602,7 +602,8 @@ void CNativePlaylistPopup::TickReveal()
     if (!m_revealStart) m_revealStart = GetTickCount64();
     CRect current; GetWindowRect(current);
     if (current != m_revealRect) { EndReveal(!m_fading); return; }
-    const double progress = std::min(1.0, (GetTickCount64() - m_revealStart) / (m_fading ? 83.0 : 160.0));
+    const double progress = std::min(1.0, (GetTickCount64() - m_revealStart)
+        / (m_fading ? 83.0 : static_cast<double>(CNativePlaylistMaterial::SlideDurationMs)));
     if (!DrawReveal(progress) || progress >= 1.0) EndReveal(!m_fading);
 }
 

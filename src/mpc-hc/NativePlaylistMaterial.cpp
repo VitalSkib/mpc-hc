@@ -328,7 +328,7 @@ bool CNativePlaylistMaterial::StartSlide()
     try {
         auto& s = *m_state;
         auto animation = s.compositor.CreateScalarKeyFrameAnimation();
-        animation.Duration(std::chrono::milliseconds(160));
+        animation.Duration(std::chrono::milliseconds(SlideDurationMs));
         animation.InsertKeyFrame(0.f, static_cast<float>(s.height));
         animation.InsertKeyFrame(1.f, 0.f, s.compositor.CreateCubicBezierEasingFunction(
             {1.f / 3.f, 1.f}, {2.f / 3.f, 1.f}));

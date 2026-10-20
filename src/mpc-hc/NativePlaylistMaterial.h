@@ -6,6 +6,7 @@ class CNativePlaylistMaterial {
     struct State;
     std::unique_ptr<State> m_state;
 public:
+    static constexpr unsigned SlideDurationMs = 300;
     CNativePlaylistMaterial();
     ~CNativePlaylistMaterial();
     bool Start(HWND window, int mode);
