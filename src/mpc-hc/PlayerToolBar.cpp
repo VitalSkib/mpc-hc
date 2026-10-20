@@ -426,11 +426,14 @@ void CPlayerToolBar::RegisterThemedToolTipTools()
         }
         CRect r;
         tb.GetItemRect(i, r);
+        if (button.fsState & TBSTATE_HIDDEN) r.SetRectEmpty();
         TOOLINFO ti = { sizeof(TOOLINFO) };
         ti.hwnd = m_hWnd;
         ti.uId = button.idCommand;
         if (themedToolTip.SendMessage(TTM_GETTOOLINFO, 0, (LPARAM)&ti)) {
-            continue; //already known to the tooltip
+            ti.rect = r;
+            themedToolTip.SendMessage(TTM_NEWTOOLRECT, 0, (LPARAM)&ti);
+            continue;
         }
         ti.uFlags = TTF_SUBCLASS;
         ti.rect = r;
@@ -868,20 +871,32 @@ bool CPlayerToolBar::DrawThemeIcon(Gdiplus::Graphics& graphics, const CRect& rec
         0,0,brightness,0,0, 0,0,0,!atlas && disabled ? 0.5f : 1.0f,0, 0,0,0,0,1};
     Gdiplus::ImageAttributes attributes;
     attributes.SetColorMatrix(&matrix);
-    if (!wcscmp(name, L"overflow") || wcsncmp(name, L"volume-", 7) == 0) {
+    if (column == 0 || column == 1 || !wcscmp(name, L"overflow") || wcsncmp(name, L"volume-", 7) == 0) {
         const float ink = disabled ? 184.0f/255.0f : hot ? 1.0f : 242.0f/255.0f;
         Gdiplus::ColorMatrix colour = {0,0,0,0,0, 0,0,0,0,0, 0,0,0,0,0, 0,0,0,1,0, ink,ink,ink,0,1};
         attributes.SetColorMatrix(&colour);
     }
-    // Raster pixels are centred at (size - 1) / 2, whereas the vector ring is
-    // centred on the native button point. Integer placement shifts even-sized
-    // Play/Pause artwork half a pixel up/left. Keep the existing size and align
-    // its raster centre to the ring; odd sizes already land on integer pixels.
+    // Centre transport coverage rather than the atlas cell: Play is asymmetric.
+    // Use the final-size raster and its pixel-centre coordinates, so no second
+    // scaling step or icon-specific alignment constant is required.
     const bool transport = column == 0 || column == 1;
-    const float left = transport ? float(rect.CenterPoint().x) + 0.5f - float(size) * 0.5f
-        : float(rect.CenterPoint().x - size / 2);
-    const float top = transport ? float(rect.CenterPoint().y) + 0.5f - float(size) * 0.5f
-        : float(rect.CenterPoint().y - size / 2);
+    float left = float(rect.CenterPoint().x - size / 2);
+    float top = float(rect.CenterPoint().y - size / 2);
+    if (transport) {
+        double coverage = 0, momentX = 0, momentY = 0;
+        for (int y = 0; y < size; ++y) {
+            const BYTE* pixels = static_cast<const BYTE*>(image.GetPixelAddress(atlas ? column * size : 0,
+                (atlas ? row * size : 0) + y));
+            for (int x = 0; x < size; ++x) {
+                const double alpha = pixels[x * 4 + 3];
+                coverage += alpha; momentX += x * alpha; momentY += y * alpha;
+            }
+        }
+        if (coverage > 0) {
+            left = float(rect.CenterPoint().x - momentX / coverage);
+            top = float(rect.CenterPoint().y - momentY / coverage);
+        }
+    }
     const Gdiplus::RectF destination(left, top, float(size), float(size));
     return graphics.DrawImage(&bitmap, destination, float(atlas ? column * size : 0),
         float(atlas ? row * size : 0), float(size), float(size), Gdiplus::UnitPixel, &attributes) == Gdiplus::Ok;
@@ -1070,7 +1085,8 @@ bool CPlayerToolBar::PaintNativeAlpha()
             const float cx = float(rect.CenterPoint().x), cy = float(centreY);
             if (main) {
                 const float diameter = float(m_pMainFrame->m_dpi.ScaleY(45)); // 48px including 3px stroke
-                Gdiplus::SolidBrush face(Gdiplus::Color(pressed ? 130 : hot ? 90 : 55, 0, 0, 0));
+                Gdiplus::SolidBrush face(hot && !pressed ? Gdiplus::Color(40, 255, 255, 255)
+                    : Gdiplus::Color(pressed ? 130 : 55, 0, 0, 0));
                 graphics.FillEllipse(&face, cx-diameter/2, cy-diameter/2, diameter, diameter);
                 Gdiplus::Pen ring(enabled ? Gdiplus::Color(255, 76, 194, 255) : Gdiplus::Color(255, 145, 180, 195), float(m_pMainFrame->m_dpi.ScaleY(3)));
                 graphics.DrawEllipse(&ring, cx-diameter/2, cy-diameter/2, diameter, diameter);
@@ -1084,6 +1100,16 @@ bool CPlayerToolBar::PaintNativeAlpha()
             // a colour-key matte (which leaves dark antialiasing fringes).
             CImageList* images = enabled ? toolbar.GetImageList() : toolbar.GetDisabledImageList();
             if (!images) images = toolbar.GetImageList();
+            if (main) {
+                const int legacyDiameter = std::min(
+                    std::max(m_nButtonHeight+7, m_pMainFrame->m_dpi.ScaleX(48))-6,
+                    std::max(m_nButtonHeight+6, m_pMainFrame->m_dpi.ScaleY(42))-4);
+                const int size = std::max(1, int(legacyDiameter*(0.46f/0.66f)+0.5f));
+                const CRect artwork(int(cx)-size/2, centreY-size/2,
+                    int(cx)-size/2+size, centreY-size/2+size);
+                if (DrawThemeIcon(graphics, artwork,
+                        button.idCommand == ID_PLAY_PAUSE ? L"pause" : L"play", hot, !enabled)) continue;
+            }
             if (button.idCommand == ID_VOLUME_MUTE) {
                 const int volume = m_volctrl.GetPos();
                 const LPCWSTR resource = IsMuted() || volume <= 0 ? L"volume-muted"
@@ -1216,6 +1242,7 @@ bool CPlayerToolBar::ArrangeTransportControls(const CRect& client)
     SetSeparatorWidth(leftSeparatorIndex, left);
     SetSeparatorWidth(dummySeparatorIndex, std::max(gap,
         layoutWidth - left - core - secondary - mute));
+    if (themedToolTip.GetSafeHwnd()) RegisterThemedToolTipTools();
     Invalidate(FALSE);
     m_transportGeometry = TransportGeometry();
     m_arrangingTransport = false;

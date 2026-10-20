@@ -12,7 +12,12 @@ inline bool Prepare(CWnd& bar) {
             && flags == LWA_COLORKEY && key == wanted) return true;
     // Re-key only when necessary (e.g. palette changed). Do not change opacity
     // of glyphs, move windows or ask the renderer for an extra frame.
-    if (::SetLayeredWindowAttributes(bar.GetSafeHwnd(), wanted, 255, LWA_COLORKEY)) return true;
+    if (::SetLayeredWindowAttributes(bar.GetSafeHwnd(), wanted, 255, LWA_COLORKEY)) {
+        // Static labels must paint into the newly configured surface too;
+        // changing values already invalidate themselves during playback.
+        bar.RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_FRAME);
+        return true;
+    }
     if (added) bar.ModifyStyleEx(WS_EX_LAYERED, 0);
     return false;
 }
