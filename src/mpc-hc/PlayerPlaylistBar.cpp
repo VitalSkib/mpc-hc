@@ -1278,7 +1278,7 @@ bool CPlayerPlaylistBar::ParseMPCPlayList(CString fn)
     // Ordinary MPCPL parsing and all playlists without valid EPG stay unchanged.
     m_programmeGuide.Clear();
     if (!PathUtils::IsURL(fn) && !idx.empty() && !pli[idx.front()].m_fns.IsEmpty()) {
-        const CString source = pli[idx.front()].m_fns.GetHead();
+        CString source = pli[idx.front()].m_fns.GetHead();
         bool sameSource = PathUtils::IsURL(source);
         for (int i : idx) sameSource = sameSource && !pli[i].m_fns.IsEmpty() && pli[i].m_fns.GetHead() == source;
         if (sameSource && m_programmeGuide.Load(std::wstring(fn.GetString()) + L".epg.json", source.GetString())) {
@@ -1852,7 +1852,6 @@ CString CPlayerPlaylistBar::GetCurFileName(bool use_ydl_source)
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
 bool CPlayerPlaylistBar::GetProgrammeCaption(const CString& source, CString& title, CString& tip) const
 {
-    if (!PathUtils::IsURL(source)) return false;
     const auto programme = m_programmeGuide.Current(source.GetString(), CNativeProgrammeGuide::Now());
     if (!programme) return false;
     title = programme->title.c_str(); tip = m_programmeGuide.Tooltip(*programme).c_str();

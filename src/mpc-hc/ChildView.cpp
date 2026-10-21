@@ -224,6 +224,11 @@ bool CChildView::EnsureNativeChromeHosts()
     return true;
 }
 
+void CChildView::UpdateProgrammeCaption()
+{
+    if (m_pMainFrame->m_wndPlaylistBar.UpdateProgrammeCaption()) UpdateNativeDecoration();
+}
+
 void CChildView::UpdateNativeDecoration()
 {
     if (m_refreshingNativeDecoration || !GetSafeHwnd() || !m_pMainFrame->CanHoverControls()) return;

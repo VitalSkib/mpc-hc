@@ -56,6 +56,7 @@ class CChildView : public CMouseWndWithArtView
 public:
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
     void UpdateNativeDecoration();
+    void UpdateProgrammeCaption();
     bool EnsureNativeChromeHosts();
     bool NativeChromeHosted() const { return m_chromeHosted; }
     int NativeHeaderBottom() const;

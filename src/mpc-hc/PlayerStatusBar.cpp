@@ -408,10 +408,8 @@ void CPlayerStatusBar::SetStatusTimer(REFERENCE_TIME rtNow, REFERENCE_TIME rtDur
 {
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
     // Called by the existing media-position timer, including hidden controls.
-    if (m_pMainFrame->m_wndPlaylistBar.UpdateProgrammeCaption()) {
-        if (auto view = DYNAMIC_DOWNCAST(CChildView, m_pMainFrame->GetDescendantWindow(AFX_IDW_PANE_FIRST)))
-            view->UpdateNativeDecoration();
-    }
+    if (auto view = DYNAMIC_DOWNCAST(CChildView, m_pMainFrame->GetDescendantWindow(AFX_IDW_PANE_FIRST)))
+        view->UpdateProgrammeCaption();
 #endif
     CString str;
     CString posstr, remstr;
