@@ -240,6 +240,7 @@ public:
         m_hot = m_pressed = -1;
         if (::GetCapture() == GetSafeHwnd() && GetSafeHwnd()) ::ReleaseCapture();
         if (m_tip.GetSafeHwnd()) m_tip.Pop();
+        if (m_tip.GetSafeHwnd() && titleTarget) m_tip.SetToolRect(titleTarget, 4, CRect(0, 0, 0, 0));
         if (GetSafeHwnd() && (GetStyle() & WS_VISIBLE)) {
             ShowWindow(SW_HIDE);
 #ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS

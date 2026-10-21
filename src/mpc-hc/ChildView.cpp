@@ -297,7 +297,6 @@ void CChildView::UpdateNativeDecoration()
     }
     CString programmeTip;
     if (url) m_pMainFrame->m_wndPlaylistBar.GetProgrammeCaption(source, title, programmeTip);
-    m_nativeHeader.titleTip = programmeTip;
     const int dpi = m_pMainFrame->m_dpi.ScaleY(96);
     CRect bottom(view); bottom.top = std::max(view.top, view.bottom - int(height));
     const bool bottomVisible = nativeVisible && (videoLoaded || m_pMainFrame->IsStatusBarForcedForMessage());
@@ -332,6 +331,7 @@ void CChildView::UpdateNativeDecoration()
     }
     top.bottom = std::min(bottomVisible ? bottom.top : view.bottom, top.top + headerHeight);
     const bool headerVisible = !mediaLoaded || nativeVisible;
+    m_nativeHeader.titleTip = headerVisible ? programmeTip : CString();
     if (m_chromeHosted) {
         BOOL systemMotion = TRUE; SystemParametersInfo(SPI_GETCLIENTAREAANIMATION, 0, &systemMotion, 0);
         const bool animate = mediaLoaded && systemMotion
