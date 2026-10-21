@@ -93,6 +93,9 @@ public:
     void RestoreControls() { DetachControls(); }
     bool Adopt(CWnd& window, CWnd* frame, bool nativePaint = false) {
         if (::GetParent(window.m_hWnd) == m_content.m_hWnd) return true;
+        const HWND parent = ::GetParent(window.m_hWnd);
+        window.SetParent(&m_content);
+        if (::GetParent(window.m_hWnd) != m_content.m_hWnd) return false;
         // Ordinary GDI bars need their own system-managed redirection surface
         // inside this surface-less host. Windows retains their original paint
         // handlers and child controls; no color key or application bitmap.
@@ -101,14 +104,9 @@ public:
             if (addedLayer) window.ModifyStyleEx(0, WS_EX_LAYERED);
             if (!::SetLayeredWindowAttributes(window.m_hWnd, 0, 255, LWA_ALPHA)) {
                 if (addedLayer) window.ModifyStyleEx(WS_EX_LAYERED, 0);
+                ::SetParent(window.m_hWnd, parent);
                 return false;
             }
-        }
-        const HWND parent = ::GetParent(window.m_hWnd);
-        window.SetParent(&m_content);
-        if (::GetParent(window.m_hWnd) != m_content.m_hWnd) {
-            if (addedLayer) window.ModifyStyleEx(WS_EX_LAYERED, 0);
-            return false;
         }
         window.SetOwner(frame);
         m_hosted.push_back({window.m_hWnd, parent});
@@ -149,4 +147,3 @@ public:
         }
     }
 };
-
