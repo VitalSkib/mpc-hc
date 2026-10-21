@@ -277,8 +277,9 @@ void CChildView::UpdateNativeDecoration()
     // A URL alone cannot supply a programme title; retain the native fallback
     // when the playlist has no distinct label. Do not strip dots from labels.
     if (url) {
-        if (const auto item = m_pMainFrame->m_wndPlaylistBar.GetCur()) {
-            CString label(item->m_label); label.Trim();
+        CPlaylistItem item;
+        if (m_pMainFrame->m_wndPlaylistBar.GetCur(item)) {
+            CString label(item.m_label); label.Trim();
             CString stem(filename);
             const int suffix = stem.ReverseFind(L'.');
             if (suffix > 0) stem.Truncate(suffix);
