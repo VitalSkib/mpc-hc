@@ -273,6 +273,21 @@ void CChildView::UpdateNativeDecoration()
     const int dot = candidate.ReverseFind(L'.');
     const int separator = std::max(candidate.ReverseFind(L'/'), candidate.ReverseFind(L'\\'));
     if (dot > separator + 1 && dot < candidate.GetLength() - 1) title = candidate.Left(dot);
+    // EXTINF/imported/edited playlist labels are authoritative stream names.
+    // A URL alone cannot supply a programme title; retain the native fallback
+    // when the playlist has no distinct label. Do not strip dots from labels.
+    if (url) {
+        if (const auto item = m_pMainFrame->m_wndPlaylistBar.GetCur()) {
+            CString label(item->m_label); label.Trim();
+            CString stem(filename);
+            const int suffix = stem.ReverseFind(L'.');
+            if (suffix > 0) stem.Truncate(suffix);
+            if (!label.IsEmpty() && label.CompareNoCase(source) != 0
+                    && label.CompareNoCase(cleanSource) != 0 && label.CompareNoCase(filename) != 0
+                    && label.CompareNoCase(stem) != 0)
+                title = label;
+        }
+    }
     const int dpi = m_pMainFrame->m_dpi.ScaleY(96);
     CRect bottom(view); bottom.top = std::max(view.top, view.bottom - int(height));
     const bool bottomVisible = nativeVisible && (videoLoaded || m_pMainFrame->IsStatusBarForcedForMessage());

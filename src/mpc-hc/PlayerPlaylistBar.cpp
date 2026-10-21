@@ -112,6 +112,14 @@ LRESULT CPlaylistListFrame::WindowProc(UINT message, WPARAM wParam, LPARAM lPara
 
 
 IMPLEMENT_DYNAMIC(CPlayerPlaylistBar, CMPCThemePlayerBar)
+
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+static void RefreshChromeHeader(CMainFrame* frame)
+{
+    if (const auto view = DYNAMIC_DOWNCAST(CChildView, frame->GetDescendantWindow(AFX_IDW_PANE_FIRST)))
+        view->UpdateNativeDecoration();
+}
+#endif
 CPlayerPlaylistBar::CPlayerPlaylistBar(CMainFrame* pMainFrame)
     : CMPCThemePlayerBar(pMainFrame)
     , m_pMainFrame(pMainFrame)
@@ -3025,6 +3033,11 @@ void CPlayerPlaylistBar::OnContextMenu(CWnd* /*pWnd*/, CPoint point)
         M_POSITION_RIGHT,
         M_POSITION_BOTTOM,
         M_POSITION_FLOAT,
+        M_HEADER_TINT_0 = 100,
+        M_HEADER_TINT_25,
+        M_HEADER_TINT_50,
+        M_HEADER_TINT_75,
+        M_HEADER_TINT_100,
     };
 
     CAppSettings& s = AfxGetAppSettings();
@@ -3124,6 +3137,22 @@ void CPlayerPlaylistBar::OnContextMenu(CWnd* /*pWnd*/, CPoint point)
             m.AppendMenu(MF_STRING | MF_POPUP | MF_ENABLED, (UINT_PTR)positionMenu.GetSafeHmenu(), ResStr(IDS_PLAYLIST_POSITION));
             positionMenu.Detach();
         }
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        {
+            CMenu tintMenu;
+            tintMenu.CreatePopupMenu();
+            const int tint = std::clamp(int(AfxGetApp()->GetProfileInt(L"Settings", L"FluentHeaderAcrylicTint", 0)), 0, 100);
+            for (int i = 0; i < 5; ++i) {
+                CString label; label.Format(L"%d%%", i*25);
+                tintMenu.AppendMenu(MF_STRING, M_HEADER_TINT_0+i, label);
+            }
+            tintMenu.CheckMenuRadioItem(M_HEADER_TINT_0, M_HEADER_TINT_100,
+                M_HEADER_TINT_0+tint/25, MF_BYCOMMAND);
+            m.AppendMenu(MF_SEPARATOR);
+            m.AppendMenu(MF_POPUP | MF_ENABLED, reinterpret_cast<UINT_PTR>(tintMenu.GetSafeHmenu()), L"Titlebar Acrylic tint (test)");
+            tintMenu.Detach(); // The themed parent owns submenu item data.
+        }
+#endif
         if (AppIsThemeLoaded()) {
             m.fulfillThemeReqs();
         }
@@ -3135,6 +3164,14 @@ void CPlayerPlaylistBar::OnContextMenu(CWnd* /*pWnd*/, CPoint point)
     int nID = (int)m.TrackPopupMenu(TPM_LEFTBUTTON | TPM_RETURNCMD, point.x, point.y, m_pMainFrame);
     SetHasActivePopup(false);
     m_list.SetFocus();
+
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (nID >= M_HEADER_TINT_0 && nID <= M_HEADER_TINT_100) {
+        AfxGetApp()->WriteProfileInt(L"Settings", L"FluentHeaderAcrylicTint", (nID-M_HEADER_TINT_0)*25);
+        RefreshChromeHeader(m_pMainFrame);
+        return;
+    }
+#endif
 
     //the lock is not held while the menu is up, so the playlist may have changed meanwhile.
     //find the clicked item again by its id and drop the command when it is gone.
@@ -3490,6 +3527,9 @@ void CPlayerPlaylistBar::OnLvnEndlabeleditList(NMHDR* pNMHDR, LRESULT* pResult)
             text.Trim();
             m_pl.GetAt(pos).m_label = text;
             RefreshItem(pos);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+            if (pos == m_pl.GetPos()) RefreshChromeHeader(m_pMainFrame);
+#endif
         }
     }
     *pResult = 0;

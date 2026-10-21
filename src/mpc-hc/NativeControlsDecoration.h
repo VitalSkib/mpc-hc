@@ -20,6 +20,7 @@ class CNativeControlsDecoration final : public CWnd
     std::vector<int> m_paintedSeparators;
     CRect m_paintedExclusion = CRect(0, 0, 0, 0);
     int m_scale = 96;
+    int m_headerTint = 0;
     CRect m_buttons[3] = {CRect(0, 0, 0, 0), CRect(0, 0, 0, 0), CRect(0, 0, 0, 0)};
     HRESULT m_lastDraw = S_OK;
     CMPCThemeToolTipCtrl m_tip;
@@ -96,9 +97,9 @@ class CNativeControlsDecoration final : public CWnd
             Gdiplus::Graphics graphics(&surface);
             graphics.Clear(Gdiplus::Color(0, 0, 0, 0));
             if (m_header) {
-                // The Acrylic controller provides its own tint. Try its
-                // system appearance without an additional black overlay.
-                if (!m_materialActive) graphics.Clear(Gdiplus::Color(128, 0, 0, 0));
+                // Temporary test value controls our extra dark overlay only.
+                // The controller's own Acrylic tint stays at system defaults.
+                graphics.Clear(Gdiplus::Color(m_materialActive ? BYTE(MulDiv(m_headerTint, 255, 100)) : BYTE(128), 0, 0, 0));
             }
             else {
                 // Union all shaded areas before filling once. Intersections
@@ -262,10 +263,13 @@ public:
             }
         }
         CRect current; GetWindowRect(current); view->ScreenToClient(current);
+        const int tint = header ? std::clamp(int(AfxGetApp()->GetProfileInt(L"Settings", L"FluentHeaderAcrylicTint", 0)), 0, 100) : 0;
         const bool changed = current != rectangle || m_title != title || m_scale != dpi || m_restore != restore
+            || m_headerTint != tint
             || m_paintedAreas != shadedAreas || m_paintedSeparators != separators || m_paintedExclusion != headerExclusion || !(GetStyle() & WS_VISIBLE);
         if (!changed) return;
         m_title = title; m_scale = dpi; m_restore = restore;
+        m_headerTint = tint;
         m_paintedAreas = shadedAreas; m_paintedSeparators = separators; m_paintedExclusion = headerExclusion;
         const int side = std::min(Scale(40), rectangle.Height());
         for (int button = 0; button < 3; ++button) {
