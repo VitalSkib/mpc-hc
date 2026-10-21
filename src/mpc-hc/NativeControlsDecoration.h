@@ -5,6 +5,7 @@
 #include <cmath>
 #include <vector>
 #include "CMPCThemeToolTipCtrl.h"
+#include "NativePlaylistMaterial.h"
 #ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
 #include "../DSUtil/GeometryDiagnostics.h"
 #endif
@@ -22,6 +23,8 @@ class CNativeControlsDecoration final : public CWnd
     CRect m_buttons[3] = {CRect(0, 0, 0, 0), CRect(0, 0, 0, 0), CRect(0, 0, 0, 0)};
     HRESULT m_lastDraw = S_OK;
     CMPCThemeToolTipCtrl m_tip;
+    CNativePlaylistMaterial m_material;
+    bool m_materialActive = false;
 
     int Scale(int value) const { return MulDiv(value, m_scale, 96); }
     int HitButton(CPoint point) const {
@@ -146,7 +149,16 @@ class CNativeControlsDecoration final : public CWnd
         BLENDFUNCTION blend = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
         // Layout alone owns placement. A surface repaint must not relocate
         // this layered child, including when its parent is away from (0, 0).
-        const bool success = !!::UpdateLayeredWindow(m_hWnd, nullptr, nullptr, &size,
+        bool success = false;
+        if (m_materialActive) {
+            success = m_material.UpdateForeground(pixels, width, height);
+            if (success) m_material.SetVisible(true);
+            else {
+                m_material.Reset(); m_materialActive = false;
+                ModifyStyleEx(WS_EX_NOREDIRECTIONBITMAP, WS_EX_LAYERED);
+            }
+        }
+        if (!m_materialActive) success = !!::UpdateLayeredWindow(m_hWnd, nullptr, nullptr, &size,
             memory, &source, 0, &blend, ULW_ALPHA);
         m_lastDraw = success ? S_OK : HRESULT_FROM_WIN32(::GetLastError());
 #ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
@@ -158,6 +170,7 @@ class CNativeControlsDecoration final : public CWnd
     }
 
     LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam) override {
+        if (message == WM_DESTROY) { m_material.Reset(); m_materialActive = false; }
         if (message == WM_ERASEBKGND) return TRUE;
         if (message == WM_PAINT) { CPaintDC dc(this); DrawSurface(); return 0; }
         if (message == WM_NCHITTEST) {
@@ -230,9 +243,14 @@ public:
         if (rectangle.IsRectEmpty()) { Hide(); return; }
         if (!GetSafeHwnd()) {
             m_header = header;
-            const DWORD extended = WS_EX_LAYERED | WS_EX_NOACTIVATE | (header ? 0 : WS_EX_TRANSPARENT);
+            const DWORD extended = WS_EX_NOACTIVATE | (header ? WS_EX_NOREDIRECTIONBITMAP
+                : WS_EX_LAYERED | WS_EX_TRANSPARENT);
             if (!CreateEx(extended, AfxRegisterWndClass(0), L"Native control decoration",
                     WS_CHILD, rectangle, view, 0)) return;
+            if (header) {
+                m_materialActive = m_material.Start(m_hWnd, 3, false);
+                if (!m_materialActive) ModifyStyleEx(WS_EX_NOREDIRECTIONBITMAP, WS_EX_LAYERED);
+            }
             if (header && m_tip.Create(this, TTS_ALWAYSTIP)) {
                 m_tip.AddTool(this, L"Minimize", CRect(0, 0, 1, 1), 1);
                 m_tip.AddTool(this, L"Maximize", CRect(0, 0, 1, 1), 2);

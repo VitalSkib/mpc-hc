@@ -106,9 +106,11 @@ struct CNativePlaylistMaterial::State {
     winrt::Microsoft::UI::Composition::SystemBackdrops::DesktopAcrylicController acrylic{nullptr};
     winrt::Microsoft::UI::Composition::SystemBackdrops::MicaController mica{nullptr};
     bool apartment = false;
+    bool groupedBackdrop = true;
     int lastState = -1;
     bool SynchronizeBrush() {
         auto backdrop = target.as<winrt::Windows::UI::Composition::ICompositionSupportsSystemBackdrop>();
+        if (!groupedBackdrop) return backdrop.SystemBackdrop() != nullptr;
         if (auto brush = backdrop.SystemBackdrop()) {
             material.Brush(brush);
             backdrop.SystemBackdrop(nullptr);
@@ -129,11 +131,13 @@ struct CNativePlaylistMaterial::State {
     }
 };
 
-bool CNativePlaylistMaterial::Start(HWND window, int mode)
+bool CNativePlaylistMaterial::Start(HWND window, int mode, bool groupedBackdrop)
 {
     Reset();
     if (mode != 2 && mode != 3) return false;
     auto state = std::make_unique<State>();
+    state->groupedBackdrop = groupedBackdrop;
+    if (!groupedBackdrop) state->radius = 0.f;
     const HRESULT apartment = RoInitialize(RO_INIT_SINGLETHREADED);
     MaterialLog("RoInitialize STA", apartment);
     if (FAILED(apartment)) return false;
@@ -151,7 +155,10 @@ bool CNativePlaylistMaterial::Start(HWND window, int mode)
         }
         MaterialLog("DispatcherQueue", S_OK);
         const BOOL enable = TRUE;
-        winrt::check_hresult(DwmSetWindowAttribute(window, static_cast<DWMWINDOWATTRIBUTE>(17), &enable, sizeof(enable)));
+        // DWM attributes reject child HWNDs. Header composition is hosted in
+        // a child, while activation/policy belong to the real root window.
+        const HWND policyWindow = groupedBackdrop ? window : GetAncestor(window, GA_ROOT);
+        winrt::check_hresult(DwmSetWindowAttribute(policyWindow, static_cast<DWMWINDOWATTRIBUTE>(17), &enable, sizeof(enable)));
         state->compositor = winrt::Windows::UI::Composition::Compositor();
         auto interop = state->compositor.as<ABI::Windows::UI::Composition::Desktop::ICompositorDesktopInterop>();
         winrt::check_hresult(interop->CreateDesktopWindowTarget(window, true,
@@ -163,7 +170,7 @@ bool CNativePlaylistMaterial::Start(HWND window, int mode)
         state->configuration.Theme(sb::SystemBackdropTheme::Dark);
         // Diagnostic policy: isolate the material from popup and color-picker focus.
         state->configuration.IsInputActive(true);
-        const winrt::Microsoft::UI::WindowId id{reinterpret_cast<uint64_t>(window)};
+        const winrt::Microsoft::UI::WindowId id{reinterpret_cast<uint64_t>(policyWindow)};
         bool attached = false;
         if (mode == 3) {
             if (!sb::DesktopAcrylicController::IsSupported()) { MaterialLog("Acrylic unsupported", E_NOTIMPL); return false; }
@@ -397,7 +404,7 @@ bool CNativePlaylistMaterial::Active() const
 }
 #else
 struct CNativePlaylistMaterial::State {};
-bool CNativePlaylistMaterial::Start(HWND, int) { return false; }
+bool CNativePlaylistMaterial::Start(HWND, int, bool) { return false; }
 bool CNativePlaylistMaterial::Active() const { return false; }
 bool CNativePlaylistMaterial::UpdateForeground(const void*, int, int) { return false; }
 bool CNativePlaylistMaterial::Ready() const { return false; }

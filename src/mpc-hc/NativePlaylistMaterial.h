@@ -10,7 +10,9 @@ public:
     static constexpr unsigned FadeDurationMs = 160;
     CNativePlaylistMaterial();
     ~CNativePlaylistMaterial();
-    bool Start(HWND window, int mode);
+    // Grouped panels animate the brush inside Root. A header instead moves
+    // its HWND with the chrome host and keeps the asynchronous system slot.
+    bool Start(HWND window, int mode, bool groupedBackdrop = true);
     void Reset();
     bool Active() const;
     bool UpdateForeground(const void* premultipliedBGRA, int width, int height);

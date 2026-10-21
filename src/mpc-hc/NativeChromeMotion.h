@@ -3,6 +3,7 @@
 #include <vector>
 #include <cmath>
 #include <algorithm>
+#include "CMPCTheme.h"
 
 class CNativeChromeContent final : public CWnd {
 public:
@@ -98,11 +99,12 @@ public:
         if (::GetParent(window.m_hWnd) != m_content.m_hWnd) return false;
         // Ordinary GDI bars need their own system-managed redirection surface
         // inside this surface-less host. Windows retains their original paint
-        // handlers and child controls; no color key or application bitmap.
+        // handlers and child controls. Only their background colour is keyed
+        // out; the shared footer supplies the shade below the native text.
         const bool addedLayer = nativePaint && !(window.GetExStyle() & WS_EX_LAYERED);
         if (nativePaint) {
             if (addedLayer) window.ModifyStyleEx(0, WS_EX_LAYERED);
-            if (!::SetLayeredWindowAttributes(window.m_hWnd, 0, 255, LWA_ALPHA)) {
+            if (!::SetLayeredWindowAttributes(window.m_hWnd, CMPCTheme::InfoBarBGColor, 255, LWA_COLORKEY)) {
                 if (addedLayer) window.ModifyStyleEx(WS_EX_LAYERED, 0);
                 ::SetParent(window.m_hWnd, parent);
                 return false;
