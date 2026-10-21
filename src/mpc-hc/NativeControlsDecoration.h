@@ -16,6 +16,7 @@ class CNativeControlsDecoration final : public CWnd
     bool m_header = false, m_restore = false;
     int m_hot = -1, m_pressed = -1;
     CString m_title;
+    CString m_paintedTip;
     std::vector<CRect> m_paintedAreas;
     std::vector<int> m_paintedSeparators;
     CRect m_paintedExclusion = CRect(0, 0, 0, 0);
@@ -222,6 +223,7 @@ public:
     std::function<bool(Gdiplus::Graphics&, const CRect&, LPCWSTR, bool)> customIcon;
     std::function<void(int)> windowCommand;
     bool semiboldTitle = true;
+    CString titleTip;
     std::vector<CRect> shadedAreas;
     std::vector<int> separators;
     CRect headerExclusion = CRect(0, 0, 0, 0);
@@ -260,10 +262,20 @@ public:
                 m_tip.AddTool(this, L"Minimize", CRect(0, 0, 1, 1), 1);
                 m_tip.AddTool(this, L"Maximize", CRect(0, 0, 1, 1), 2);
                 m_tip.AddTool(this, L"Close", CRect(0, 0, 1, 1), 3);
+                m_tip.AddTool(this, L"", CRect(0, 0, 1, 1), 4);
+                m_tip.SetMaxTipWidth(800);
             }
         }
         CRect current; GetWindowRect(current); view->ScreenToClient(current);
-        const int tint = header ? std::clamp(int(AfxGetApp()->GetProfileInt(L"Settings", L"FluentHeaderAcrylicTint", 0)), 0, 100) : 0;
+        const int tint = header ? std::clamp(int(AfxGetApp()->GetProfileInt(L"Settings", L"FluentHeaderAcrylicTint", 0)), 0, 50) : 0;
+        if (header && m_tip.GetSafeHwnd()) {
+            if (m_paintedTip != titleTip) {
+                m_tip.Pop(); m_tip.UpdateTipText(titleTip, this, 4); m_paintedTip = titleTip;
+            }
+            CRect titleRect(Scale(42), 0, std::max(Scale(42), rectangle.Width()-Scale(128)), rectangle.Height());
+            if (titleTip.IsEmpty()) titleRect.SetRectEmpty();
+            m_tip.SetToolRect(this, 4, titleRect);
+        }
         const bool changed = current != rectangle || m_title != title || m_scale != dpi || m_restore != restore
             || m_headerTint != tint
             || m_paintedAreas != shadedAreas || m_paintedSeparators != separators || m_paintedExclusion != headerExclusion || !(GetStyle() & WS_VISIBLE);

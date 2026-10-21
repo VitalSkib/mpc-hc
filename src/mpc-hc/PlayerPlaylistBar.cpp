@@ -1273,6 +1273,31 @@ bool CPlayerPlaylistBar::ParseMPCPlayList(CString fn)
         }
     }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    // Optional sidecar is scoped to this local imported playlist and exact URL.
+    // Ordinary MPCPL parsing and all playlists without valid EPG stay unchanged.
+    m_programmeGuide.Clear();
+    if (!PathUtils::IsURL(fn) && !idx.empty() && !pli[idx.front()].m_fns.IsEmpty()) {
+        const CString source = pli[idx.front()].m_fns.GetHead();
+        bool sameSource = PathUtils::IsURL(source);
+        for (int i : idx) sameSource = sameSource && !pli[i].m_fns.IsEmpty() && pli[i].m_fns.GetHead() == source;
+        if (sameSource && m_programmeGuide.Load(std::wstring(fn.GetString()) + L".epg.json", source.GetString())) {
+            const auto today = m_programmeGuide.Today(CNativeProgrammeGuide::Now());
+            if (!today.empty()) {
+                pli.RemoveAll(); idx.clear();
+                pli[1].m_fns.AddTail(source);
+                pli[1].m_label = m_programmeGuide.channel.c_str(); idx.push_back(1);
+                int i = 2;
+                for (const auto& programme : today) {
+                    pli[i].m_fns.AddTail(source);
+                    pli[i].m_label = (CNativeProgrammeGuide::Clock(programme.start) + L" " + programme.title).c_str();
+                    idx.push_back(i++);
+                }
+            }
+        }
+    }
+    m_programmeCaption.Empty();
+#endif
     std::sort(idx.begin(), idx.end());
     for (int i : idx) {
         if (pli[i].m_fns.GetCount() > 0) m_pl.AddTail(pli[i]);
@@ -1823,6 +1848,27 @@ CString CPlayerPlaylistBar::GetCurFileName(bool use_ydl_source)
     }
     return fn;
 }
+
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+bool CPlayerPlaylistBar::GetProgrammeCaption(const CString& source, CString& title, CString& tip) const
+{
+    if (!PathUtils::IsURL(source)) return false;
+    const auto programme = m_programmeGuide.Current(source.GetString(), CNativeProgrammeGuide::Now());
+    if (!programme) return false;
+    title = programme->title.c_str(); tip = m_programmeGuide.Tooltip(*programme).c_str();
+    return true;
+}
+
+bool CPlayerPlaylistBar::UpdateProgrammeCaption()
+{
+    CString title, tip;
+    GetProgrammeCaption(GetCurFileName(), title, tip);
+    if (tip == m_programmeCaption) return false;
+    m_programmeCaption = tip;
+    if (m_list.GetSafeHwnd()) m_list.Invalidate(FALSE);
+    return true;
+}
+#endif
 
 CString CPlayerPlaylistBar::GetCurFileNameTitle()
 {
@@ -2573,6 +2619,15 @@ void CPlayerPlaylistBar::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruc
     if (m_nativeDock.Active() || UsesNativePopup()) rowHighlighted = nItem == m_nativeHotItem;
 #endif
     CPlaylistItem& pli = m_pl.GetAt(pos);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (!pli.m_fns.IsEmpty()) {
+        const auto programme = m_programmeGuide.Current(GetCurFileName().GetString(), CNativeProgrammeGuide::Now());
+        if (programme && pli.m_fns.GetHead() == m_programmeGuide.stream.c_str()) {
+            const CString programmeLabel((CNativeProgrammeGuide::Clock(programme->start) + L" " + programme->title).c_str());
+            itemPlaying = pli.m_label == programmeLabel;
+        }
+    }
+#endif
 
     CDC* pDC = CDC::FromHandle(lpDrawItemStruct->hDC);
     int oldDC = pDC->SaveDC();
@@ -3034,10 +3089,11 @@ void CPlayerPlaylistBar::OnContextMenu(CWnd* /*pWnd*/, CPoint point)
         M_POSITION_BOTTOM,
         M_POSITION_FLOAT,
         M_HEADER_TINT_0 = 100,
-        M_HEADER_TINT_25,
+        M_HEADER_TINT_10,
+        M_HEADER_TINT_20,
+        M_HEADER_TINT_30,
+        M_HEADER_TINT_40,
         M_HEADER_TINT_50,
-        M_HEADER_TINT_75,
-        M_HEADER_TINT_100,
     };
 
     CAppSettings& s = AfxGetAppSettings();
@@ -3141,13 +3197,13 @@ void CPlayerPlaylistBar::OnContextMenu(CWnd* /*pWnd*/, CPoint point)
         {
             CMenu tintMenu;
             tintMenu.CreatePopupMenu();
-            const int tint = std::clamp(int(AfxGetApp()->GetProfileInt(L"Settings", L"FluentHeaderAcrylicTint", 0)), 0, 100);
-            for (int i = 0; i < 5; ++i) {
-                CString label; label.Format(L"%d%%", i*25);
+            const int tint = std::clamp(int(AfxGetApp()->GetProfileInt(L"Settings", L"FluentHeaderAcrylicTint", 0)), 0, 50);
+            for (int i = 0; i < 6; ++i) {
+                CString label; label.Format(L"%d%%", i*10);
                 tintMenu.AppendMenu(MF_STRING, M_HEADER_TINT_0+i, label);
             }
-            tintMenu.CheckMenuRadioItem(M_HEADER_TINT_0, M_HEADER_TINT_100,
-                M_HEADER_TINT_0+tint/25, MF_BYCOMMAND);
+            tintMenu.CheckMenuRadioItem(M_HEADER_TINT_0, M_HEADER_TINT_50,
+                M_HEADER_TINT_0+std::min(tint,50)/10, MF_BYCOMMAND);
             m.AppendMenu(MF_SEPARATOR);
             m.AppendMenu(MF_POPUP | MF_ENABLED, reinterpret_cast<UINT_PTR>(tintMenu.GetSafeHmenu()), L"Titlebar Acrylic tint (test)");
             tintMenu.Detach(); // The themed parent owns submenu item data.
@@ -3166,8 +3222,8 @@ void CPlayerPlaylistBar::OnContextMenu(CWnd* /*pWnd*/, CPoint point)
     m_list.SetFocus();
 
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-    if (nID >= M_HEADER_TINT_0 && nID <= M_HEADER_TINT_100) {
-        AfxGetApp()->WriteProfileInt(L"Settings", L"FluentHeaderAcrylicTint", (nID-M_HEADER_TINT_0)*25);
+    if (nID >= M_HEADER_TINT_0 && nID <= M_HEADER_TINT_50) {
+        AfxGetApp()->WriteProfileInt(L"Settings", L"FluentHeaderAcrylicTint", (nID-M_HEADER_TINT_0)*10);
         RefreshChromeHeader(m_pMainFrame);
         return;
     }

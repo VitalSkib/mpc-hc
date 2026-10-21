@@ -289,6 +289,9 @@ void CChildView::UpdateNativeDecoration()
                 title = label;
         }
     }
+    CString programmeTip;
+    if (url) m_pMainFrame->m_wndPlaylistBar.GetProgrammeCaption(source, title, programmeTip);
+    m_nativeHeader.titleTip = programmeTip;
     const int dpi = m_pMainFrame->m_dpi.ScaleY(96);
     CRect bottom(view); bottom.top = std::max(view.top, view.bottom - int(height));
     const bool bottomVisible = nativeVisible && (videoLoaded || m_pMainFrame->IsStatusBarForcedForMessage());

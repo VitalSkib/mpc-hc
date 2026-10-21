@@ -406,6 +406,13 @@ void CPlayerStatusBar::SetStatusTimer(CString str)
 
 void CPlayerStatusBar::SetStatusTimer(REFERENCE_TIME rtNow, REFERENCE_TIME rtDur, bool fHighPrecision, const GUID& timeFormat/* = TIME_FORMAT_MEDIA_TIME*/)
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    // Called by the existing media-position timer, including hidden controls.
+    if (m_pMainFrame->m_wndPlaylistBar.UpdateProgrammeCaption()) {
+        if (auto view = DYNAMIC_DOWNCAST(CChildView, m_pMainFrame->GetDescendantWindow(AFX_IDW_PANE_FIRST)))
+            view->UpdateNativeDecoration();
+    }
+#endif
     CString str;
     CString posstr, remstr;
     const CAppSettings& s = AfxGetAppSettings();

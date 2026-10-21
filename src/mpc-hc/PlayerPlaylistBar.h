@@ -35,6 +35,7 @@
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
 #include "NativePlaylistPresentation.h"
 #include "NativePlaylistPopup.h"
+#include "NativeProgrammeGuide.h"
 #include <functional>
 #endif
 
@@ -202,6 +203,12 @@ public:
     void LoadDuration(POSITION pos);
 
     CPlaylist m_pl;
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    CNativeProgrammeGuide m_programmeGuide;
+    CString m_programmeCaption;
+    bool GetProgrammeCaption(const CString& source, CString& title, CString& tip) const;
+    bool UpdateProgrammeCaption();
+#endif
 
     INT_PTR GetCount() const;
     int GetValidCount() const;

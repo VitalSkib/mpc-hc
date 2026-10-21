@@ -41,6 +41,15 @@ jobs:
           Invoke-WebRequest 'https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/win64/nasm-2.16.03-win64.zip' -OutFile "$env:RUNNER_TEMP\nasm.zip"
           Expand-Archive "$env:RUNNER_TEMP\nasm.zip" "$env:RUNNER_TEMP\nasm"
           (Get-ChildItem "$env:RUNNER_TEMP\nasm" -Filter nasm.exe -Recurse | Select-Object -First 1).DirectoryName >> $env:GITHUB_PATH
+      - name: Test source-bound programme guide
+        shell: cmd
+        run: |
+          call build.user.bat
+          call "%MPCHC_VS_PATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+          cl /nologo /EHsc /std:c++17 /utf-8 /I"src\mpc-hc" /I"src\thirdparty" tests\NativeProgrammeGuideTests.cpp /Fe:"programme-guide-tests.exe"
+          if errorlevel 1 exit /b 1
+          programme-guide-tests.exe
+          if errorlevel 1 exit /b 1
       - name: Prepare official Windows App SDK controller headers
         shell: pwsh
         run: |
