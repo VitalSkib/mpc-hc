@@ -21,7 +21,6 @@
 
 #include "stdafx.h"
 #include "mplayerc.h"
-#include "NativeUiDiagnostics.h"
 #include "StatusLabel.h"
 #include "CMPCTheme.h"
 #include "WinAPIUtils.h"
@@ -76,12 +75,8 @@ void CStatusLabel::DrawItem(LPDRAWITEMSTRUCT lpDrawItemStruct)
     CRect clientRect;
     GetClientRect(&clientRect);
 
-#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
-    NativeUiDiagnostics::Label(m_hWnd, lpDrawItemStruct->hDC, m_fRightAlign, lpDrawItemStruct->rcItem, "draw.begin");
-#endif
     CDC dc;
     dc.Attach(lpDrawItemStruct->hDC);
-    const int saved = dc.SaveDC();
     dc.SetTextColor(CMPCTheme::InfoBarTextColor);
     dc.SetBkColor(CMPCTheme::InfoBarBGColor);
     CFont* old = dc.SelectObject(&m_font);
@@ -92,22 +87,10 @@ void CStatusLabel::DrawItem(LPDRAWITEMSTRUCT lpDrawItemStruct)
         textRect.MoveToX(clientRect.Width() - textRect.Width());
     }
     textRect.MoveToY((clientRect.Height() - textRect.Height()) / 2);
-    const int drawnHeight = dc.DrawText(str, textRect, style);
-#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
-    char state[512] = {};
-    _snprintf_s(state, sizeof(state), _TRUNCATE,
-        "rightAligned=%d textLength=%d resultHeight=%d ownFont=%p previousFont=%p textRect=[%ld,%ld,%ld,%ld]",
-        int(m_fRightAlign), str.GetLength(), drawnHeight, static_cast<void*>(m_font.GetSafeHandle()),
-        static_cast<void*>(old ? old->GetSafeHandle() : nullptr), textRect.left, textRect.top, textRect.right, textRect.bottom);
-    NativeUiDiagnostics::Write(m_hWnd, "label.draw.text", state);
-#endif
+    dc.DrawText(str, textRect, style);
     dc.ExcludeClipRect(textRect);
     dc.FillSolidRect(clientRect, CMPCTheme::InfoBarBGColor);
-    if (saved) dc.RestoreDC(saved);
-    else dc.SelectObject(old);
-#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
-    NativeUiDiagnostics::Label(m_hWnd, lpDrawItemStruct->hDC, m_fRightAlign, lpDrawItemStruct->rcItem, "draw.end");
-#endif
+    dc.SelectObject(&old);
     dc.Detach();
 }
 

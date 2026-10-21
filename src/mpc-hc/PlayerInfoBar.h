@@ -47,22 +47,12 @@ private:
     void EventCallback(MpcEvent ev);
 
     void Relayout();
-#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-    bool m_nativePresentation = false, m_nativePrinting = false;
-    ULONGLONG m_textRevision = 1, m_presentedTextRevision = 0;
-    void InvalidateNativePresentation();
-    bool PublishNativePresentation();
-    LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam) override;
-#endif
 
 public:
     CPlayerInfoBar(CMainFrame* pMainFrame);
     virtual ~CPlayerInfoBar();
 
     BOOL Create(CWnd* pParentWnd);
-#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-    void PrepareNativePresentation();
-#endif
 
     bool SetLine(CString label, CString info);
     void GetLine(CString label, CString& info);

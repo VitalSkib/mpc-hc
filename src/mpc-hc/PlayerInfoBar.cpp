@@ -21,13 +21,9 @@
 
 #include "stdafx.h"
 #include "mplayerc.h"
-#include "NativeUiDiagnostics.h"
 #include "PlayerInfoBar.h"
 #include "MainFrm.h"
 #include "CMPCTheme.h"
-#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-#include "NativeTextBarPresentation.h"
-#endif
 
 
 // CPlayerInfoBar
@@ -65,9 +61,6 @@ bool CPlayerInfoBar::SetLine(CString label, CString info)
                 } else {
                     m_tooltip.UpdateTipText(info, m_info[idx]);
                 }
-#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-                InvalidateNativePresentation();
-#endif
             }
             return false;
         }
@@ -136,9 +129,6 @@ void CPlayerInfoBar::RemoveAllLines()
 {
     m_label.RemoveAll();
     m_info.RemoveAll();
-#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-    InvalidateNativePresentation();
-#endif
 
     // invalidate and redraw bypassing message queue
     Invalidate();
@@ -175,9 +165,6 @@ LRESULT CPlayerInfoBar::OnMPCThemeChanged(WPARAM wParam, LPARAM lParam)
         m_info[i]->GetWindowText(info);
         tip.AddTool(m_info[i], info);
     }
-#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-    InvalidateNativePresentation();
-#endif
     return 0;
 }
 
@@ -212,9 +199,6 @@ void CPlayerInfoBar::EventCallback(MpcEvent ev)
             for (size_t i = 0; i < m_info.GetCount(); i++) {
                 m_info[i]->ScaleFont(m_pMainFrame->m_dpi);
             }
-#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-            Relayout();
-#endif
             break;
 
         default:
@@ -251,75 +235,8 @@ void CPlayerInfoBar::Relayout()
     for (size_t i = 0; i < m_label.GetCount(); i++, y += h) {
         m_label[i]->MoveWindow(1, y, w - sep, h);
         m_info[i]->MoveWindow(w + sep, y, r.Width() - w - sep - 1, h);
-#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
-        CStatusLabel* columns[] = {m_label[i], m_info[i]};
-        for (CStatusLabel* child : columns) {
-            CRect bounds; child->GetWindowRect(bounds);
-            char state[512] = {};
-            _snprintf_s(state, sizeof(state), _TRUNCATE,
-                "row=%zu column=%s textLength=%d parent=%p visible=%d labelWidth=%d separator=%d parentWidth=%ld screen=[%ld,%ld,%ld,%ld]",
-                i, child == columns[0] ? "name" : "value", child->GetWindowTextLength(),
-                static_cast<void*>(::GetParent(child->m_hWnd)), int(child->IsWindowVisible()), w, sep, r.Width(),
-                bounds.left, bounds.top, bounds.right, bounds.bottom);
-            NativeUiDiagnostics::Write(child->m_hWnd, "stats.layout", state);
-        }
-#endif
     }
-#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-    InvalidateNativePresentation();
-#endif
 }
-
-#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-void CPlayerInfoBar::InvalidateNativePresentation()
-{
-    ++m_textRevision;
-    if (GetSafeHwnd()) Invalidate(FALSE);
-}
-
-bool CPlayerInfoBar::PublishNativePresentation()
-{
-    if (!m_nativePresentation || m_nativePrinting) return false;
-    const ULONGLONG revision = m_textRevision;
-    m_nativePrinting = true;
-    const bool result = NativeTextBarPresentation::Publish(*this);
-    m_nativePrinting = false;
-    if (result) m_presentedTextRevision = revision;
-#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
-    char state[256] = {};
-    _snprintf_s(state, sizeof(state), _TRUNCATE, "rows=%zu revision=%llu result=%d",
-        m_label.GetCount(), revision, int(result));
-    NativeUiDiagnostics::Write(m_hWnd, "text.native-print-published", state);
-#endif
-    return result;
-}
-
-void CPlayerInfoBar::PrepareNativePresentation()
-{
-    if (!GetSafeHwnd() || m_nativePrinting) return;
-    if (!m_nativePresentation) {
-        // Retire the old SetLayeredWindowAttributes surface before using ULW.
-        ModifyStyleEx(WS_EX_LAYERED, 0);
-        ModifyStyleEx(0, WS_EX_LAYERED);
-        m_nativePresentation = true;
-        InvalidateNativePresentation();
-    }
-    if (m_textRevision != m_presentedTextRevision) PublishNativePresentation();
-}
-
-LRESULT CPlayerInfoBar::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
-{
-    // The container background is already keyed; let WM_PRINT dispatch all
-    // child painters without an opaque default dialog fill over that background.
-    if (message == WM_PRINTCLIENT && m_nativePrinting) return 0;
-    if (message == WM_PAINT && m_nativePresentation) {
-        CPaintDC paint(this);
-        if (!m_nativePrinting) PublishNativePresentation();
-        return 0;
-    }
-    return CDialogBar::WindowProc(message, wParam, lParam);
-}
-#endif
 
 BEGIN_MESSAGE_MAP(CPlayerInfoBar, CDialogBar)
     ON_MPCTHEMECHANGED()
@@ -351,9 +268,6 @@ BOOL CPlayerInfoBar::OnEraseBkgnd(CDC* pDC)
         return FALSE;
     }
 
-#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-    if (m_nativePresentation) return TRUE;
-#endif
     for (CWnd* pChild = GetWindow(GW_CHILD); pChild; pChild = pChild->GetNextWindow()) {
         CRect r;
         pChild->GetClientRect(&r);

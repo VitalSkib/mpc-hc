@@ -329,8 +329,6 @@ void CChildView::UpdateNativeDecoration()
         // viewport is still hidden/clipped. Showing it must not reuse an image
         // rendered at the previous fullscreen width.
         m_pMainFrame->m_wndToolBar.PrepareNativePresentation();
-        m_pMainFrame->m_wndInfoBar.PrepareNativePresentation();
-        m_pMainFrame->m_wndStatsBar.PrepareNativePresentation();
         const CRect footerClient(0, 0, footer.Width(), footer.Height());
         m_nativeBackdrop.shadedAreas = {footerClient}; m_nativeBackdrop.headerExclusion.SetRectEmpty();
         if (!footerClient.IsRectEmpty()) {

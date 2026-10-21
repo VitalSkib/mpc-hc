@@ -24,9 +24,6 @@
 #include "mplayerc.h"
 #include <mvrInterfaces.h>
 
-#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-#include "NativeTextBarPresentation.h"
-#endif
 
 #define DELAY_SHOW_NOT_LOADED_TIME_MS 3000
 
@@ -116,11 +113,6 @@ bool CMainFrameControls::ShowToolbars(UINT nCS)
                     show = (selected & i) != 0;
 #endif
                 if (show) {
-#endif
-#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-                    if (pair.first == Toolbar::INFO) m_pMainFrame->m_wndInfoBar.PrepareNativePresentation();
-                    else if (pair.first == Toolbar::STATS) m_pMainFrame->m_wndStatsBar.PrepareNativePresentation();
-                    else if (pair.first == Toolbar::STATUS) NativeTextBarPresentation::Prepare(*pCB);
 #endif
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
                     if (hosted)
