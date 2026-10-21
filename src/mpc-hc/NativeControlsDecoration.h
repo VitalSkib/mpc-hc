@@ -224,6 +224,7 @@ public:
     std::function<void(int)> windowCommand;
     bool semiboldTitle = true;
     CString titleTip;
+    CWnd* titleTarget = nullptr;
     std::vector<CRect> shadedAreas;
     std::vector<int> separators;
     CRect headerExclusion = CRect(0, 0, 0, 0);
@@ -262,19 +263,27 @@ public:
                 m_tip.AddTool(this, L"Minimize", CRect(0, 0, 1, 1), 1);
                 m_tip.AddTool(this, L"Maximize", CRect(0, 0, 1, 1), 2);
                 m_tip.AddTool(this, L"Close", CRect(0, 0, 1, 1), 3);
-                m_tip.AddTool(this, L"", CRect(0, 0, 1, 1), 4);
+                CWnd* target = titleTarget ? titleTarget : this;
+                // Observe native input without changing transparent hit testing.
+                TOOLINFOW tool = {}; tool.cbSize = sizeof(tool); tool.hwnd = target->GetSafeHwnd(); tool.uId = 4;
+                tool.uFlags = TTF_SUBCLASS; tool.rect = {0, 0, 1, 1}; tool.lpszText = const_cast<LPWSTR>(L"");
+                m_tip.SendMessage(TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&tool));
                 m_tip.SetMaxTipWidth(800);
             }
         }
         CRect current; GetWindowRect(current); view->ScreenToClient(current);
         const int tint = header ? std::clamp(int(AfxGetApp()->GetProfileInt(L"Settings", L"FluentHeaderAcrylicTint", 0)), 0, 50) : 0;
         if (header && m_tip.GetSafeHwnd()) {
+            CWnd* target = titleTarget ? titleTarget : this;
             if (m_paintedTip != titleTip) {
-                m_tip.Pop(); m_tip.UpdateTipText(titleTip, this, 4); m_paintedTip = titleTip;
+                m_tip.Pop(); m_tip.UpdateTipText(titleTip, target, 4); m_paintedTip = titleTip;
             }
+            // rectangle is the new header position in its content parent's coordinates.
             CRect titleRect(Scale(42), 0, std::max(Scale(42), rectangle.Width()-Scale(128)), rectangle.Height());
+            titleRect.OffsetRect(rectangle.TopLeft());
+            view->ClientToScreen(titleRect); target->ScreenToClient(titleRect);
             if (titleTip.IsEmpty()) titleRect.SetRectEmpty();
-            m_tip.SetToolRect(this, 4, titleRect);
+            m_tip.SetToolRect(target, 4, titleRect);
         }
         const bool changed = current != rectangle || m_title != title || m_scale != dpi || m_restore != restore
             || m_headerTint != tint

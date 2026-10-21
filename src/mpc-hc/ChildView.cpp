@@ -40,6 +40,7 @@ CChildView::CChildView(CMainFrame* pMainFrame)
     m_nativeHeader.customIcon = [this](Gdiplus::Graphics& graphics, const CRect& rect, LPCWSTR name, bool hot) {
         return m_pMainFrame->m_wndToolBar.DrawThemeIcon(graphics, rect, name, hot);
     };
+    m_nativeHeader.titleTarget = this; // The transparent header forwards hover to the native view.
     m_nativeHeader.semiboldTitle = AfxGetApp()->GetProfileInt(L"Settings", L"FluentTitleSemibold", 1) != 0;
     m_nativeHeader.windowCommand = [this](int button) {
         if (button == 0) m_pMainFrame->PostMessage(WM_SYSCOMMAND, SC_MINIMIZE);

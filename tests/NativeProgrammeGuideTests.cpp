@@ -32,6 +32,17 @@ int main(){
     check(!g.Parse(json,L"https://other.example/live.m3u8")&&g.rows.empty(),"mismatch clears old metadata");
     check(!g.Parse(L"{",L"https://example.org/live.m3u8"),"malformed metadata");
     check(!g.Parse(json,L"C:\\video\\film.mp4"),"local media rejects EPG import");
+    {
+        std::ofstream f("programme-guide-fixture.json",std::ios::binary);
+        const std::string utf8(json.begin(),json.end()); f.write(utf8.data(),utf8.size());
+    }
+    check(g.Load(L"programme-guide-fixture.json",L"https://example.org/live.m3u8"),"UTF8 sidecar import");
+    {
+        std::ofstream f("programme-guide-fixture.json",std::ios::binary);
+        f.write("\xff\xfe",2); f.write(reinterpret_cast<const char*>(json.data()),json.size()*sizeof(wchar_t));
+    }
+    check(g.Load(L"programme-guide-fixture.json",L"https://example.org/live.m3u8"),"VBScript UTF16 sidecar import");
+    std::remove("programme-guide-fixture.json");
     check(g.Parse(LR"({"version":1,"stream":"https://second.example/hls","context":{"programmes":[{"title":"Other provider","start":1792590600000,"stop":1792596600000}]}})",L"https://second.example/hls"),"independent provider numeric epoch metadata");
     std::cout<<"PASS "<<count<<" native programme guide checks\n";
 }
