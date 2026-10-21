@@ -201,7 +201,9 @@ bool CChildView::EnsureNativeChromeHosts()
     if (!m_topChromeHost.Ensure(this, m_pMainFrame, true)
             || !m_bottomChromeHost.Ensure(this, m_pMainFrame, false)) return false;
     for (const auto& entry : m_pMainFrame->m_controls.m_toolbars) {
-        if (!m_bottomChromeHost.Adopt(*entry.second, m_pMainFrame)) {
+        const bool nativePaint = entry.first != CMainFrameControls::Toolbar::SEEKBAR
+            && entry.first != CMainFrameControls::Toolbar::CONTROLS;
+        if (!m_bottomChromeHost.Adopt(*entry.second, m_pMainFrame, nativePaint)) {
             m_bottomChromeHost.RestoreControls(); return false;
         }
     }
@@ -637,3 +639,4 @@ void CChildView::OnNcLButtonDown(UINT nHitTest, CPoint point)
 BOOL CChildView::OnEraseBkgnd(CDC* pDC) {
     return __super::OnEraseBkgnd(pDC);
 }
+
