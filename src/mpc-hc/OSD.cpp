@@ -897,8 +897,9 @@ void COSD::DisplayMessage(
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
     // Keep COSD's message priority and expiration. Only use its existing HWND
     // for presentation where a layered child is supported over the video.
+    const auto chromeView = DYNAMIC_DOWNCAST(CChildView, GetParent());
     if ((nPos == OSD_TOPLEFT || nPos == OSD_TOPRIGHT) && m_pWnd && GetSafeHwnd()
-            && m_OSDType != OSD_TYPE_NONE && m_pMainFrame->m_wndView.NativeChromeHosted()
+            && m_OSDType != OSD_TYPE_NONE && chromeView && chromeView->NativeChromeHosted()
             && !m_pMainFrame->IsD3DFullScreenMode()) {
         if (!s.fShowOSD) return;
         if (bPeriodicallyDisplayed && !m_bPeriodicallyDisplayed && m_bTimerStarted) return;
@@ -1095,16 +1096,17 @@ void COSD::SetChromeMessageMode(bool enabled)
 
 void COSD::DrawChromeMessage()
 {
+    const auto chromeView = DYNAMIC_DOWNCAST(CChildView, GetParent());
     if (m_nMessagePos == OSD_NOMESSAGE || m_strMessage.IsEmpty() || NeedsHiding()
-            || !m_chromeGraphics || !m_pMainFrame->m_wndView.IsWindowVisible()) {
+            || !m_chromeGraphics || !chromeView || !chromeView->IsWindowVisible()) {
         ShowWindow(SW_HIDE); return;
     }
     const int dpi = m_pMainFrame->m_dpi.DPIX();
     const auto scale = [dpi](int value) { return MulDiv(value, dpi, 96); };
     const int margin = scale(10), padX = scale(10), padY = scale(6);
-    CRect area; m_pMainFrame->m_wndView.GetClientRect(area);
+    CRect area; chromeView->GetClientRect(area);
     area.DeflateRect(margin, 0);
-    area.top = m_pMainFrame->m_wndView.NativeHeaderBottom() + margin;
+    area.top = chromeView->NativeHeaderBottom() + margin;
     area.bottom -= margin;
     if (area.Width() <= 2*padX || area.Height() <= 2*padY) { ShowWindow(SW_HIDE); return; }
     if (IsWindowVisible() && m_chromeText == m_strMessage && m_chromeArea == area
