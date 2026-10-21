@@ -26,6 +26,10 @@
 #include "FileHandle.h"
 #include "WicUtils.h"
 #include "OSD.h"
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+#include <gdiplus.h>
+#include <cmath>
+#endif
 
 #define DLog(...) TRACE(__VA_ARGS__ L"\n")
 
@@ -57,6 +61,11 @@ COSD::COSD(CMainFrame* pMainFrame)
     }
 
     SetThemeColors();
+
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    Gdiplus::GdiplusStartupInput input;
+    Gdiplus::GdiplusStartup(&m_chromeGraphics, &input, nullptr);
+#endif
 
     ZeroMemory(&m_BitmapInfo, sizeof(m_BitmapInfo));
 }
@@ -110,6 +119,9 @@ void COSD::SetThemeColors()
 COSD::~COSD()
 {
     EndTimer();
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (m_chromeGraphics) Gdiplus::GdiplusShutdown(m_chromeGraphics);
+#endif
 
     if (m_MemDC) {
         m_MemDC.DeleteDC();
@@ -168,6 +180,9 @@ void COSD::OnDrawWnd()
 
 void COSD::OnSize(UINT nType, int cx, int cy)
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (m_chromeMessage) DrawWnd();
+#endif
     if (m_pWnd && m_pMFVMB) {
         const CRect rectWnd(m_rectWnd), rectBitmap(m_rectBitmap);
         CalcWndRects();
@@ -325,6 +340,9 @@ void COSD::Stop()
     m_lastMovePosX = -1;
 
     ClearMessage(false, false);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    SetChromeMessageMode(false);
+#endif
 
     m_pVMB.Release();
     m_pMFVMB.Release();
@@ -501,6 +519,9 @@ void COSD::DrawFlybar()
 
 void COSD::DrawMessage()
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (m_chromeMessage) return; // The existing OSD window displays the message.
+#endif
     if (m_BitmapInfo.bmWidth * m_BitmapInfo.bmHeight * (m_BitmapInfo.bmBitsPixel >> 3) == 0) {
         return;
     }
@@ -819,6 +840,9 @@ void COSD::ClearMessage(bool hide, bool repaint)
     if (!hide) {
         m_nMessagePos = OSD_NOMESSAGE;
     }
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (m_chromeMessage && GetSafeHwnd()) ShowWindow(SW_HIDE);
+#endif
 
     if (m_pVMB || m_pMFVMB) {
         if (m_pVMB) {
@@ -869,6 +893,29 @@ void COSD::DisplayMessage(
     }
 #endif
     const CAppSettings& s = AfxGetAppSettings();
+
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    // Keep COSD's message priority and expiration. Only use its existing HWND
+    // for presentation where a layered child is supported over the video.
+    if ((nPos == OSD_TOPLEFT || nPos == OSD_TOPRIGHT) && m_pWnd && GetSafeHwnd()
+            && m_OSDType != OSD_TYPE_NONE && m_pMainFrame->m_wndView.NativeChromeHosted()
+            && !m_pMainFrame->IsD3DFullScreenMode()) {
+        if (!s.fShowOSD) return;
+        if (bPeriodicallyDisplayed && !m_bPeriodicallyDisplayed && m_bTimerStarted) return;
+        SetChromeMessageMode(true);
+        m_nMessagePos = nPos;
+        m_strMessage = strMsg;
+        EndTimer();
+        if (nDuration != -1) StartTimer(nDuration);
+        m_bPeriodicallyDisplayed = bPeriodicallyDisplayed;
+        DrawWnd();
+        return;
+    }
+    if (m_chromeMessage && nPos != OSD_DEBUG) {
+        ShowWindow(SW_HIDE);
+        SetChromeMessageMode(false);
+    }
+#endif
 
     if (m_pMFVMB) {
         if (bPeriodicallyDisplayed && !m_bPeriodicallyDisplayed && m_bTimerStarted) {
@@ -957,6 +1004,13 @@ void COSD::DebugMessage(LPCWSTR format, ...)
 
 void COSD::HideMessage(bool hide)
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (m_chromeMessage) {
+        if (hide) ClearMessage(true);
+        else DrawWnd();
+        return;
+    }
+#endif
     if (hide) {
         ClearMessage(true);
     } else {
@@ -1024,10 +1078,108 @@ bool COSD::NeedsHiding()
     return false;
 }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+void COSD::SetChromeMessageMode(bool enabled)
+{
+    if (m_chromeMessage == enabled || !GetSafeHwnd()) return;
+    // SetLayeredWindowAttributes and per-pixel UpdateLayeredWindow require
+    // resetting the style when switching between the stock and styled paths.
+    ModifyStyleEx(WS_EX_LAYERED, 0);
+    ModifyStyleEx(0, WS_EX_LAYERED);
+    m_chromeMessage = enabled;
+    m_chromeText.Empty();
+    m_strMessageCached.Empty();
+    if (!enabled) SetLayeredWindowAttributes(RGB(255, 0, 255),
+        255 - AfxGetAppSettings().nOSDTransparency, LWA_ALPHA | LWA_COLORKEY);
+}
+
+void COSD::DrawChromeMessage()
+{
+    if (m_nMessagePos == OSD_NOMESSAGE || m_strMessage.IsEmpty() || NeedsHiding()
+            || !m_chromeGraphics || !m_pMainFrame->m_wndView.IsWindowVisible()) {
+        ShowWindow(SW_HIDE); return;
+    }
+    const int dpi = m_pMainFrame->m_dpi.DPIX();
+    const auto scale = [dpi](int value) { return MulDiv(value, dpi, 96); };
+    const int margin = scale(10), padX = scale(10), padY = scale(6);
+    CRect area; m_pMainFrame->m_wndView.GetClientRect(area);
+    area.DeflateRect(margin, 0);
+    area.top = m_pMainFrame->m_wndView.NativeHeaderBottom() + margin;
+    area.bottom -= margin;
+    if (area.Width() <= 2*padX || area.Height() <= 2*padY) { ShowWindow(SW_HIDE); return; }
+    if (IsWindowVisible() && m_chromeText == m_strMessage && m_chromeArea == area
+            && m_chromeDpi == dpi && m_chromePosition == m_nMessagePos) return;
+
+    Gdiplus::FontFamily requested(AfxGetApp()->GetProfileInt(L"Settings", L"FluentTitleSemibold", 1)
+        ? L"Segoe UI Semibold" : L"Segoe UI");
+    Gdiplus::FontFamily fallback(L"Segoe UI");
+    Gdiplus::Font font(requested.GetLastStatus() == Gdiplus::Ok ? &requested : &fallback,
+        float(scale(16)), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+    Gdiplus::StringFormat format;
+    format.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap);
+    format.SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
+    Gdiplus::Bitmap measureBitmap(1, 1, PixelFormat32bppPARGB);
+    Gdiplus::Graphics measure(&measureBitmap);
+    Gdiplus::RectF measured;
+    measure.MeasureString(m_strMessage, -1, &font,
+        Gdiplus::RectF(0.f, 0.f, float(area.Width()-2*padX), float(area.Height()-2*padY)), &format, &measured);
+    const int width = std::min(area.Width(), std::max(scale(48), int(std::ceil(measured.Width))+2*padX));
+    const int height = std::min(area.Height(), int(std::ceil(std::max(measured.Height, font.GetHeight(&measure))))+2*padY);
+    BITMAPINFO info = {};
+    info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth = width; info.bmiHeader.biHeight = -height;
+    info.bmiHeader.biPlanes = 1; info.bmiHeader.biBitCount = 32;
+    void* pixels = nullptr;
+    HBITMAP bitmap = ::CreateDIBSection(nullptr, &info, DIB_RGB_COLORS, &pixels, nullptr, 0);
+    HDC memory = ::CreateCompatibleDC(nullptr);
+    if (!bitmap || !pixels || !memory) {
+        if (bitmap) ::DeleteObject(bitmap);
+        if (memory) ::DeleteDC(memory);
+        ShowWindow(SW_HIDE); return;
+    }
+    const HGDIOBJ previous = ::SelectObject(memory, bitmap);
+    {
+        Gdiplus::Bitmap surface(width, height, width*4, PixelFormat32bppPARGB, static_cast<BYTE*>(pixels));
+        Gdiplus::Graphics graphics(&surface);
+        graphics.Clear(Gdiplus::Color(0, 0, 0, 0));
+        graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+        const float diameter = float(std::min({scale(16), width, height}));
+        const float w = float(width), h = float(height);
+        Gdiplus::GraphicsPath shape;
+        shape.AddArc(0.f, 0.f, diameter, diameter, 180.f, 90.f);
+        shape.AddArc(w-diameter, 0.f, diameter, diameter, 270.f, 90.f);
+        shape.AddArc(w-diameter, h-diameter, diameter, diameter, 0.f, 90.f);
+        shape.AddArc(0.f, h-diameter, diameter, diameter, 90.f, 90.f);
+        shape.CloseFigure();
+        Gdiplus::SolidBrush background(Gdiplus::Color(153, 0, 0, 0));
+        graphics.FillPath(&background, &shape);
+        graphics.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAliasGridFit);
+        Gdiplus::SolidBrush text(Gdiplus::Color(255, 255, 255, 255));
+        graphics.DrawString(m_strMessage, -1, &font,
+            Gdiplus::RectF(float(padX), float(padY), float(width-2*padX), float(height-2*padY)), &format, &text);
+    }
+    POINT source = {}; SIZE size = {width, height};
+    BLENDFUNCTION blend = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+    const bool success = !!::UpdateLayeredWindow(m_hWnd, nullptr, nullptr, &size, memory, &source, 0, &blend, ULW_ALPHA);
+    ::SelectObject(memory, previous); ::DeleteDC(memory); ::DeleteObject(bitmap);
+    if (success) {
+        const int x = m_nMessagePos == OSD_TOPRIGHT ? area.right-width : area.left;
+        SetWindowPos(&wndTop, x, area.top, width, height, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        m_chromeText = m_strMessage; m_chromeArea = area; m_chromeDpi = dpi; m_chromePosition = m_nMessagePos;
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+        GeometryDiagnostics::Record("osd.chrome-draw", m_hWnd);
+#endif
+    } else ShowWindow(SW_HIDE);
+}
+#endif
+
 void COSD::DrawWnd()
 {
     CAutoLock Lock(&m_Lock);
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (m_chromeMessage) { DrawChromeMessage(); return; }
+#endif
     if (m_nMessagePos == OSD_NOMESSAGE || NeedsHiding()) {
         if (IsWindowVisible()) {
             ShowWindow(SW_HIDE);

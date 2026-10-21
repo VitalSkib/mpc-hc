@@ -191,6 +191,14 @@ BOOL CChildView::PreTranslateMessage(MSG* pMsg)
 }
 
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+int CChildView::NativeHeaderBottom() const
+{
+    if (!m_topChromeHost.GetSafeHwnd()) return 0;
+    CRect bounds; m_topChromeHost.GetWindowRect(bounds);
+    ScreenToClient(bounds);
+    return std::max(0L, bounds.bottom);
+}
+
 bool CChildView::EnsureNativeChromeHosts()
 {
     if (m_chromeHosted) return true;
@@ -639,4 +647,3 @@ void CChildView::OnNcLButtonDown(UINT nHitTest, CPoint point)
 BOOL CChildView::OnEraseBkgnd(CDC* pDC) {
     return __super::OnEraseBkgnd(pDC);
 }
-

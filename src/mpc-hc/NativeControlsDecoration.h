@@ -95,7 +95,11 @@ class CNativeControlsDecoration final : public CWnd
                 static_cast<BYTE*>(pixels));
             Gdiplus::Graphics graphics(&surface);
             graphics.Clear(Gdiplus::Color(0, 0, 0, 0));
-            if (m_header) graphics.Clear(Gdiplus::Color(128, 0, 0, 0));
+            if (m_header) {
+                // The Acrylic controller provides its own tint. Try its
+                // system appearance without an additional black overlay.
+                if (!m_materialActive) graphics.Clear(Gdiplus::Color(128, 0, 0, 0));
+            }
             else {
                 // Union all shaded areas before filling once. Intersections
                 // retain 50% opacity instead of accumulating another layer.

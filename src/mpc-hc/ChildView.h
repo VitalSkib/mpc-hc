@@ -58,6 +58,7 @@ public:
     void UpdateNativeDecoration();
     bool EnsureNativeChromeHosts();
     bool NativeChromeHosted() const { return m_chromeHosted; }
+    int NativeHeaderBottom() const;
     bool IsNativeHeaderWindow(HWND window) const {
         return window && (window == m_nativeHeader.GetSafeHwnd()
             || window == m_topChromeHost.GetSafeHwnd() || window == m_bottomChromeHost.GetSafeHwnd());
