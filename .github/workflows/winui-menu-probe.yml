@@ -1,0 +1,53 @@
+name: Isolated WinUI menu feasibility
+on:
+  push:
+    branches: [winui-menu-probe]
+    paths: ['probes/winui-menu/**', '.github/workflows/winui-menu-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare official SDK projections
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory probe-sdk | Out-Null
+          $packages = @(
+            @('microsoft.windowsappsdk.foundation','1.8.250906002','foundation','77acb164613b71b55924e22f60da7c94f78ab9ebd426395f49e79ca3a0bea77c'),
+            @('microsoft.windowsappsdk.interactiveexperiences','1.8.250906004','interactive','454b682994bbbcf3f5029f42fa1aebff72b0bb29dde1ca6e1e99cae264c74451'),
+            @('microsoft.windowsappsdk.winui','1.8.250906003','winui','5792d98965490e8871b31c9c34ed9c6b0392da0a444c929abf93b1f4802b2126')
+          )
+          foreach($package in $packages) {
+            $id,$version,$folder,$digest=$package
+            Invoke-WebRequest "https://api.nuget.org/v3-flatcontainer/$id/$version/$id.$version.nupkg" -OutFile "probe-sdk/$folder.zip"
+            if((Get-FileHash "probe-sdk/$folder.zip").Hash.ToLowerInvariant() -ne $digest){throw 'SDK digest mismatch'}
+            Expand-Archive "probe-sdk/$folder.zip" "probe-sdk/$folder"
+          }
+          $sdkRoot="${env:ProgramFiles(x86)}/Windows Kits/10"
+          $sdk=Get-ChildItem "$sdkRoot/Include" -Directory | Where-Object Name -Match '^10\.0\.\d+\.0$' | Sort-Object {[version]$_.Name} -Descending | Select-Object -First 1
+          $cppwinrt="$sdkRoot/bin/$($sdk.Name)/x64/cppwinrt.exe"
+          & $cppwinrt -input probe-sdk/winui/metadata -input probe-sdk/interactive/metadata/10.0.18362.0 -input probe-sdk/foundation/metadata -reference "$sdkRoot/UnionMetadata/$($sdk.Name)/Windows.winmd" -output probe-sdk/generated
+          if($LASTEXITCODE -ne 0){throw 'Projection generation failed'}
+          $vswhere="${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          $vs=& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          "call `"$vs/Common7/Tools/VsDevCmd.bat`" -arch=x64 -host_arch=x64" | Set-Content probe-env.cmd -Encoding ascii
+      - name: Compile isolated native host
+        shell: cmd
+        run: |
+          call probe-env.cmd
+          mkdir probe-output
+          cl /nologo /EHsc /std:c++17 /utf-8 /DUNICODE /D_UNICODE /Iprobe-sdk/generated /Iprobe-sdk/interactive/include probes/winui-menu/MenuProbe.cpp /Fe:probe-output/MenuProbe.exe /link /SUBSYSTEM:WINDOWS windowsapp.lib user32.lib runtimeobject.lib
+          if errorlevel 1 exit /b 1
+          copy probe-sdk\foundation\runtimes\win-x64\native\Microsoft.WindowsAppRuntime.Bootstrap.dll probe-output\
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WinUI-menu-probe
+          path: probe-output/
+          if-no-files-found: error
+          retention-days: 7
+
