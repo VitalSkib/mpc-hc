@@ -10,6 +10,9 @@
 #include <winrt/Microsoft.UI.Dispatching.h>
 #include <winrt/Microsoft.UI.Content.h>
 #include <winrt/Microsoft.UI.Xaml.h>
+#include <winrt/Microsoft.UI.Xaml.Markup.h>
+#include <winrt/Microsoft.UI.Xaml.XamlTypeInfo.h>
+#include <winrt/Windows.UI.Xaml.Interop.h>
 #include <winrt/Microsoft.UI.Xaml.Hosting.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
@@ -17,6 +20,12 @@
 using namespace winrt;
 using namespace Microsoft::UI::Xaml;
 using namespace Microsoft::UI::Xaml::Controls;
+struct ProbeApplication : ApplicationT<ProbeApplication, Markup::IXamlMetadataProvider> {
+    XamlTypeInfo::XamlControlsXamlMetaDataProvider provider;
+    Markup::IXamlType GetXamlType(hstring const& name) { return provider.GetXamlType(name); }
+    Markup::IXamlType GetXamlType(Windows::UI::Xaml::Interop::TypeName const& type) { return provider.GetXamlType(type); }
+    com_array<Markup::XmlnsDefinition> GetXmlnsDefinitions() { return provider.GetXmlnsDefinitions(); }
+};
 static Hosting::DesktopWindowXamlSource island{nullptr};
 static std::ofstream logFile;
 static void Log(const char* stage) { logFile << stage << std::endl; }
@@ -56,6 +65,7 @@ static void CopyMenu(HMENU source, Windows::Foundation::Collections::IVector<Men
 }
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR commandLine,int) {
     logFile.open("menu-probe.log",std::ios::trunc);
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     const bool smoke = wcsstr(commandLine,L"--smoke") != nullptr;
     try {
         Log("start"); init_apartment(apartment_type::single_threaded);
@@ -64,8 +74,8 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR commandLine,int) {
         auto bootstrap=reinterpret_cast<Initialize>(GetProcAddress(module,"MddBootstrapInitialize")); check_bool(bootstrap!=nullptr);
         check_hresult(bootstrap(0x00010008,L"",PACKAGE_VERSION{})); Log("runtime-ready");
         auto queue=Microsoft::UI::Dispatching::DispatcherQueueController::CreateOnCurrentThread();
+        auto app=make<ProbeApplication>(); Log("application-ready");
         auto xaml=Hosting::WindowsXamlManager::InitializeForCurrentThread(); Log("xaml-ready");
-        auto app=Application::Current(); check_bool(static_cast<bool>(app));
         app.Resources().MergedDictionaries().Append(XamlControlsResources()); Log("modern-resources-ready");
         WNDCLASSW wc{}; wc.lpfnWndProc=WindowProc; wc.hInstance=instance; wc.lpszClassName=L"MpcWinUIMenuProbe";
         wc.hCursor=LoadCursor(nullptr,IDC_ARROW); RegisterClassW(&wc);
