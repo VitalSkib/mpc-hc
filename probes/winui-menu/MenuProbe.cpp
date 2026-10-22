@@ -12,7 +12,7 @@
 #include <winrt/Microsoft.UI.Xaml.Hosting.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
-#include <microsoft.ui.interop.h>
+#include <winrt/microsoft.ui.interop.h>
 using namespace winrt;
 using namespace Microsoft::UI::Xaml;
 using namespace Microsoft::UI::Xaml::Controls;
@@ -69,8 +69,8 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR commandLine,int) {
         HWND window=CreateWindowW(wc.lpszClassName,L"MPC-HC: isolated WinUI menu probe",WS_OVERLAPPEDWINDOW,
             CW_USEDEFAULT,CW_USEDEFAULT,640,400,nullptr,nullptr,instance,nullptr); check_bool(window!=nullptr);
         island=Hosting::DesktopWindowXamlSource();
-        ABI::Microsoft::UI::WindowId id{}; check_hresult(ABI::Microsoft::UI::GetWindowIdFromWindow(window,&id));
-        island.Initialize({id.Value}); island.SiteBridge().Resize({620,340});
+        auto id=Microsoft::UI::GetWindowIdFromWindow(window);
+        island.Initialize(id); island.SiteBridge().Resize({620,340});
         Button button; button.Content(box_value(L"Open native WinUI menu"));
         island.Content(button); Log("island-ready");
         HMENU menu=CreatePopupMenu(), sub=CreatePopupMenu();
