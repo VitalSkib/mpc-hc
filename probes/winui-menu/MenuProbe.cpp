@@ -65,6 +65,8 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR commandLine,int) {
         check_hresult(bootstrap(0x00010008,L"",PACKAGE_VERSION{})); Log("runtime-ready");
         auto queue=Microsoft::UI::Dispatching::DispatcherQueueController::CreateOnCurrentThread();
         auto xaml=Hosting::WindowsXamlManager::InitializeForCurrentThread(); Log("xaml-ready");
+        auto app=Application::Current(); check_bool(static_cast<bool>(app));
+        app.Resources().MergedDictionaries().Append(XamlControlsResources()); Log("modern-resources-ready");
         WNDCLASSW wc{}; wc.lpfnWndProc=WindowProc; wc.hInstance=instance; wc.lpszClassName=L"MpcWinUIMenuProbe";
         wc.hCursor=LoadCursor(nullptr,IDC_ARROW); RegisterClassW(&wc);
         HWND window=CreateWindowW(wc.lpszClassName,L"MPC-HC: isolated WinUI menu probe",WS_OVERLAPPEDWINDOW,
@@ -73,7 +75,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR commandLine,int) {
         auto id=Microsoft::UI::GetWindowIdFromWindow(window);
         island.Initialize(id); island.SiteBridge().MoveAndResize({0,0,620,340});
         Button button; button.Content(box_value(L"Open native WinUI menu"));
-        island.Content(button); Log("island-ready");
+        island.Content(button); island.SiteBridge().Show(); Log("island-ready");
         HMENU menu=CreatePopupMenu(), sub=CreatePopupMenu();
         AppendMenuW(menu,MF_STRING,100,L"Play / Pause\tSpace");
         AppendMenuW(menu,MF_STRING|MF_CHECKED,101,L"Checked item");
