@@ -5,6 +5,7 @@
 #include <fstream>
 #include <winrt/base.h>
 #include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Graphics.h>
 #include <winrt/Microsoft.UI.Dispatching.h>
 #include <winrt/Microsoft.UI.Content.h>
@@ -20,7 +21,7 @@ static Hosting::DesktopWindowXamlSource island{nullptr};
 static std::ofstream logFile;
 static void Log(const char* stage) { logFile << stage << std::endl; }
 static LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM w, LPARAM l) {
-    if (message == WM_SIZE && island) island.SiteBridge().Resize({LOWORD(l), HIWORD(l)});
+    if (message == WM_SIZE && island) island.SiteBridge().MoveAndResize({0,0,LOWORD(l), HIWORD(l)});
     if (message == WM_COMMAND) { logFile << "native-command " << LOWORD(w) << std::endl; return 0; }
     if (message == WM_CLOSE) { if (island) { island.Close(); island = nullptr; } DestroyWindow(window); return 0; }
     if (message == WM_DESTROY) { PostQuitMessage(0); return 0; }
@@ -70,7 +71,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR commandLine,int) {
             CW_USEDEFAULT,CW_USEDEFAULT,640,400,nullptr,nullptr,instance,nullptr); check_bool(window!=nullptr);
         island=Hosting::DesktopWindowXamlSource();
         auto id=Microsoft::UI::GetWindowIdFromWindow(window);
-        island.Initialize(id); island.SiteBridge().Resize({620,340});
+        island.Initialize(id); island.SiteBridge().MoveAndResize({0,0,620,340});
         Button button; button.Content(box_value(L"Open native WinUI menu"));
         island.Content(button); Log("island-ready");
         HMENU menu=CreatePopupMenu(), sub=CreatePopupMenu();
