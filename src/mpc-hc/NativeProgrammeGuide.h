@@ -50,12 +50,11 @@ public:
         for(const auto& p:rows) if(p.start<=now&&now<p.stop){if(found)return nullptr;found=&p;}
         return found; // Reject conflicting overlapping intervals.
     }
-    std::vector<Programme> Today(ULONGLONG now) const {
-        SYSTEMTIME day{};std::vector<Programme> out;if(!Local(now,day))return out;
-        for(const auto& p:rows) {SYSTEMTIME start{};
-            if(p.stop<=now||!Local(p.start,start))continue;
-            if((p.start<=now&&now<p.stop)||(start.wYear==day.wYear&&start.wMonth==day.wMonth&&start.wDay==day.wDay))out.push_back(p);
-        }return out;
+    std::vector<Programme> Remaining(ULONGLONG now) const {
+        std::vector<Programme> out;
+        // Absolute timestamps retain the source order across local midnight.
+        for (const auto& p : rows) if (p.stop > now) out.push_back(p);
+        return out;
     }
     std::wstring Tooltip(const Programme& p) const {
         return Clock(p.start)+L" - "+Clock(p.stop)+L" \u00ab"+p.title+L"\u00bb"+(channel.empty()?L"":L" / "+channel);

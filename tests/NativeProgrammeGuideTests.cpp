@@ -25,8 +25,17 @@ int main(){
     check(!g.Current(g.stream,end+864000000000ULL),"expired guide fallback");
     check(g.Tooltip(g.rows[0]).find(L" - ")!=std::wstring::npos,"ASCII minus in tooltip");
     check(g.Tooltip(g.rows[0]).find(L" / Channel")!=std::wstring::npos,"channel in tooltip");
-    check(g.Today(begin).size()==2,"available day includes current and next");
-    check(g.Today(end).size()==1,"past programme excluded");
+    check(g.Remaining(begin).size()==2,"remaining schedule includes current and next");
+    check(g.Remaining(end).size()==1,"past programme excluded");
+    {
+        G schedule;
+        schedule.rows = {{begin-20, begin, L"Expired"}, {begin, end, L"Current"},
+            {end+864000000000ULL, end+900000000000ULL, L"Tomorrow"}};
+        const auto remaining = schedule.Remaining(begin);
+        check(remaining.size()==2 && remaining[0].title==L"Current" && remaining[1].title==L"Tomorrow",
+            "retain future dates while excluding expired rows");
+        check(schedule.Remaining(end).size()==1, "retain tomorrow after current stop");
+    }
     g.rows.push_back(g.rows[0]);
     check(!g.Current(g.stream,begin),"overlapping guide rejected");
     check(!g.Parse(json,L"https://other.example/live.m3u8")&&g.rows.empty(),"mismatch clears old metadata");
