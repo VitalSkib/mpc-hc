@@ -20,7 +20,8 @@ jobs:
           $packages = @(
             @('microsoft.windowsappsdk.foundation','1.8.250906002','foundation','77acb164613b71b55924e22f60da7c94f78ab9ebd426395f49e79ca3a0bea77c'),
             @('microsoft.windowsappsdk.interactiveexperiences','1.8.250906004','interactive','454b682994bbbcf3f5029f42fa1aebff72b0bb29dde1ca6e1e99cae264c74451'),
-            @('microsoft.windowsappsdk.winui','1.8.250906003','winui','5792d98965490e8871b31c9c34ed9c6b0392da0a444c929abf93b1f4802b2126')
+            @('microsoft.windowsappsdk.winui','1.8.250906003','winui','5792d98965490e8871b31c9c34ed9c6b0392da0a444c929abf93b1f4802b2126'),
+            @('microsoft.web.webview2','1.0.3179.45','webview','70bd381c5d67f97a6a80294001cde125ab5b24b6d36098ad901d8e15efd752d0')
           )
           foreach($package in $packages) {
             $id,$version,$folder,$digest=$package
@@ -31,7 +32,7 @@ jobs:
           $sdkRoot="${env:ProgramFiles(x86)}/Windows Kits/10"
           $sdk=Get-ChildItem "$sdkRoot/Include" -Directory | Where-Object Name -Match '^10\.0\.\d+\.0$' | Sort-Object {[version]$_.Name} -Descending | Select-Object -First 1
           $cppwinrt="$sdkRoot/bin/$($sdk.Name)/x64/cppwinrt.exe"
-          & $cppwinrt -input probe-sdk/winui/metadata -input probe-sdk/interactive/metadata/10.0.18362.0 -input probe-sdk/foundation/metadata -reference "$sdkRoot/UnionMetadata/$($sdk.Name)/Windows.winmd" -output probe-sdk/generated
+          & $cppwinrt -input probe-sdk/winui/metadata -input probe-sdk/interactive/metadata/10.0.18362.0 -input probe-sdk/foundation/metadata -reference probe-sdk/webview/lib/Microsoft.Web.WebView2.Core.winmd -reference "$sdkRoot/UnionMetadata/$($sdk.Name)/Windows.winmd" -output probe-sdk/generated
           if($LASTEXITCODE -ne 0){throw 'Projection generation failed'}
           $vswhere="${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
           $vs=& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
