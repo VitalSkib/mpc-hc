@@ -439,6 +439,10 @@ bool CNativePlaylistPopup::BeginLiveFade()
     KillTimer(4); m_liveSliding = false;
     m_liveFading = true; m_liveFadeStart = GetTickCount64();
     m_bar->m_listFrame.EnableWindow(FALSE);
+    // Native children own an independent GDI surface. Once input is disabled,
+    // remove that surface for the entire fade; the composition image retains
+    // the current native list and scrollbar without a second opaque layer.
+    m_bar->m_listFrame.ShowWindow(SW_HIDE);
     if (!SetTimer(5, 10, nullptr)) EndLiveFade();
     return true;
 }
@@ -456,7 +460,11 @@ void CNativePlaylistPopup::EndLiveFade()
     m_systemMaterial.SetVisible(false);
     ShowWindow(SW_HIDE);
     m_liveFading = false;
-    if (m_bar->m_listFrame.GetSafeHwnd()) m_bar->m_listFrame.EnableWindow(TRUE);
+    if (m_bar->m_listFrame.GetSafeHwnd()) {
+        // Restore only while the popup itself is hidden, before the next reveal.
+        m_bar->m_listFrame.ShowWindow(SW_SHOWNOACTIVATE);
+        m_bar->m_listFrame.EnableWindow(TRUE);
+    }
 }
 
 bool CNativePlaylistPopup::BeginLiveSlide()
