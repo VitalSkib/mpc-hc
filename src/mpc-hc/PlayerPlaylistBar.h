@@ -207,6 +207,7 @@ public:
     CNativeProgrammeGuide m_programmeGuide;
     CString m_programmeCaption;
     bool GetProgrammeCaption(const CString& source, CString& title, CString& tip) const;
+    bool GetStreamDisplayCaption(const CPlaylistItem& item, CString& title, CString& tip, bool current = true) const;
     bool UpdateProgrammeCaption();
 #endif
 

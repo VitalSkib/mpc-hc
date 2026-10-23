@@ -36,6 +36,28 @@ int main(){
             "retain future dates while excluding expired rows");
         check(schedule.Remaining(end).size()==1, "retain tomorrow after current stop");
     }
+    {
+        std::wstring title, tip;
+        check(g.Caption(g.stream,L"Channel",begin,true,title,tip) && title==L"Film" && tip==g.Tooltip(g.rows[0]),
+            "startup notification uses current programme and existing titlebar tooltip");
+        const auto nextLabel=G::Clock(g.rows[1].start)+L" "+g.rows[1].title;
+        check(g.Caption(g.stream,nextLabel,begin,false,title,tip) && title==L"Next" && tip==g.Tooltip(g.rows[1]),
+            "hovered future row describes that programme rather than current broadcast");
+        check(g.Caption(g.stream,L"Channel",begin,false,title,tip) && tip==L"Channel",
+            "channel row tooltip contains channel name");
+        check(g.Caption(g.stream,L"Channel",end+864000000000ULL,true,title,tip) && tip==L"Channel",
+            "expired guide falls back to channel without source address");
+        check(!g.Caption(L"C:\\video\\film.mp4",L"Film",begin,true,title,tip),
+            "local-file notification and tooltip stay native");
+        check(g.Caption(L"https://other.example/index.m3u8?token=private",L"index.m3u8?token=private",begin,true,title,tip)
+            && title.empty() && tip.empty(), "unlabelled signed URL is suppressed");
+        check(g.Caption(L"https://other.example/index.m3u8?token=private",L"index",begin,false,title,tip)
+            && tip.empty(), "URL filename stem is not presented as a title");
+        check(g.Caption(L"https://other.example/index.m3u8?token=private",L"Imported stream title",begin,true,title,tip)
+            && title==L"Imported stream title" && tip==title, "distinct imported stream labels are retained");
+        check(g.Caption(L"https://other.example/index.m3u8",L"https://other.example/index.m3u8",begin,false,title,tip)
+            && tip.empty(), "raw source labels are not repeated in a tooltip");
+    }
     g.rows.push_back(g.rows[0]);
     check(!g.Current(g.stream,begin),"overlapping guide rejected");
     check(!g.Parse(json,L"https://other.example/live.m3u8")&&g.rows.empty(),"mismatch clears old metadata");

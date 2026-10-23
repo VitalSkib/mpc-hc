@@ -1879,6 +1879,16 @@ bool CPlayerPlaylistBar::GetProgrammeCaption(const CString& source, CString& tit
     return true;
 }
 
+bool CPlayerPlaylistBar::GetStreamDisplayCaption(const CPlaylistItem& item, CString& title, CString& tip, bool current) const
+{
+    if (item.m_fns.IsEmpty()) return false;
+    std::wstring displayTitle, displayTip;
+    if (!m_programmeGuide.Caption(item.m_fns.GetHead().GetString(), item.m_label.GetString(),
+            CNativeProgrammeGuide::Now(), current, displayTitle, displayTip)) return false;
+    title = displayTitle.c_str(); tip = displayTip.c_str();
+    return true;
+}
+
 bool CPlayerPlaylistBar::UpdateProgrammeCaption()
 {
     CString title, tip;
@@ -3058,6 +3068,14 @@ BOOL CPlayerPlaylistBar::OnToolTipNotify(UINT id, NMHDR* pNMHDR, LRESULT* pResul
     strTipText.Empty();
 
     if (col == COL_NAME) {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        CString displayTitle, displayTip;
+        if (GetStreamDisplayCaption(pli, displayTitle, displayTip, false)) {
+            strTipText = displayTip.IsEmpty() ? displayTitle : displayTip;
+            if (strTipText.IsEmpty()) return FALSE;
+        } else
+#endif
+        {
         POSITION pos = pli.m_fns.GetHeadPosition();
         while (pos) {
             strTipText += _T("\n") + pli.m_fns.GetNext(pos);
@@ -3076,6 +3094,7 @@ BOOL CPlayerPlaylistBar::OnToolTipNotify(UINT id, NMHDR* pNMHDR, LRESULT* pResul
             }
         }
 
+        }
         ::SendMessage(pNMHDR->hwndFrom, TTM_SETMAXTIPWIDTH, 0, 1000);
     } else if (col == COL_TIME) {
         return FALSE;

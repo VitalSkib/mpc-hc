@@ -59,6 +59,39 @@ public:
     std::wstring Tooltip(const Programme& p) const {
         return Clock(p.start)+L" - "+Clock(p.stop)+L" \u00ab"+p.title+L"\u00bb"+(channel.empty()?L"":L" / "+channel);
     }
+    // Presentation-only text for the two source-name notifications. A handled
+    // HTTP source with empty text intentionally suppresses an unlabelled URL.
+    bool Caption(const std::wstring& source, const std::wstring& label, ULONGLONG now,
+            bool current, std::wstring& title, std::wstring& tip) const {
+        title.clear(); tip.clear();
+        if (_wcsnicmp(source.c_str(), L"http://", 7) != 0
+                && _wcsnicmp(source.c_str(), L"https://", 8) != 0) return false;
+        if (source == stream) {
+            if (current) {
+                if (const auto p = Current(source, now)) { title=p->title; tip=Tooltip(*p); return true; }
+                if (!channel.empty()) { title=tip=channel; return true; }
+            } else {
+                if (!channel.empty() && label == channel) { title=tip=channel; return true; }
+                for (const auto& p : rows) if (label == Clock(p.start)+L" "+p.title) {
+                    title=p.title; tip=Tooltip(p); return true;
+                }
+            }
+        }
+        const auto equal=[](const std::wstring& a,const std::wstring& b) {return _wcsicmp(a.c_str(),b.c_str())==0;};
+        const auto cut=source.find_first_of(L"?#");
+        const auto clean=source.substr(0,cut);
+        const auto slash=clean.find_last_of(L'/');
+        const auto file=slash==clean.npos?clean:clean.substr(slash+1);
+        const auto dot=file.find_last_of(L'.');
+        const auto stem=dot==file.npos?file:file.substr(0,dot);
+        const auto rawSlash=source.find_last_of(L'/');
+        const auto rawFile=rawSlash==source.npos?source:source.substr(rawSlash+1);
+        const auto name=Clean(label);
+        if (!name.empty() && name.find(L"://")==name.npos && !equal(name,source)
+                && !equal(name,clean) && !equal(name,file) && !equal(name,stem) && !equal(name,rawFile))
+            title=tip=name;
+        return true;
+    }
     bool Parse(const std::wstring& json,const std::wstring& expected) {
         Clear();
         if(_wcsnicmp(expected.c_str(),L"http://",7)!=0&&_wcsnicmp(expected.c_str(),L"https://",8)!=0)return false;

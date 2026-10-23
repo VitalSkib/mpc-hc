@@ -8709,6 +8709,14 @@ void CMainFrame::OnViewOSDShowFileName()
     switch (GetPlaybackMode()) {
         case PM_FILE:
             strOSD = GetFileName();
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+            {
+                CPlaylistItem item;
+                CString displayTitle, displayTip;
+                if (m_wndPlaylistBar.GetCur(item) && m_wndPlaylistBar.GetStreamDisplayCaption(item, displayTitle, displayTip))
+                    strOSD = displayTip.IsEmpty() ? displayTitle : displayTip;
+            }
+#endif
             break;
         case PM_DVD:
             strOSD = _T("DVD");
@@ -10144,6 +10152,14 @@ void CMainFrame::OnPlayPlay()
             }
         }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        if (m_bFirstPlay && GetPlaybackMode() == PM_FILE) {
+            CPlaylistItem item;
+            CString displayTitle, displayTip;
+            if (m_wndPlaylistBar.GetCur(item) && m_wndPlaylistBar.GetStreamDisplayCaption(item, displayTitle, displayTip))
+                strOSD = displayTip.IsEmpty() ? displayTitle : displayTip;
+        }
+#endif
         if (strOSD.IsEmpty()) {
             strOSD = strPlay;
         }
