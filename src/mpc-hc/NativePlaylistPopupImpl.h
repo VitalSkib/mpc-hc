@@ -172,6 +172,7 @@ void CNativePlaylistPopup::UpdateMaterialForeground()
     const int saved = dc->SaveDC();
     dc->SetViewportOrg(list.TopLeft());
     dc->IntersectClipRect(0, 0, list.Width(), list.Height());
+    ::SetPropW(m_bar->m_list.m_hWnd, L"MPC.PlaylistForegroundPrint", reinterpret_cast<HANDLE>(1));
     m_bar->m_list.SendMessage(WM_PRINT, reinterpret_cast<WPARAM>(memory),
         PRF_CLIENT | PRF_NONCLIENT | PRF_ERASEBKGND | PRF_CHILDREN);
     dc->RestoreDC(saved);
@@ -191,6 +192,7 @@ void CNativePlaylistPopup::UpdateMaterialForeground()
     CRect horizontal(listClient.left, listClient.bottom, listClient.right, listWindow.Height() - listClient.top);
     m_bar->m_list.DrawThemedScrollBars(dc, m_bar->m_list.m_hWnd,
         vertical, horizontal, hasVertical, hasHorizontal, hasVertical && hasHorizontal);
+    ::RemovePropW(m_bar->m_list.m_hWnd, L"MPC.PlaylistForegroundPrint");
     dc->RestoreDC(scrollbarClip);
     // Explicitly retain the full header even if a child print path changes its clip.
     const int headerClip = dc->SaveDC();

@@ -338,7 +338,16 @@ LRESULT CALLBACK CPlayerPlaylistBar::NativeListProcedure(HWND window, UINT messa
             TRACKMOUSEEVENT track = {sizeof(track), TME_LEAVE, window, 0}; ::TrackMouseEvent(&track);
         }
     }
+    // A native list can copy/paint pixels synchronously inside scrolling,
+    // without WM_PAINT. Batch that state change with the native redraw switch;
+    // the existing compositor snapshot remains the sole visible surface.
+    const bool scrollUpdate = message == WM_MOUSEWHEEL || message == WM_VSCROLL
+        || message == WM_HSCROLL || message == LVM_SCROLL || message == LVM_ENSUREVISIBLE;
+    const bool deferNativePaint = scrollUpdate && bar->UsesNativePopup()
+        && bar->m_nativePopup.MaterialActive() && ::IsWindowVisible(window);
+    if (deferNativePaint) ::SendMessage(window, WM_SETREDRAW, FALSE, 0);
     const LRESULT result = ::DefSubclassProc(window, message, wparam, lparam);
+    if (deferNativePaint && ::IsWindow(window)) ::SendMessage(window, WM_SETREDRAW, TRUE, 0);
     // Read-only native queries (including dialog navigation and item queries)
     // must never enqueue a composition update. They also run while pumping it.
     if (bar->UsesNativePopup() && bar->m_nativePopup.MaterialActive()) {

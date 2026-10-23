@@ -233,7 +233,19 @@ bool CMPCThemeScrollBarRenderer::GetScrollBarCornerRect(HWND hWnd, CRect& corner
     return true;
 }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+static bool PlaylistScrollbarIsCompositionOnly(HWND window)
+{
+    return ::GetPropW(window, L"MPC.FluentPlaylistScroll")
+        && (::GetWindowLongPtr(window, GWL_EXSTYLE) & WS_EX_NOREDIRECTIONBITMAP)
+        && !::GetPropW(window, L"MPC.PlaylistForegroundPrint");
+}
+#endif
+
 void CMPCThemeScrollBarRenderer::DrawScrollBarCorner(CDC* pDC, HWND hWnd, const CRect& cornerRect) {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (PlaylistScrollbarIsCompositionOnly(hWnd)) return;
+#endif
     if (cornerRect.IsRectEmpty()) {
         return;
     }
@@ -405,6 +417,9 @@ void CMPCThemeScrollBarRenderer::drawSBArrow(CDC& dc, COLORREF arrowClr, CRect a
 }
 
 void CMPCThemeScrollBarRenderer::DrawScrollBar(CDC* pDC, HWND hWnd, int nBar, const CRect& targetRect) {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (PlaylistScrollbarIsCompositionOnly(hWnd)) return;
+#endif
     DpiHelper dpiWindow;
     dpiWindow.Override(hWnd);
     int nDPI = dpiWindow.DPIX();
@@ -845,6 +860,9 @@ void CMPCThemeScrollBarRenderer::DrawThemedScrollBars(CDC* pDC, HWND hWnd, const
 }
 
 void CMPCThemeScrollBarRenderer::HandleNcPaint(HWND hWnd) {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (PlaylistScrollbarIsCompositionOnly(hWnd)) return;
+#endif
     CWindowDC dc(CWnd::FromHandle(hWnd));
     int oldDC = dc.SaveDC();
 
