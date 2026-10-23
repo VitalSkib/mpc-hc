@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "NativePlaylistDiagnostic.h"
 #include "CMPCThemeScrollBarRenderer.h"
 #include "CMPCTheme.h"
 #include "CMPCThemeUtil.h"
@@ -417,6 +418,10 @@ void CMPCThemeScrollBarRenderer::drawSBArrow(CDC& dc, COLORREF arrowClr, CRect a
 }
 
 void CMPCThemeScrollBarRenderer::DrawScrollBar(CDC* pDC, HWND hWnd, int nBar, const CRect& targetRect) {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (::GetPropW(hWnd, L"MPC.FluentPlaylistScroll"))
+        PlaylistDiagnostic::Trace("scrollbar-draw-attempt", hWnd, pDC ? pDC->GetSafeHdc() : nullptr, 0, nBar);
+#endif
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
     if (PlaylistScrollbarIsCompositionOnly(hWnd)) return;
 #endif

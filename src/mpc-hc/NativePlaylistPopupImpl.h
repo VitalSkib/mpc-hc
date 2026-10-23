@@ -2,6 +2,7 @@
 #pragma once
 #include <dwmapi.h>
 #include "MouseTouch.h"
+#include "NativePlaylistDiagnostic.h"
 
 #include <gdiplus.h>
 #include <cmath>
@@ -212,6 +213,7 @@ void CNativePlaylistPopup::UpdateMaterialForeground()
         || memcmp(m_foregroundPixels.data(), pixels, count * sizeof(DWORD));
     // Composition commits can themselves cause paint notifications. Stop that
     // feedback at the pixel boundary instead of recommitting an identical frame.
+    PlaylistDiagnostic::Trace("foreground-upload", m_hWnd, memory, 0, changed);
     const bool updated = !changed || m_systemMaterial.UpdateForeground(pixels, width, height);
     if (updated && changed) {
         m_foregroundPixels.assign(pixels, pixels + count);
@@ -433,6 +435,14 @@ void CNativePlaylistPopup::PaintSurface(CDC& dc)
 
 bool CNativePlaylistPopup::BeginLiveFade()
 {
+    PlaylistDiagnostic::Trace("fade-request", m_hWnd);
+    if (PlaylistDiagnostic::Current().enabled) {
+        ::EnumChildWindows(m_hWnd, PlaylistDiagnostic::Child, 0);
+        PlaylistDiagnostic::Trace("foreground-pixels", m_hWnd, nullptr, 0, m_foregroundPixels.size());
+        if (!m_foregroundPixels.empty())
+            PlaylistDiagnostic::SaveForeground(m_foregroundPixels.data(), m_foregroundWidth, m_foregroundHeight);
+        PlaylistDiagnostic::Flush();
+    }
     if (!m_systemMaterial.StartFade()) return false;
     // A hide during entrance fades the same moving group without snapping it
     // to its final position. The compositor continues its existing Offset.
@@ -443,6 +453,8 @@ bool CNativePlaylistPopup::BeginLiveFade()
     // remove that surface for the entire fade; the composition image retains
     // the current native list and scrollbar without a second opaque layer.
     m_bar->m_listFrame.ShowWindow(SW_HIDE);
+    PlaylistDiagnostic::Trace("frame-hidden", m_bar->m_listFrame.m_hWnd);
+    PlaylistDiagnostic::Trace("list-after-frame-hidden", m_bar->m_list.m_hWnd);
     if (!SetTimer(5, 10, nullptr)) EndLiveFade();
     return true;
 }
@@ -457,6 +469,7 @@ void CNativePlaylistPopup::EndLiveFade()
 {
     if (!m_liveFading) return;
     KillTimer(5);
+    PlaylistDiagnostic::Trace("fade-complete-before-hide", m_hWnd);
     m_systemMaterial.SetVisible(false);
     ShowWindow(SW_HIDE);
     m_liveFading = false;
@@ -465,6 +478,8 @@ void CNativePlaylistPopup::EndLiveFade()
         m_bar->m_listFrame.ShowWindow(SW_SHOWNOACTIVATE);
         m_bar->m_listFrame.EnableWindow(TRUE);
     }
+    PlaylistDiagnostic::Trace("popup-hidden-frame-restored", m_hWnd);
+    PlaylistDiagnostic::Flush();
 }
 
 bool CNativePlaylistPopup::BeginLiveSlide()

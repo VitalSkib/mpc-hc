@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <chrono>
 #include "NativePlaylistMaterial.h"
+#include "NativePlaylistDiagnostic.h"
 
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
 #include <appmodel.h>
@@ -352,6 +353,12 @@ bool CNativePlaylistMaterial::StartFade()
     if (!m_state) return false;
     try {
         auto& s = *m_state;
+        if (PlaylistDiagnostic::Current().enabled) {
+            auto backdrop = s.target.as<winrt::Windows::UI::Composition::ICompositionSupportsSystemBackdrop>();
+            const ULONG_PTR flags = (backdrop.SystemBackdrop() ? 1 : 0)
+                | (s.material.Brush() ? 2 : 0) | (s.panel.IsVisible() ? 4 : 0);
+            PlaylistDiagnostic::Trace("composition-fade-backdrop-material-visible", nullptr, nullptr, 0, flags);
+        }
         auto animation = s.compositor.CreateScalarKeyFrameAnimation();
         animation.Duration(std::chrono::milliseconds(FadeDurationMs));
         animation.InsertKeyFrame(0.f, 1.f);

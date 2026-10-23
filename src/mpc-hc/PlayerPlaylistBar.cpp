@@ -20,6 +20,7 @@
  */
 
 #include "stdafx.h"
+#include "NativePlaylistDiagnostic.h"
 #include <cmath>
 #include <afxinet.h>
 #include "mplayerc.h"
@@ -312,6 +313,17 @@ LRESULT CALLBACK CPlayerPlaylistBar::NativeListProcedure(HWND window, UINT messa
     UINT_PTR id, DWORD_PTR data)
 {
     auto bar = reinterpret_cast<CPlayerPlaylistBar*>(data);
+    if (bar->UsesNativePopup() && bar->m_nativePopup.MaterialActive()) {
+        switch (message) {
+        case WM_PAINT: case WM_NCPAINT: case WM_ERASEBKGND:
+        case WM_PRINT: case WM_PRINTCLIENT: case WM_SETREDRAW:
+        case WM_MOUSEWHEEL: case WM_VSCROLL: case WM_HSCROLL: case LVM_SCROLL:
+            PlaylistDiagnostic::Trace("list-message", window,
+                (message == WM_PRINT || message == WM_PRINTCLIENT || message == WM_ERASEBKGND)
+                    ? reinterpret_cast<HDC>(wparam) : nullptr, message, wparam);
+            break;
+        }
+    }
     if (message == WM_NCDESTROY) ::RemoveWindowSubclass(window, NativeListProcedure, id);
     else if ((message == WM_PAINT || message == WM_NCPAINT) && bar->UsesNativePopup()
             && bar->m_nativePopup.MaterialActive()) {
@@ -2637,6 +2649,10 @@ void CPlayerPlaylistBar::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruc
     }
 #endif
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (UsesNativePopup() && m_nativePopup.MaterialActive())
+        PlaylistDiagnostic::Trace("owner-draw", m_list.m_hWnd, lpDrawItemStruct->hDC, WM_DRAWITEM, lpDrawItemStruct->itemID);
+#endif
     CDC* pDC = CDC::FromHandle(lpDrawItemStruct->hDC);
     int oldDC = pDC->SaveDC();
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
