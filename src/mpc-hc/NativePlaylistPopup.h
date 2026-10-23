@@ -21,6 +21,7 @@ class CNativePlaylistPopup : public CWnd, public CDropClient {
     ULONG_PTR m_graphicsToken = 0;
     CRect CloseRect() const;
     void Position();
+    bool EnsureSurfaceMode(bool composition);
     void PaintSurface(CDC& dc);
     CWnd m_revealWindow;
     HDC m_revealDC = nullptr;
@@ -54,7 +55,7 @@ public:
     static COLORREF SurfaceColor() { return RGB(43, 43, 43); }
     static COLORREF BorderColor() { return RGB(60, 60, 60); }
     static COLORREF SelectionColor() { return RGB(56, 56, 56); }
-    bool Create(CWnd* owner, CPlayerPlaylistBar* bar);
+    bool Create(CWnd* owner, CPlayerPlaylistBar* bar, bool composition = true);
     void ConfigureSurface();
     bool MaterialActive() const { return m_materialActive; }
     bool MaterialLive() const { return m_materialActive && m_systemMaterial.Active(); }

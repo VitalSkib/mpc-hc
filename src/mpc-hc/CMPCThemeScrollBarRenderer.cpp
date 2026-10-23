@@ -237,8 +237,7 @@ bool CMPCThemeScrollBarRenderer::GetScrollBarCornerRect(HWND hWnd, CRect& corner
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
 static bool PlaylistScrollbarIsCompositionOnly(HWND window)
 {
-    return ::GetPropW(window, L"MPC.FluentPlaylistScroll")
-        && (::GetWindowLongPtr(window, GWL_EXSTYLE) & WS_EX_NOREDIRECTIONBITMAP)
+    return ::GetPropW(window, L"MPC.PlaylistCompositionOnly")
         && !::GetPropW(window, L"MPC.PlaylistForegroundPrint");
 }
 #endif

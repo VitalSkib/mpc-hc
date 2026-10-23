@@ -9,7 +9,7 @@
 #include <uxtheme.h>
 #pragma comment(lib, "uxtheme.lib")
 
-bool CNativePlaylistPopup::Create(CWnd* owner, CPlayerPlaylistBar* bar)
+bool CNativePlaylistPopup::Create(CWnd* owner, CPlayerPlaylistBar* bar, bool composition)
 {
     m_bar = bar;
     // Product default: one tested material, independent of old probe settings.
@@ -18,7 +18,10 @@ bool CNativePlaylistPopup::Create(CWnd* owner, CPlayerPlaylistBar* bar)
     m_bufferedPaintReady = SUCCEEDED(::BufferedPaintInit());
     // Give the native erase path the same background as our explicit paint path.
     static const HBRUSH background = ::CreateSolidBrush(SurfaceColor());
-    if (!CreateEx(WS_EX_TOOLWINDOW, AfxRegisterWndClass(CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW, ::LoadCursor(nullptr, IDC_ARROW), background),
+    // NOREDIRECTIONBITMAP is a creation-time rendering choice. Windows rejects
+    // adding/removing it later (ERROR_INVALID_PARAMETER).
+    const DWORD extended = WS_EX_TOOLWINDOW | (composition ? WS_EX_NOREDIRECTIONBITMAP : 0);
+    if (!CreateEx(extended, AfxRegisterWndClass(CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW, ::LoadCursor(nullptr, IDC_ARROW), background),
             L"Playlist", WS_POPUP | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, CRect(0, 0, 320, 200), owner, 0)) return false;
     Gdiplus::GdiplusStartupInput graphicsStartup;
     Gdiplus::GdiplusStartup(&m_graphicsToken, &graphicsStartup, nullptr);
@@ -29,6 +32,26 @@ bool CNativePlaylistPopup::Create(CWnd* owner, CPlayerPlaylistBar* bar)
     m_systemBorder = SUCCEEDED(DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(34), &border, sizeof(border)));
     DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(33), &corners, sizeof(corners));
     DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(20), &dark, sizeof(dark));
+    return true;
+}
+
+bool CNativePlaylistPopup::EnsureSurfaceMode(bool composition)
+{
+    if (!!(GetExStyle() & WS_EX_NOREDIRECTIONBITMAP) == composition) return true;
+    // A policy change or unsupported material needs the other kind of HWND.
+    // Keep the real native list intact, including its selection and scroll state.
+    CWnd* owner = GetOwner();
+    CRect bounds; GetWindowRect(bounds);
+    m_bar->m_dropTarget.Revoke();
+    m_bar->m_listFrame.SetParent(m_bar);
+    m_materialActive = false;
+    DestroyWindow();
+    if (!Create(owner, m_bar, composition)) return false;
+    SetWindowPos(nullptr, bounds.left, bounds.top, bounds.Width(), bounds.Height(),
+        SWP_NOZORDER | SWP_NOACTIVATE);
+    m_bar->m_listFrame.SetParent(this);
+    m_bar->m_dropTarget.Register(this);
+    PlaylistDiagnostic::Trace("host-created-rendering-mode", m_hWnd, nullptr, 0, composition);
     return true;
 }
 
@@ -52,8 +75,8 @@ void CNativePlaylistPopup::ConfigureSurface()
     m_systemMaterial.Reset();
     // Composition owns every visible pixel. Native HWNDs retain their input,
     // layout and WM_PRINT paths, but have no second GDI redirection surface.
-    ModifyStyleEx(WS_EX_COMPOSITED | WS_EX_NOREDIRECTIONBITMAP,
-        requested != 1 ? WS_EX_NOREDIRECTIONBITMAP : 0);
+    if (!EnsureSurfaceMode(requested != 1)) return;
+    ModifyStyleEx(WS_EX_COMPOSITED, 0);
     const DWORD none = 1;
     DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(38), &none, sizeof(none));
     m_materialActive = requested != 1 && m_systemMaterial.Start(m_hWnd, static_cast<int>(requested));
@@ -61,6 +84,7 @@ void CNativePlaylistPopup::ConfigureSurface()
     if (FAILED(DwmExtendFrameIntoClientArea(m_hWnd, &margins))) m_materialActive = false;
     if (!m_materialActive) {
         m_systemMaterial.Reset();
+        if (!EnsureSurfaceMode(false)) return;
         const DWORD none = 1; const MARGINS solid = {};
         DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(38), &none, sizeof(none));
         DwmExtendFrameIntoClientArea(m_hWnd, &solid);
@@ -76,14 +100,16 @@ void CNativePlaylistPopup::ConfigureSurface()
     const DWORD corners = m_materialActive ? 1 : 2;
     DwmSetWindowAttribute(m_hWnd, static_cast<DWMWINDOWATTRIBUTE>(33), &corners, sizeof(corners));
     // Composition is the sole visible renderer in material mode.
-    ModifyStyleEx(WS_EX_COMPOSITED | WS_EX_NOREDIRECTIONBITMAP,
-        m_materialActive ? WS_EX_NOREDIRECTIONBITMAP : 0);
-    // Native children remain input/WM_PRINT sources only. Their own redirected
-    // GDI surfaces would remain stationary underneath the animated artwork.
-    m_bar->m_listFrame.ModifyStyleEx(WS_EX_TRANSPARENT | WS_EX_NOREDIRECTIONBITMAP,
-        m_materialActive ? WS_EX_NOREDIRECTIONBITMAP : 0, SWP_FRAMECHANGED | SWP_NOACTIVATE);
-    m_bar->m_list.ModifyStyleEx(WS_EX_TRANSPARENT | WS_EX_NOREDIRECTIONBITMAP,
-        m_materialActive ? WS_EX_NOREDIRECTIONBITMAP : 0, SWP_FRAMECHANGED | SWP_NOACTIVATE);
+    ModifyStyleEx(WS_EX_COMPOSITED, 0);
+    // The top-level host owns redirection. Native children retain their normal
+    // input/print behavior; the material flag controls their window-DC painters.
+    m_bar->m_listFrame.ModifyStyleEx(WS_EX_TRANSPARENT, 0, SWP_FRAMECHANGED | SWP_NOACTIVATE);
+    m_bar->m_list.ModifyStyleEx(WS_EX_TRANSPARENT, 0, SWP_FRAMECHANGED | SWP_NOACTIVATE);
+    if (m_materialActive)
+        ::SetPropW(m_bar->m_list.m_hWnd, L"MPC.PlaylistCompositionOnly", reinterpret_cast<HANDLE>(1));
+    else ::RemovePropW(m_bar->m_list.m_hWnd, L"MPC.PlaylistCompositionOnly");
+    PlaylistDiagnostic::Trace("configured-host", m_hWnd);
+    PlaylistDiagnostic::Trace("configured-list", m_bar->m_list.m_hWnd);
     QueueMaterialForeground();
     m_bar->m_listFrame.nativeSurface = true;
     ::SetPropW(m_bar->m_list.m_hWnd, L"MPC.FluentPlaylistScroll", reinterpret_cast<HANDLE>(1));
@@ -225,9 +251,10 @@ void CNativePlaylistPopup::UpdateMaterialForeground()
         // An unsupported/device-lost foreground must leave a readable Solid UI.
         m_systemMaterial.Reset(); m_materialActive = false;
         const MARGINS solid{}; DwmExtendFrameIntoClientArea(m_hWnd, &solid);
-        ModifyStyleEx(WS_EX_COMPOSITED | WS_EX_NOREDIRECTIONBITMAP, 0);
-        m_bar->m_listFrame.ModifyStyleEx(WS_EX_TRANSPARENT | WS_EX_NOREDIRECTIONBITMAP, 0);
-        m_bar->m_list.ModifyStyleEx(WS_EX_TRANSPARENT | WS_EX_NOREDIRECTIONBITMAP, 0);
+        ::RemovePropW(m_bar->m_list.m_hWnd, L"MPC.PlaylistCompositionOnly");
+        if (!EnsureSurfaceMode(false)) return;
+        m_bar->m_listFrame.ModifyStyleEx(WS_EX_TRANSPARENT, 0);
+        m_bar->m_list.ModifyStyleEx(WS_EX_TRANSPARENT, 0);
         RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
     }
 }

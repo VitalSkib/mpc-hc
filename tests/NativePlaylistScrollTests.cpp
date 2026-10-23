@@ -42,6 +42,28 @@ int main() {
     check(draws>beforePrint,"explicit foreground snapshot still draws native rows");
     check(ListView_GetTopIndex(list)==after,"snapshot preserves scroll position");
     SelectObject(memory,old);DeleteObject(bitmap);DeleteDC(memory);ReleaseDC(list,dc);
+    ListView_SetItemState(list, after, LVIS_SELECTED, LVIS_SELECTED);
+    HWND composition = CreateWindowEx(WS_EX_NOREDIRECTIONBITMAP, wc.lpszClassName,
+        L"Composition host", WS_POPUP, -10000, -10000, 500, 300, nullptr, nullptr, instance, nullptr);
+    check(composition != nullptr, "composition host creation");
+    check((GetWindowLongPtr(composition, GWL_EXSTYLE) & WS_EX_NOREDIRECTIONBITMAP) != 0,
+        "creation-time no-redirection mode is real");
+    SetParent(list, composition);
+    check(ListView_GetItemCount(list) == 80 && ListView_GetTopIndex(list) == after,
+        "moving native list to composition host preserves content and scroll");
+    check(ListView_GetItemState(list, after, LVIS_SELECTED) != 0,
+        "moving native list preserves selection");
     DestroyWindow(parent);
+    HWND solid = CreateWindowEx(0, wc.lpszClassName, L"Solid fallback", WS_POPUP,
+        -10000, -10000, 500, 300, nullptr, nullptr, instance, nullptr);
+    check(solid != nullptr && !(GetWindowLongPtr(solid, GWL_EXSTYLE) & WS_EX_NOREDIRECTIONBITMAP),
+        "solid fallback has its ordinary redirection surface");
+    SetParent(list, solid);
+    DestroyWindow(composition);
+    check(IsWindow(list) && ListView_GetItemCount(list) == 80 && ListView_GetTopIndex(list) == after,
+        "recreating the host keeps the native list alive with its scroll state");
+    check(ListView_GetItemState(list, after, LVIS_SELECTED) != 0,
+        "solid fallback preserves native selection");
+    DestroyWindow(solid);
     std::cout<<"PASS native scroll state, deferred drawing, visibility and explicit print\n";
 }

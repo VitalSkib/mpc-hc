@@ -44,7 +44,7 @@ inline void Trace(const char* stage, HWND window, HDC dc = nullptr, UINT message
 inline void Flush() {
     auto& s = Current();
     if (!s.enabled || s.pending.empty()) return;
-    HANDLE f = CreateFileW((s.directory + L"events.log").c_str(), FILE_APPEND_DATA, FILE_SHARE_READ, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    HANDLE f = CreateFileW((s.directory + L"\\events.log").c_str(), FILE_APPEND_DATA, FILE_SHARE_READ, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (f == INVALID_HANDLE_VALUE) return;
     for (const auto& line : s.pending) { DWORD written; WriteFile(f, line.data(), static_cast<DWORD>(line.size()), &written, nullptr); }
     CloseHandle(f); s.pending.clear();
