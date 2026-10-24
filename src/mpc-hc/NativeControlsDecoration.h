@@ -282,8 +282,10 @@ public:
             }
             // rectangle is the new header position in its content parent's coordinates.
             CRect titleRect(Scale(42), 0, std::max(Scale(42), rectangle.Width()-Scale(128)), rectangle.Height());
-            titleRect.OffsetRect(rectangle.TopLeft());
-            view->ClientToScreen(titleRect); target->ScreenToClient(titleRect);
+            if (target != this) {
+                titleRect.OffsetRect(rectangle.TopLeft());
+                view->ClientToScreen(titleRect); target->ScreenToClient(titleRect);
+            }
             if (titleTip.IsEmpty()) titleRect.SetRectEmpty();
             m_tip.SetToolRect(target, 4, titleRect);
         }
