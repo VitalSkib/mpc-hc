@@ -47,3 +47,13 @@ hosted footer. Set only this option to `0` to omit that decoration window and
 bitmap while keeping control layout/input, header material and chrome motion.
 Restart for a clean comparison. This does not disable the toolbar alpha artwork
 or the playlist material. Restore the previous test's options before using it.
+
+## Uninstrumented control build
+
+Do not enable MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS for normal performance
+comparisons. It instruments the renderer Present path and enumerates every
+toolbar item before/after many native mutations, with synchronous log writes.
+Keep that opt-in for focused diagnostics. The normal styled build keeps the
+same native-controls/material flags without geometry/UI tracing. Compare with
+all effects restored first. SWP_NOCOPYBITS on the video view remains a separate
+historical intervention; do not conflate it with tracing in the same test.
