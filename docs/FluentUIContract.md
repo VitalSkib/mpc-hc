@@ -98,3 +98,20 @@ resize windows, or drive the mouse for automatic performance/appearance checks
 without separately agreeing with the user. Source review, CI tests, binary/hash
 verification and installation in the agreed Desktop test directory remain the
 normal unattended workflow. Keep FluentResizeTiming disabled for ordinary use.
+
+## Temporary opaque-presentation control (2026-10-25)
+
+The current CI application build deliberately defines only MPC_OPAQUE_RESIZE_CONTROL
+and omits MPC_EXPERIMENTAL_NATIVE_SEEKBAR, MPC_EXPERIMENTAL_NO_BACKDROP and
+MPC_EXPERIMENTAL_NATIVE_DECORATION. This selects the existing ordinary/native
+opaque paint and docking branches, without the added layered controls, chrome
+hosts, header Acrylic or custom playlist composition. It is a diagnostic build,
+not a feature rollback: no application source or accepted assets are removed.
+Native commands and existing stream/guide code remain in the source.
+
+The normal styled build CL must be restored after the comparison:
+/DMPC_EXPERIMENTAL_NATIVE_SEEKBAR /DMPC_EXPERIMENTAL_NO_BACKDROP /DMPC_EXPERIMENTAL_NATIVE_DECORATION
+Do not re-enable MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS. Keep the current renderer
+and current user INI unchanged when installing this one-factor control. Do not
+run interactive UI checks without a separate agreement; the user checks visuals.
+Absence of the new composition/host paths in the control is intentional.
