@@ -25,12 +25,13 @@ than upload the same layout again. Do not throttle, postpone or replace native
 video layout. Verify continuous dragging with visible and hidden chrome, corners,
 fullscreen return, caption input, playlist animation and native text bars.
 
-During native frame RecalcLayout, already-mounted chrome and its video geometry
-are published at the existing synchronous final update, not again from child
-WM_SIZE inside DeferWindowPos. Direct view resizing and initial chrome mounting
-keep their original handlers. No resize timer, frame-rate cap or renderer change
-is introduced. Re-test opening media, docking, fullscreen return, text bars and
-live corner dragging before accepting the candidate.
+Preserve the stock CChildView::OnSize renderer notification even when WM_SIZE
+arrives during the frame's deferred child placement. Refresh chrome for that
+installed client size as well; do not suppress both updates until RecalcLayout
+returns. Keep the final frame fallback for dock/overlap changes that do not send
+WM_SIZE, and keep the existing pre-reveal surface preparation. No resize timer,
+frame-rate cap or renderer implementation change is introduced. Re-test opening
+media, docking, fullscreen return, text bars and live corner dragging.
 
 ## One-variable resize isolation
 
@@ -89,3 +90,11 @@ native docking path. Native button rectangles and visibility still participate.
 Do not unconditionally arrange a hosted toolbar in RecalcLayout before its final
 row placement. Keep PrepareNativePresentation after placement and before reveal;
 that surface revision check preserves fullscreen/hidden-resize correctness.
+
+## Visual verification workflow
+
+The user performs interactive visual checks. Do not launch the player, move or
+resize windows, or drive the mouse for automatic performance/appearance checks
+without separately agreeing with the user. Source review, CI tests, binary/hash
+verification and installation in the agreed Desktop test directory remain the
+normal unattended workflow. Keep FluentResizeTiming disabled for ordinary use.
