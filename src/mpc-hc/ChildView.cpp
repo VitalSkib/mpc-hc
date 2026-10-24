@@ -40,7 +40,7 @@ CChildView::CChildView(CMainFrame* pMainFrame)
     m_nativeHeader.customIcon = [this](Gdiplus::Graphics& graphics, const CRect& rect, LPCWSTR name, bool hot) {
         return m_pMainFrame->m_wndToolBar.DrawThemeIcon(graphics, rect, name, hot);
     };
-    m_nativeHeader.titleTarget = this; // The transparent header forwards hover to the native view.
+    m_nativeHeader.titleTarget = nullptr; // The visible header owns title hover and mouse input.
     m_nativeHeader.semiboldTitle = AfxGetApp()->GetProfileInt(L"Settings", L"FluentTitleSemibold", 1) != 0;
     m_nativeHeader.windowCommand = [this](int button) {
         if (button == 0) m_pMainFrame->PostMessage(WM_SYSCOMMAND, SC_MINIMIZE);
@@ -296,7 +296,15 @@ void CChildView::UpdateNativeDecoration()
         }
     }
     CString programmeTip;
-    if (url) m_pMainFrame->m_wndPlaylistBar.GetProgrammeCaption(source, title, programmeTip);
+    if (url) {
+        CPlaylistItem item;
+        CString displayTitle, displayTip;
+        if (m_pMainFrame->m_wndPlaylistBar.GetCur(item)
+                && m_pMainFrame->m_wndPlaylistBar.GetStreamDisplayCaption(item, displayTitle, displayTip)) {
+            if (!displayTitle.IsEmpty()) title = displayTitle;
+            programmeTip = displayTip;
+        }
+    }
     const int dpi = m_pMainFrame->m_dpi.ScaleY(96);
     CRect bottom(view); bottom.top = std::max(view.top, view.bottom - int(height));
     const bool bottomVisible = nativeVisible && (videoLoaded || m_pMainFrame->IsStatusBarForcedForMessage());

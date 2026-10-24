@@ -59,6 +59,26 @@ public:
     std::wstring Tooltip(const Programme& p) const {
         return Clock(p.start)+L" - "+Clock(p.stop)+L" \u00ab"+p.title+L"\u00bb"+(channel.empty()?L"":L" / "+channel);
     }
+    static std::wstring LabelTitle(std::wstring label) {
+        label=Clean(label);
+        const auto clock=[](const std::wstring& text,size_t pos) {
+            if(pos+5>text.size() || text[pos+2]!=L':') return false;
+            for(const size_t i:{pos,pos+1,pos+3,pos+4}) if(text[i]<L'0'||text[i]>L'9') return false;
+            return (text[pos]-L'0')*10+text[pos+1]-L'0'<24
+                && (text[pos+3]-L'0')*10+text[pos+4]-L'0'<60;
+        };
+        const auto space=[](wchar_t c){return c==L' '||c==0x00a0;};
+        if(!clock(label,0) || label.size()<=5 || !space(label[5])) return label;
+        size_t begin=5; while(begin<label.size() && space(label[begin])) ++begin;
+        if(begin<label.size() && (label[begin]==L'-'||label[begin]==0x2013||label[begin]==0x2014)) {
+            size_t end=begin+1; while(end<label.size() && space(label[end])) ++end;
+            if(clock(label,end) && end+5<label.size() && space(label[end+5])) {
+                begin=end+5; while(begin<label.size() && space(label[begin])) ++begin;
+            }
+        }
+        const auto title=Clean(label.substr(begin));
+        return title.empty()?label:title;
+    }
     // Presentation-only text for the two source-name notifications. A handled
     // HTTP source with empty text intentionally suppresses an unlabelled URL.
     bool Caption(const std::wstring& source, const std::wstring& label, ULONGLONG now,
@@ -89,7 +109,9 @@ public:
         const auto name=Clean(label);
         if (!name.empty() && name.find(L"://")==name.npos && !equal(name,source)
                 && !equal(name,clean) && !equal(name,file) && !equal(name,stem) && !equal(name,rawFile))
-            title=tip=name;
+        {
+            title=LabelTitle(name); tip=name;
+        }
         return true;
     }
     bool Parse(const std::wstring& json,const std::wstring& expected) {

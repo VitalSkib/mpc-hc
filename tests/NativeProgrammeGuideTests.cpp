@@ -38,6 +38,16 @@ int main(){
     }
     {
         std::wstring title, tip;
+        check(G::LabelTitle(L"  13:00 Programme") == L"Programme", "strip leading schedule clock from fallback title");
+        check(G::LabelTitle(L"13:00 - 14:00 Programme") == L"Programme", "strip schedule range from fallback title");
+        check(G::LabelTitle(L"12:01") == L"12:01", "retain a title that is itself a clock");
+        check(G::LabelTitle(L"Movie 13:00") == L"Movie 13:00", "retain embedded time in a title");
+        check(G::LabelTitle(L"25:99 Programme") == L"25:99 Programme", "do not strip invalid clock prefixes");
+        G noGuide;
+        check(noGuide.Caption(L"https://other.example/live.m3u8", L"13:00 Programme", begin, true, title, tip)
+            && title==L"Programme" && tip==L"13:00 Programme",
+            "missing structured guide separates title text from full playlist tooltip");
+
         check(g.Caption(g.stream,L"Channel",begin,true,title,tip) && title==L"Film" && tip==g.Tooltip(g.rows[0]),
             "startup notification uses current programme and existing titlebar tooltip");
         const auto nextLabel=G::Clock(g.rows[1].start)+L" "+g.rows[1].title;

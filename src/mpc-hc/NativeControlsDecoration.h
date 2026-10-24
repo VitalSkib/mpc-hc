@@ -179,10 +179,8 @@ class CNativeControlsDecoration final : public CWnd
         if (message == WM_DESTROY) { m_material.Reset(); m_materialActive = false; }
         if (message == WM_ERASEBKGND) return TRUE;
         if (message == WM_PAINT) { CPaintDC dc(this); DrawSurface(); return 0; }
-        if (message == WM_NCHITTEST) {
-            CPoint point(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)); ScreenToClient(&point);
-            return HitButton(point) >= 0 ? HTCLIENT : HTTRANSPARENT;
-        }
+        if (message == WM_NCHITTEST)
+            return m_header ? HTCLIENT : HTTRANSPARENT;
         if (message == WM_MOUSEMOVE && m_header) {
             CPoint point(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
             const int hot = HitButton(point);
@@ -198,7 +196,10 @@ class CNativeControlsDecoration final : public CWnd
         if (message == WM_LBUTTONDOWN && m_header) {
             CPoint point(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
             m_pressed = HitButton(point);
-            if (m_pressed >= 0) { m_hot = m_pressed; SetCapture(); DrawSurface(); }
+            // Own the entire click, including release outside the header.
+            // Only the native window buttons produce a command.
+            SetCapture();
+            if (m_pressed >= 0) { m_hot = m_pressed; DrawSurface(); }
             return 0;
         }
         if (message == WM_LBUTTONUP && m_header) {
@@ -265,7 +266,7 @@ public:
                 m_tip.AddTool(this, L"Maximize", CRect(0, 0, 1, 1), 2);
                 m_tip.AddTool(this, L"Close", CRect(0, 0, 1, 1), 3);
                 CWnd* target = titleTarget ? titleTarget : this;
-                // Observe native input without changing transparent hit testing.
+                // The tooltip follows the same native HWND that receives title input.
                 TOOLINFOW tool = {}; tool.cbSize = sizeof(tool); tool.hwnd = target->GetSafeHwnd(); tool.uId = 4;
                 tool.uFlags = TTF_SUBCLASS; tool.rect = {0, 0, 1, 1}; tool.lpszText = const_cast<LPWSTR>(L"");
                 m_tip.SendMessage(TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&tool));
