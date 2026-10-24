@@ -4,6 +4,7 @@
 #include <cmath>
 #include <algorithm>
 #include "CMPCTheme.h"
+#include "NativeHeaderInput.h"
 
 class CNativeChromeContent final : public CWnd {
 public:
@@ -27,6 +28,7 @@ class CNativeChromeHost final : public CWnd {
     struct Hosted { HWND window, parent; };
     std::vector<Hosted> m_hosted;
     CNativeChromeContent m_content;
+    HWND m_inputView = nullptr;
     CRect m_rect = CRect(0, 0, 0, 0);
     bool m_top = false, m_known = false, m_target = false, m_running = false;
     double m_position = 0, m_from = 0;
@@ -43,8 +45,10 @@ class CNativeChromeHost final : public CWnd {
             SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS);
     }
     void DetachControls() {
-        for (const auto& item : m_hosted) if (::IsWindow(item.window) && ::IsWindow(item.parent))
+        for (const auto& item : m_hosted) if (::IsWindow(item.window) && ::IsWindow(item.parent)) {
+            NativeHeaderInput::DetachBorder(item.window);
             ::SetParent(item.window, item.parent);
+        }
         m_hosted.clear();
     }
 protected:
@@ -77,7 +81,7 @@ public:
     ~CNativeChromeHost() override { DetachControls(); }
     bool Ensure(CWnd* view, CWnd* frame, bool top) {
         if (GetSafeHwnd()) return m_content.GetSafeHwnd() != nullptr;
-        m_top = top;
+        m_top = top; m_inputView = view->GetSafeHwnd();
         const auto cls = AfxRegisterWndClass(0, ::LoadCursor(nullptr, IDC_ARROW));
         if (!CreateEx(WS_EX_NOREDIRECTIONBITMAP | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE, cls, L"Native chrome viewport",
                 WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, CRect(0, 0, 0, 0), view, 0)) return false;
@@ -93,7 +97,10 @@ public:
     CWnd* Content() { return &m_content; }
     void RestoreControls() { DetachControls(); }
     bool Adopt(CWnd& window, CWnd* frame, bool nativePaint = false) {
-        if (::GetParent(window.m_hWnd) == m_content.m_hWnd) return true;
+        if (::GetParent(window.m_hWnd) == m_content.m_hWnd) {
+            NativeHeaderInput::AttachBorder(window.m_hWnd,m_inputView);
+            return true;
+        }
         const HWND parent = ::GetParent(window.m_hWnd);
         window.SetParent(&m_content);
         if (::GetParent(window.m_hWnd) != m_content.m_hWnd) return false;
@@ -111,6 +118,7 @@ public:
             }
         }
         window.SetOwner(frame);
+        NativeHeaderInput::AttachBorder(window.m_hWnd,m_inputView);
         m_hosted.push_back({window.m_hWnd, parent});
         return true;
     }

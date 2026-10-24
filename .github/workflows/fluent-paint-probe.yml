@@ -59,7 +59,7 @@ jobs:
           if errorlevel 1 exit /b 1
           playlist-scroll-tests.exe
           if errorlevel 1 exit /b 1
-          cl /nologo /EHsc /std:c++17 /I"src\mpc-hc" tests\NativeHeaderInputTests.cpp /Fe:"header-input-tests.exe" /link user32.lib
+          cl /nologo /EHsc /std:c++17 /I"src\mpc-hc" tests\NativeHeaderInputTests.cpp /Fe:"header-input-tests.exe" /link user32.lib comctl32.lib
           if errorlevel 1 exit /b 1
           header-input-tests.exe
           if errorlevel 1 exit /b 1
