@@ -12,3 +12,5 @@ Keep these requirements when changing source labels, metadata, composition or mo
 
 Automated coverage: NativeProgrammeGuideTests (metadata presence/absence, captions and channel identity) and NativePlaylistScrollTests (native scrolling and host recreation).
 Manual review required: header drag, single/double click, window buttons, title tooltip, ordinary video click, and playlist scroll/hide artifacts. Compilation does not constitute this UI validation.
+
+Frame input: all eight resize zones take priority over header/buttons. Use the existing frame/view hit testing and forward native nonclient actions; do not create separate per-gesture move/resize loops. NativeHeaderInputTests exercises real Windows frame hit testing and forwarding. Keep title tooltip relay scoped to the caption, not resize borders.

@@ -192,10 +192,14 @@ class CNativeControlsDecoration final : public CWnd
             return NativeHeaderInput::Forward(frameTarget->GetSafeHwnd(),message,wParam,lParam);
         }
         if (m_header && message==WM_NCMOUSEMOVE) {
+            if (wParam!=HTCAPTION) {
+                if (m_tip.GetSafeHwnd()) m_tip.Pop();
+                return 0;
+            }
             // Native caption/border input is nonclient; tooltip tools use client coordinates.
             CPoint screen(GET_X_LPARAM(lParam),GET_Y_LPARAM(lParam)), client(screen);
             ScreenToClient(&client);
-            MSG hover{}; hover.hwnd=m_hWnd; hover.message=WM_MOUSEMOVE;
+            MSG hover{}; hover.hwnd=m_hWnd; hover.message=WM_MOUSEMOVE; hover.time=::GetMessageTime();
             hover.lParam=MAKELPARAM(client.x,client.y); hover.pt=screen;
             if (m_tip.GetSafeHwnd()) m_tip.RelayEvent(&hover);
             if (m_hot!=-1) {m_hot=-1;DrawSurface();}
