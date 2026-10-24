@@ -340,8 +340,12 @@ public:
         }
         if (m_tip.GetSafeHwnd()) m_tip.UpdateTipText(m_restore ? L"Restore" : L"Maximize", this, 2);
         SetWindowPos(&wndTop, rectangle.left, rectangle.top, rectangle.Width(), rectangle.Height(), SWP_NOACTIVATE);
-        if (DrawSurface()) ShowWindow(SW_SHOWNOACTIVATE);
-        else Hide(); // leave native controls usable if decoration cannot be rendered
+        if (DrawSurface()) {
+            ShowWindow(SW_SHOWNOACTIVATE);
+            // SetWindowPos/ShowWindow can leave WM_PAINT pending after the
+            // complete alpha surface was already published above.
+            ValidateRect(nullptr);
+        } else Hide(); // leave native controls usable if decoration cannot be rendered
 #ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
         const RECT expected = rectangle;
         GeometryDiagnostics::Record(m_header ? "decor.header-layout" : "decor.backdrop-layout",

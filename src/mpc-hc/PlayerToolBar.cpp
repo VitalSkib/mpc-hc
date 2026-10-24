@@ -1106,7 +1106,8 @@ void CPlayerToolBar::PrepareNativePresentation()
     // A hidden layered child may never receive WM_PAINT after a resize.
     // Publish its current surface before the viewport exposes cached pixels.
     if (m_nativeRenderedRevision != m_nativeSurfaceRevision) {
-        PaintNativeAlpha();
+        if (PaintNativeAlpha() && m_nativeRenderedRevision == m_nativeSurfaceRevision)
+            ValidateRect(nullptr); // The complete current layout is already published.
 #ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
         NativeUiDiagnostics::Toolbar(*this, "surface.prepared");
 #endif

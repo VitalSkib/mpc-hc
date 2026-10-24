@@ -14,3 +14,13 @@ Automated coverage: NativeProgrammeGuideTests (metadata presence/absence, captio
 Manual review required: header drag, single/double click, window buttons, title tooltip, ordinary video click, and playlist scroll/hide artifacts. Compilation does not constitute this UI validation.
 
 Resize routing: a chrome child is not a frame. A stock view resize hit must return HTTRANSPARENT from header and adopted footer descendants, leaving the original CChildView SC_SIZE handler authoritative. Caption actions still use frame nonclient messages. Test existing and dynamically created descendants, normal widget input and restoration cleanup. Standalone frame hit-test success alone is not proof of working resize through overlays.
+
+## Continuous window resizing
+
+Keep the native SC_SIZE path through the video view. Chrome artwork keeps its
+composition surface, surface brush and clip geometry across size changes; resize
+the existing surface through ICompositionDrawingSurfaceInterop::Resize. After a
+complete synchronous alpha publication, consume its pending paint region rather
+than upload the same layout again. Do not throttle, postpone or replace native
+video layout. Verify continuous dragging with visible and hidden chrome, corners,
+fullscreen return, caption input, playlist animation and native text bars.
