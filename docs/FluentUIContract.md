@@ -31,3 +31,13 @@ WM_SIZE inside DeferWindowPos. Direct view resizing and initial chrome mounting
 keep their original handlers. No resize timer, frame-rate cap or renderer change
 is introduced. Re-test opening media, docking, fullscreen return, text bars and
 live corner dragging before accepting the candidate.
+
+## One-variable resize isolation
+
+`[Settings] FluentHeaderAcrylic=1` (default) retains the approved header material.
+Set it to `0` and restart to omit only the header Acrylic controller/composition
+target and use its existing flat-alpha fallback. Header input, title/tooltips,
+chrome animation, footer and playlist remain selected as before. Tint=0 is not
+an off switch. Restore the baseline before testing a different effect. Record
+the tested commit and setting; this diagnostic option is not a permanent style
+decision. HWND style selection follows the option at creation time.

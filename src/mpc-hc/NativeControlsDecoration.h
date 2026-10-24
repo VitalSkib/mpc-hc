@@ -289,11 +289,15 @@ public:
         if (rectangle.IsRectEmpty()) { Hide(); return; }
         if (!GetSafeHwnd()) {
             m_header = header;
-            const DWORD extended = WS_EX_NOACTIVATE | (header ? WS_EX_NOREDIRECTIONBITMAP
-                : WS_EX_LAYERED | WS_EX_TRANSPARENT);
+            // Diagnostic isolation: zero tint still runs Acrylic. Disable
+            // its controller/target entirely and use the existing alpha path.
+            const bool acrylic = header
+                && AfxGetApp()->GetProfileInt(L"Settings", L"FluentHeaderAcrylic", 1) != 0;
+            const DWORD extended = WS_EX_NOACTIVATE | (acrylic ? WS_EX_NOREDIRECTIONBITMAP
+                : WS_EX_LAYERED | (header ? 0 : WS_EX_TRANSPARENT));
             if (!CreateEx(extended, AfxRegisterWndClass(header ? CS_DBLCLKS : 0), L"Native control decoration",
                     WS_CHILD, rectangle, view, 0)) return;
-            if (header) {
+            if (acrylic) {
                 m_materialActive = m_material.Start(m_hWnd, 3, false);
                 if (!m_materialActive) ModifyStyleEx(WS_EX_NOREDIRECTIONBITMAP, WS_EX_LAYERED);
             }
