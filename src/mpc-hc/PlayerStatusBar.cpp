@@ -372,8 +372,29 @@ CString CPlayerStatusBar::GetStatusTimer() const
     return strResult;
 }
 
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+void CPlayerStatusBar::GetOverlayTimeParts(CString& position, CString& duration) const
+{
+    // Reuse native formatting (remaining time, frames, precision and percentage).
+    CString text = GetStatusTimer();
+    const int separator = text.Find(L" / ");
+    if (separator < 0) { position = text; duration.Empty(); return; }
+    position = text.Left(separator);
+    duration = text.Mid(separator + 3);
+    const int percentage = duration.Find(L" (");
+    if (percentage >= 0) {
+        position += duration.Mid(percentage);
+        duration = duration.Left(percentage);
+    }
+    position.Trim(); duration.Trim();
+}
+#endif
+
 void CPlayerStatusBar::SetStatusTimer(CString str)
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    m_remainingTimer.Empty();
+#endif
     str.Trim();
     if (GetStatusTimer() != str) {
         m_time.SetRedraw(FALSE);
@@ -385,8 +406,13 @@ void CPlayerStatusBar::SetStatusTimer(CString str)
 
 void CPlayerStatusBar::SetStatusTimer(REFERENCE_TIME rtNow, REFERENCE_TIME rtDur, bool fHighPrecision, const GUID& timeFormat/* = TIME_FORMAT_MEDIA_TIME*/)
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    // Called by the existing media-position timer, including hidden controls.
+    if (auto view = DYNAMIC_DOWNCAST(CChildView, m_pMainFrame->GetDescendantWindow(AFX_IDW_PANE_FIRST)))
+        view->UpdateProgrammeCaption();
+#endif
     CString str;
-    CString posstr;
+    CString posstr, remstr;
     const CAppSettings& s = AfxGetAppSettings();
 
     m_rtNow = rtNow;
@@ -394,7 +420,7 @@ void CPlayerStatusBar::SetStatusTimer(REFERENCE_TIME rtNow, REFERENCE_TIME rtDur
 
     if (rtDur > 0) {
         REFERENCE_TIME rtRem = rtDur - rtNow;
-        CString durstr, remstr;
+        CString durstr;
 
         if (timeFormat == TIME_FORMAT_MEDIA_TIME) {
             DVD_HMSF_TIMECODE tcNow, tcDur, tcRem;
@@ -462,6 +488,10 @@ void CPlayerStatusBar::SetStatusTimer(REFERENCE_TIME rtNow, REFERENCE_TIME rtDur
     }
 
     SetStatusTimer(str);
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    // Export the native formatter's result; both seekbar sides share this value.
+    if (rtDur > 0 && !remstr.IsEmpty()) m_remainingTimer = _T("- ") + remstr;
+#endif
 }
 
 void CPlayerStatusBar::ShowTimer(bool fShow)

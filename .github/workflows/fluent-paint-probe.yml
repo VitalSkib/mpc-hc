@@ -1,0 +1,155 @@
+name: Native video geometry fix
+
+on:
+  pull_request:
+    branches: [develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Configure Visual Studio and Windows SDK
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.ATLMFC -property installationPath
+          if (-not $vs) { throw 'Visual C++ ATL/MFC is missing from this runner.' }
+          $mfcToolbarSource = Get-ChildItem "$vs/VC/Tools/MSVC/*/atlmfc/src/mfc/bartool.cpp" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($mfcToolbarSource) {
+            $mfcLines = Get-Content -LiteralPath $mfcToolbarSource.FullName
+            $mfcRectAccessor = $mfcLines | Select-String '^void CToolBar::GetItemRect\('
+            if ($mfcRectAccessor) {
+              Write-Output 'Native MFC rectangle accessor (deferred-layout verification):'
+              $mfcLines | Select-Object -Skip ($mfcRectAccessor[0].LineNumber - 1) -First 16
+            }
+          }
+          $sdk = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Include" -Directory |
+            Where-Object Name -Match '^10\.0\.\d+\.0$' |
+            Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
+          if (-not $sdk) { throw 'Windows SDK not found.' }
+          @('@echo off', ('set "MPCHC_VS_PATH=' + $vs + '"'), ('set "MPCHC_WINSDK_VER=' + $sdk.Name + '"')) |
+            Set-Content build.user.bat -Encoding ascii
+          Invoke-WebRequest 'https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/win64/nasm-2.16.03-win64.zip' -OutFile "$env:RUNNER_TEMP\nasm.zip"
+          Expand-Archive "$env:RUNNER_TEMP\nasm.zip" "$env:RUNNER_TEMP\nasm"
+          (Get-ChildItem "$env:RUNNER_TEMP\nasm" -Filter nasm.exe -Recurse | Select-Object -First 1).DirectoryName >> $env:GITHUB_PATH
+      - name: Test source-bound programme guide
+        shell: cmd
+        run: |
+          call build.user.bat
+          call "%MPCHC_VS_PATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+          cl /nologo /EHsc /std:c++17 /utf-8 /I"src\mpc-hc" /I"src\thirdparty" tests\NativeProgrammeGuideTests.cpp /Fe:"programme-guide-tests.exe"
+          if errorlevel 1 exit /b 1
+          programme-guide-tests.exe
+          if errorlevel 1 exit /b 1
+      - name: Test native playlist scrolling without intermediate painting
+        shell: cmd
+        run: |
+          call build.user.bat
+          call "%MPCHC_VS_PATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+          cl /nologo /EHsc /std:c++17 /utf-8 tests\NativePlaylistScrollTests.cpp /Fe:"playlist-scroll-tests.exe" /link user32.lib gdi32.lib comctl32.lib
+          if errorlevel 1 exit /b 1
+          playlist-scroll-tests.exe
+          if errorlevel 1 exit /b 1
+          cl /nologo /EHsc /std:c++17 /I"src\mpc-hc" tests\NativeHeaderInputTests.cpp /Fe:"header-input-tests.exe" /link user32.lib comctl32.lib
+          if errorlevel 1 exit /b 1
+          header-input-tests.exe
+          if errorlevel 1 exit /b 1
+      - name: Prepare official Windows App SDK controller headers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $probe = Join-Path $env:GITHUB_WORKSPACE 'src/mpc-hc/wasdk-probe'
+          New-Item -ItemType Directory -Force $probe | Out-Null
+          $packages = @(
+            @('microsoft.windowsappsdk.foundation', '1.8.250906002', 'foundation', '77acb164613b71b55924e22f60da7c94f78ab9ebd426395f49e79ca3a0bea77c'),
+            @('microsoft.windowsappsdk.interactiveexperiences', '1.8.250906004', 'interactive', '454b682994bbbcf3f5029f42fa1aebff72b0bb29dde1ca6e1e99cae264c74451')
+          )
+          foreach ($package in $packages) {
+            $id, $version, $folder, $digest = $package
+            Invoke-WebRequest "https://api.nuget.org/v3-flatcontainer/$id/$version/$id.$version.nupkg" -OutFile "$probe/$folder.zip"
+            if ((Get-FileHash "$probe/$folder.zip" -Algorithm SHA256).Hash.ToLowerInvariant() -ne $digest) { throw "SDK package digest mismatch: $id" }
+            Expand-Archive "$probe/$folder.zip" "$probe/$folder"
+          }
+          $sdkRoot = "${env:ProgramFiles(x86)}/Windows Kits/10"
+          $sdk = Get-ChildItem "$sdkRoot/Include" -Directory | Where-Object Name -Match '^10\.0\.\d+\.0$' | Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
+          $cppwinrt = "$sdkRoot/bin/$($sdk.Name)/x64/cppwinrt.exe"
+          & $cppwinrt -input "$probe/interactive/metadata/10.0.18362.0" -reference "$sdkRoot/UnionMetadata/$($sdk.Name)/Windows.winmd" -output "$probe/generated"
+          if ($LASTEXITCODE -ne 0) { throw 'C++/WinRT projection generation failed.' }
+          $bytes = [IO.File]::ReadAllBytes("$probe/foundation/runtimes/win-x64/native/Microsoft.WindowsAppRuntime.Bootstrap.dll")
+          $text = [Text.StringBuilder]::new('static const unsigned char kPlaylistBootstrap[] = {')
+          for ($i = 0; $i -lt $bytes.Length; $i++) {
+            if (($i % 64) -eq 0) { [void]$text.AppendLine() }
+            [void]$text.Append($bytes[$i]).Append(',')
+          }
+          [void]$text.AppendLine('};')
+          [IO.File]::WriteAllText("$probe/bootstrap-bytes.h", $text.ToString(), [Text.Encoding]::ASCII)
+      - name: Compile controller integration preflight
+        shell: cmd
+        run: |
+          call build.user.bat
+          call "%MPCHC_VS_PATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+          cl /nologo /c /EHsc /std:c++17 /DMPC_EXPERIMENTAL_NATIVE_DECORATION /DMPC_MATERIAL_STANDALONE /I"src\mpc-hc\wasdk-probe\generated" src\mpc-hc\NativePlaylistMaterial.cpp /Fo"src\mpc-hc\wasdk-probe\preflight.obj"
+      - name: Build native-controls x64 probe
+        shell: cmd
+        env:
+          CL: /DMPC_EXPERIMENTAL_NATIVE_SEEKBAR /DMPC_EXPERIMENTAL_NO_BACKDROP /DMPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS /DMPC_EXPERIMENTAL_NATIVE_DECORATION
+        run: build.bat Build x64 Main Release Lite
+      - name: Package isolated test settings
+        shell: pwsh
+        run: |
+          $testDir = 'bin/mpc-hc_x64 Lite'
+          @('[Settings]', 'AllowMultipleInstances=1', 'ModernThemeMode=0',
+            'ModernThemeStyle=2', 'Win11NativeMenus=1', 'AlwaysUseShortMenu=1', 'ShowOSD=1',
+            'HideFullscreenControls=1',
+            'HideFullscreenControlsPolicy=2', 'HideFullscreenControlsDelay=4000',
+            'HideWindowedControls=1', 'UseTimeTooltip=1', 'UseSeekPreview=1',
+            '[Toolbars\PlayerToolBar]', 'ToolbarAlignment=1') |
+            Set-Content -LiteralPath "$testDir/mpc-hc64.ini" -Encoding unicode
+          @('Native seekbar alpha test. Extract separately and run mpc-hc64.exe.',
+            'Native controls with 50% black backdrop and matching title/window-command header.',
+            'Window buttons stay visible without media; loaded media uses native control visibility.',
+            'Thin blue/grey native seekbar with zero-alpha background above the backdrop.',
+            'Moving video must show through ABOVE and BELOW the thin track.',
+            'Check native seek, outside release, hover time and seek preview.',
+            'Diagnostics: MPC-HC-geometry.log is created beside the EXE and overwritten on each run.',
+            'Open the same video, resize until the fault, hide/show controls, toggle fullscreen, close.',
+            'Keep the log from that run. No frames or media filenames are logged.',
+            'Transparent pixels may pass mouse input through: check button targeting too.',
+            'Native toolbar artwork selection, state backgrounds, input and commands remain unchanged.',
+            'The empty seekbar is already thin/transparent before opening media.',
+            'Portable settings are included; native controls auto-hide after 4 seconds.',
+            'Title font test: [Settings] FluentTitleSemibold=1 (default) or 0 for Regular; restart to compare.',
+            'Both title variants use 16px scaled by DPI, opaque white text and GDI+.',
+            'Close hover uses opaque #C42B1C with a white glyph.',
+            'Source: https://github.com/VitalSkib/mpc-hc/tree/fluent-hover-ui') |
+            Set-Content -LiteralPath "$testDir/README.txt" -Encoding utf8
+          Copy-Item -LiteralPath COPYING.txt -Destination "$testDir/COPYING.txt"
+      - name: Upload standalone test build
+        uses: actions/upload-artifact@v4
+        with:
+          name: MPC-HC-x64-native-video-layout-${{ github.sha }}
+          path: |
+            bin/mpc-hc_x64 Lite/mpc-hc64.exe
+            bin/mpc-hc_x64 Lite/mpc-hc64.ini
+            bin/mpc-hc_x64 Lite/README.txt
+            bin/mpc-hc_x64 Lite/COPYING.txt
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-diagnostics
+          path: |
+            bin/logs/**
+          if-no-files-found: ignore
+          retention-days: 7

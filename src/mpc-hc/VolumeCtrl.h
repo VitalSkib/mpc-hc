@@ -21,6 +21,10 @@
 
 #pragma once
 #include "CMPCThemeToolTipCtrl.h"
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+#include "NativeThumbAnimation.h"
+#include <functional>
+#endif
 
 // CVolumeCtrl
 
@@ -30,6 +34,17 @@ class CVolumeCtrl : public CSliderCtrl
 
 private:
     bool m_fSelfDrawn;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    NativeThumbAnimation m_thumbAnimation;
+    ULONG_PTR m_graphicsToken = 0;
+    CMPCThemeToolTipCtrl m_volumeTip;
+    CString m_volumeTipText;
+    bool m_volumeTipVisible = false;
+    CRect FluentThumbRect();
+    void UpdateVolumeTip(bool visible);
+    afx_msg void OnTimer(UINT_PTR id);
+    afx_msg void OnCaptureChanged(CWnd* wnd);
+#endif
 
 public:
     CVolumeCtrl(bool fSelfDrawn = true);
@@ -38,6 +53,17 @@ public:
     bool Create(CWnd* pParentWnd);
     void IncreaseVolume(), DecreaseVolume();
     void SetPosInternal(int pos);
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    std::function<void()> flyoutActivity;
+    bool showValueInFlyout = false;
+    int DisplayedPosition() const;
+    void HideFlyoutFeedback();
+#endif
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    bool m_overlayInput = false;
+    bool OverlayDragging() const { return m_bDrag; }
+    bool ForwardOverlayMouse(UINT message, WPARAM flags, double fraction);
+#endif
 
 protected:
     afx_msg BOOL OnSetCursor(CWnd* pWnd, UINT nHitTest, UINT message);

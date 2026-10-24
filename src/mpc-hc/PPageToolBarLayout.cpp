@@ -49,6 +49,9 @@ int CPPageToolBarLayout::DescriptiveIcon(int idCommand) {
     int disabledOffset = tb.GetCustomizeButtonImages()->GetImageCount() / 2;
 
     auto& buttonInfo = supportedButtons[idCommand];
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    if (idCommand == ID_PLAY_FRAMESTEP_BACK) return buttonInfo.svgIndex;
+#endif
     if (buttonInfo.positionLocked
         || idCommand == ID_BUTTON_FULLSCREEN || idCommand == ID_BUTTON_PLAYLIST) { //for these buttons, inactive state is a better representation of the icon
         return buttonInfo.svgIndex + disabledOffset;

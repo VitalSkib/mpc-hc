@@ -3,6 +3,9 @@
 #include "mplayerc.h"
 #include "CMPCTheme.h"
 #include "MainFrm.h"
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+#include "NativePlaylistPresentation.h"
+#endif
 
 CMPCThemePlayerBar::CMPCThemePlayerBar(CMainFrame* pMainFrame)
     :m_pMainFrame(pMainFrame)
@@ -33,7 +36,11 @@ BOOL CMPCThemePlayerBar::OnEraseBkgnd(CDC* pDC)
         if (pDC) {
             CRect rect;
             pDC->GetClipBox(&rect);
-            pDC->FillSolidRect(rect.left, rect.top, rect.Width(), rect.Height(), CMPCTheme::WindowBGColor);
+            pDC->FillSolidRect(rect.left, rect.top, rect.Width(), rect.Height(),
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+                NativePlaylistPresentation::Active(m_hWnd) ? CMPCTheme::ContentBGColor :
+#endif
+                CMPCTheme::WindowBGColor);
         }
         return TRUE;
     } else {
@@ -109,6 +116,13 @@ void CMPCThemePlayerBar::NcPaintGripper(CDC* pDC, CRect rcClient)   //derived fr
         return;
     }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (NativePlaylistPresentation::Active(m_hWnd)) {
+        // Keep the native close button and drag hit area; omit the opaque dotted artwork.
+        paintHideButton(pDC, m_biHide);
+        return;
+    }
+#endif
     CRect gripper = rcClient;
     CRect rcbtn = m_biHide.GetRect();
     BOOL bHorz = IsHorzDocked();
@@ -135,7 +149,11 @@ void CMPCThemePlayerBar::mpc_fillNcBG(CDC* mdc, CRect rcDraw)
         if (IsFloating()) {
             rcDraw.DeflateRect(1, 1);
         }
-        mdc->FillSolidRect(rcDraw, CMPCTheme::WindowBGColor);
+        mdc->FillSolidRect(rcDraw,
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+            NativePlaylistPresentation::Active(m_hWnd) ? CMPCTheme::ContentBGColor :
+#endif
+            CMPCTheme::WindowBGColor);
     } else {
         __super::mpc_fillNcBG(mdc, rcDraw);
     }

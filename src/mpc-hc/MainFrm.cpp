@@ -22,6 +22,9 @@
 #include "stdafx.h"
 #include <optional>
 #include "MainFrm.h"
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+#include "../DSUtil/GeometryDiagnostics.h"
+#endif
 #include "mplayerc.h"
 #include "version.h"
 
@@ -398,6 +401,7 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_UPDATE_COMMAND_UI(ID_VIEW_PLAYLIST, OnUpdateViewPlaylist)
     ON_COMMAND(ID_PLAYLIST_TOGGLE_SHUFFLE, OnPlaylistToggleShuffle)
     ON_COMMAND(ID_VIEW_EDITLISTEDITOR, OnViewEditListEditor)
+    ON_UPDATE_COMMAND_UI(ID_VIEW_EDITLISTEDITOR, OnUpdateViewEditListEditor)
     ON_COMMAND(ID_EDL_IN, OnEDLIn)
     ON_UPDATE_COMMAND_UI(ID_EDL_IN, OnUpdateEDLIn)
     ON_COMMAND(ID_EDL_OUT, OnEDLOut)
@@ -563,6 +567,9 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_UPDATE_COMMAND_UI(ID_PLAY_STOP, OnUpdatePlayPauseStop)
     ON_COMMAND_RANGE(ID_PLAY_FRAMESTEP, ID_PLAY_FRAMESTEP_BACK, OnPlayFramestep)
     ON_UPDATE_COMMAND_UI(ID_PLAY_FRAMESTEP, OnUpdatePlayFramestep)
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    ON_UPDATE_COMMAND_UI(ID_PLAY_FRAMESTEP_BACK, OnUpdatePlayFramestep)
+#endif
     ON_COMMAND_RANGE(ID_PLAY_SEEKBACKWARDSMALL, ID_PLAY_SEEKFORWARDLARGE, OnPlaySeek)
     ON_COMMAND(ID_PLAY_SEEKSET, OnPlaySeekSet)
     ON_COMMAND_RANGE(ID_PLAY_SEEKKEYBACKWARD, ID_PLAY_SEEKKEYFORWARD, OnPlaySeekKey)
@@ -1655,6 +1662,9 @@ BOOL CMainFrame::PreCreateWindow(CREATESTRUCT& cs)
 
 BOOL CMainFrame::PreTranslateMessage(MSG* pMsg)
 {
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    if (m_wndView.RouteFluentInput(*pMsg)) return TRUE;
+#endif
     if (pMsg->message == WM_KEYDOWN) {
         if (pMsg->wParam == VK_ESCAPE) {
             bool fEscapeNotAssigned = !AssignedToCmd(VK_ESCAPE);
@@ -1714,7 +1724,16 @@ BOOL CMainFrame::PreTranslateMessage(MSG* pMsg)
 
 void CMainFrame::RecalcLayout(BOOL bNotify)
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    // CFrameWnd positions the pane through DeferWindowPos. Extend that very
+    // placement, before WM_SIZE updates the renderer, rather than resize twice.
+    const bool previousNativeLayout = m_nativeVideoLayout;
+    m_nativeVideoLayout = true;
+#endif
     __super::RecalcLayout(bNotify);
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    m_nativeVideoLayout = previousNativeLayout;
+#endif
 
     CRect r;
     GetWindowRect(&r);
@@ -1731,7 +1750,18 @@ void CMainFrame::RecalcLayout(BOOL bNotify)
         r |= CRect(r.TopLeft(), CSize(min));
         MoveWindow(r);
     }
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    // OnSize may run inside the deferred placement transaction. Arrange once
+    // more with final frame/bar bounds, including the first media auto-size.
+    if (m_wndToolBar.GetSafeHwnd()) m_wndToolBar.ArrangeControls();
+    // A dock may change the requested pane size without changing its expanded
+    // actual size. WM_SIZE is then absent: commit the final renderer rectangle here.
+    MoveVideoWindow();
+#endif
     OSDBarSetPos();
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    m_wndView.UpdateNativeDecoration();
+#endif
 }
 
 void CMainFrame::EnableDocking(DWORD dwDockStyle)
@@ -1871,6 +1901,10 @@ void CMainFrame::OnGetMinMaxInfo(MINMAXINFO* lpMMI)
 void CMainFrame::OnMove(int x, int y)
 {
     __super::OnMove(x, y);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (m_wndPlaylistBar.UsesNativePopup() && m_wndView.GetSafeHwnd())
+        m_wndView.UpdateNativeDecoration();
+#endif
 
     if (m_bWasSnapped && IsZoomed()) {
         m_bWasSnapped = false;
@@ -2014,10 +2048,31 @@ void CMainFrame::OnSizingFixWndToVideo(UINT nSide, LPRECT lpRect, bool bCtrl)
         if (!bToolbarsOnVideo) {
             uBottom -= m_controls.GetVisibleToolbarsHeight();
         }
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+        uLeft -= std::min(uLeft, unsigned(m_nativeDockOverlap.left));
+        uTop -= std::min(uTop, unsigned(m_nativeDockOverlap.top));
+        uRight -= std::min(uRight, unsigned(m_nativeDockOverlap.right));
+        unsigned coveredBottom = unsigned(m_nativeDockOverlap.bottom);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        if (m_wndView.NativeChromeHosted() && !HasDedicatedFSVideoWindow())
+            coveredBottom = std::max(coveredBottom, m_controls.GetVisibleHostedToolbarsHeight());
+#endif
+        uBottom -= std::min(uBottom, coveredBottom);
+#endif
         controlsSize.cx -= uLeft + uRight;
         controlsSize.cy -= uTop + uBottom;
     } else if (bToolbarsOnVideo) {
-        controlsSize.cy -= m_controls.GetVisibleToolbarsHeight();
+        unsigned uncoveredHeight = m_controls.GetVisibleToolbarsHeight();
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+        unsigned coveredHeight = m_nativeToolbarOverlapHeight;
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        // Hosted bars already lie inside the view even when no WM_SIZE occurs.
+        if (m_wndView.NativeChromeHosted() && !HasDedicatedFSVideoWindow())
+            coveredHeight = std::max(coveredHeight, m_controls.GetVisibleHostedToolbarsHeight());
+#endif
+        uncoveredHeight -= std::min(uncoveredHeight, coveredHeight);
+#endif
+        controlsSize.cy -= uncoveredHeight;
     }
 
     CSize newWindowSize(lpRect->right - lpRect->left, lpRect->bottom - lpRect->top);
@@ -8654,6 +8709,14 @@ void CMainFrame::OnViewOSDShowFileName()
     switch (GetPlaybackMode()) {
         case PM_FILE:
             strOSD = GetFileName();
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+            {
+                CPlaylistItem item;
+                CString displayTitle, displayTip;
+                if (m_wndPlaylistBar.GetCur(item) && m_wndPlaylistBar.GetStreamDisplayCaption(item, displayTitle, displayTip))
+                    strOSD = displayTip.IsEmpty() ? displayTitle : displayTip;
+            }
+#endif
             break;
         case PM_DVD:
             strOSD = _T("DVD");
@@ -8876,12 +8939,18 @@ void CMainFrame::OnUpdateViewControlBar(CCmdUI* pCmdUI)
 
 void CMainFrame::OnViewSubresync()
 {
+    if (!CMainFrameControls::PanelEnabled(CMainFrameControls::Panel::SUBRESYNC)) return;
     m_controls.ToggleControl(CMainFrameControls::Panel::SUBRESYNC);
     AdjustStreamPosPoller(true);
 }
 
 void CMainFrame::OnUpdateViewSubresync(CCmdUI* pCmdUI)
 {
+    if (!CMainFrameControls::PanelEnabled(CMainFrameControls::Panel::SUBRESYNC)) {
+        pCmdUI->Enable(FALSE);
+        pCmdUI->SetCheck(FALSE);
+        return;
+    }
     pCmdUI->SetCheck(m_controls.ControlChecked(CMainFrameControls::Panel::SUBRESYNC));
     bool enabled = m_pCAP && m_pCurrentSubInput.pSubStream && !IsPlaybackCaptureMode();
     if (enabled) {
@@ -8929,6 +8998,7 @@ void CMainFrame::OnPlaylistToggleShuffle() {
 
 void CMainFrame::OnViewEditListEditor()
 {
+    if (!CMainFrameControls::PanelEnabled(CMainFrameControls::Panel::EDL)) return;
     CAppSettings& s = AfxGetAppSettings();
 
     if (s.fEnableEDLEditor || (AfxMessageBox(IDS_MB_SHOW_EDL_EDITOR, MB_ICONQUESTION | MB_YESNO, 0) == IDYES)) {
@@ -8937,8 +9007,15 @@ void CMainFrame::OnViewEditListEditor()
     }
 }
 
+void CMainFrame::OnUpdateViewEditListEditor(CCmdUI* pCmdUI)
+{
+    pCmdUI->Enable(CMainFrameControls::PanelEnabled(CMainFrameControls::Panel::EDL));
+    pCmdUI->SetCheck(m_controls.ControlChecked(CMainFrameControls::Panel::EDL));
+}
+
 void CMainFrame::OnEDLIn()
 {
+    if (!CMainFrameControls::PanelEnabled(CMainFrameControls::Panel::EDL)) return;
     if (AfxGetAppSettings().fEnableEDLEditor && (GetLoadState() == MLS::LOADED) && (GetPlaybackMode() == PM_FILE)) {
         REFERENCE_TIME rt;
 
@@ -8954,6 +9031,7 @@ void CMainFrame::OnUpdateEDLIn(CCmdUI* pCmdUI)
 
 void CMainFrame::OnEDLOut()
 {
+    if (!CMainFrameControls::PanelEnabled(CMainFrameControls::Panel::EDL)) return;
     if (AfxGetAppSettings().fEnableEDLEditor && (GetLoadState() == MLS::LOADED) && (GetPlaybackMode() == PM_FILE)) {
         REFERENCE_TIME rt;
 
@@ -8969,6 +9047,7 @@ void CMainFrame::OnUpdateEDLOut(CCmdUI* pCmdUI)
 
 void CMainFrame::OnEDLNewClip()
 {
+    if (!CMainFrameControls::PanelEnabled(CMainFrameControls::Panel::EDL)) return;
     if (AfxGetAppSettings().fEnableEDLEditor && (GetLoadState() == MLS::LOADED) && (GetPlaybackMode() == PM_FILE)) {
         REFERENCE_TIME rt;
 
@@ -8984,6 +9063,7 @@ void CMainFrame::OnUpdateEDLNewClip(CCmdUI* pCmdUI)
 
 void CMainFrame::OnEDLSave()
 {
+    if (!CMainFrameControls::PanelEnabled(CMainFrameControls::Panel::EDL)) return;
     if (AfxGetAppSettings().fEnableEDLEditor && (GetLoadState() == MLS::LOADED) && (GetPlaybackMode() == PM_FILE)) {
         m_wndEditListEditor.Save();
     }
@@ -8997,6 +9077,7 @@ void CMainFrame::OnUpdateEDLSave(CCmdUI* pCmdUI)
 // Navigation menu
 void CMainFrame::OnViewNavigation()
 {
+    if (!CMainFrameControls::PanelEnabled(CMainFrameControls::Panel::NAVIGATION)) return;
     const bool bHiding = m_controls.ControlChecked(CMainFrameControls::Panel::NAVIGATION);
     m_controls.ToggleControl(CMainFrameControls::Panel::NAVIGATION);
     if (!bHiding) {
@@ -9007,12 +9088,18 @@ void CMainFrame::OnViewNavigation()
 
 void CMainFrame::OnUpdateViewNavigation(CCmdUI* pCmdUI)
 {
+    if (!CMainFrameControls::PanelEnabled(CMainFrameControls::Panel::NAVIGATION)) {
+        pCmdUI->Enable(FALSE);
+        pCmdUI->SetCheck(FALSE);
+        return;
+    }
     pCmdUI->SetCheck(m_controls.ControlChecked(CMainFrameControls::Panel::NAVIGATION));
     pCmdUI->Enable(GetLoadState() == MLS::LOADED && GetPlaybackMode() == PM_DIGITAL_CAPTURE);
 }
 
 void CMainFrame::OnViewCapture()
 {
+    if (!CMainFrameControls::PanelEnabled(CMainFrameControls::Panel::CAPTURE)) return;
     const bool bHiding = m_controls.ControlChecked(CMainFrameControls::Panel::CAPTURE);
     m_controls.ToggleControl(CMainFrameControls::Panel::CAPTURE);
     AfxGetAppSettings().bHideCaptureSettings = bHiding;
@@ -9020,6 +9107,11 @@ void CMainFrame::OnViewCapture()
 
 void CMainFrame::OnUpdateViewCapture(CCmdUI* pCmdUI)
 {
+    if (!CMainFrameControls::PanelEnabled(CMainFrameControls::Panel::CAPTURE)) {
+        pCmdUI->Enable(FALSE);
+        pCmdUI->SetCheck(FALSE);
+        return;
+    }
     pCmdUI->SetCheck(m_controls.ControlChecked(CMainFrameControls::Panel::CAPTURE));
     pCmdUI->Enable(GetLoadState() == MLS::LOADED && GetPlaybackMode() == PM_ANALOG_CAPTURE);
 }
@@ -10060,10 +10152,21 @@ void CMainFrame::OnPlayPlay()
             }
         }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        if (m_bFirstPlay && GetPlaybackMode() == PM_FILE) {
+            CPlaylistItem item;
+            CString displayTitle, displayTip;
+            if (m_wndPlaylistBar.GetCur(item) && m_wndPlaylistBar.GetStreamDisplayCaption(item, displayTitle, displayTip))
+                strOSD = displayTip.IsEmpty() ? displayTitle : displayTip;
+        }
+#endif
         if (strOSD.IsEmpty()) {
             strOSD = strPlay;
         }
         if (GetPlaybackMode() != PM_DIGITAL_CAPTURE) {
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+            if (!m_bFirstPlay) // The hover header already supplies the file/stream title.
+#endif
             m_OSD.DisplayMessage(OSD_TOPLEFT, strOSD, 3000);
         }
     }
@@ -10302,6 +10405,9 @@ void CMainFrame::OnUpdatePlayPauseStop(CCmdUI* pCmdUI)
 
     pCmdUI->SetCheck(fCheck);
     pCmdUI->Enable(fEnable);
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    m_wndView.UpdateFluentControls();
+#endif
 }
 
 void CMainFrame::OnPlayFramestep(UINT nID)
@@ -10395,8 +10501,17 @@ void CMainFrame::OnUpdatePlayFramestep(CCmdUI* pCmdUI)
 {
     bool fEnable = false;
 
-    if (pCmdUI->m_nID == ID_PLAY_FRAMESTEP) {
+    if (pCmdUI->m_nID == ID_PLAY_FRAMESTEP
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+            || pCmdUI->m_nID == ID_PLAY_FRAMESTEP_BACK
+#endif
+    ) {
         if (!m_fAudioOnly && !m_fLiveWM && GetLoadState() == MLS::LOADED && (GetPlaybackMode() == PM_FILE || (GetPlaybackMode() == PM_DVD && m_iDVDDomain == DVD_DOMAIN_Title))) {
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+            if (pCmdUI->m_nID == ID_PLAY_FRAMESTEP_BACK) {
+                fEnable = m_pMS && m_wndSeekBar.HasDuration();
+            } else
+#endif
             if (m_pFS || m_pMS && (S_OK == m_pMS->IsFormatSupported(&TIME_FORMAT_FRAME))) {
                 fEnable = true;
             }
@@ -13708,9 +13823,31 @@ void CMainFrame::MoveVideoWindow(bool fShowStats/* = false*/, bool bSetStoppedVi
             if (!bToolbarsOnVideo) {
                 uBottom -= m_controls.GetVisibleToolbarsHeight();
             }
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+            uLeft -= std::min(uLeft, unsigned(m_nativeDockOverlap.left));
+            uTop -= std::min(uTop, unsigned(m_nativeDockOverlap.top));
+            uRight -= std::min(uRight, unsigned(m_nativeDockOverlap.right));
+            unsigned coveredBottom = unsigned(m_nativeDockOverlap.bottom);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+            if (m_wndView.NativeChromeHosted() && !HasDedicatedFSVideoWindow())
+                coveredBottom = std::max(coveredBottom, m_controls.GetVisibleHostedToolbarsHeight());
+#endif
+            uBottom -= std::min(uBottom, coveredBottom);
+#endif
             windowRect.InflateRect(uLeft, uTop, uRight, uBottom);
         } else if (bToolbarsOnVideo) {
-            windowRect.bottom += m_controls.GetVisibleToolbarsHeight();
+            unsigned uncoveredHeight = m_controls.GetVisibleToolbarsHeight();
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+            // Native layout already includes the area beneath the toolbars.
+            unsigned coveredHeight = m_nativeToolbarOverlapHeight;
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+            // Hosted bars already lie inside the view even when no WM_SIZE occurs.
+            if (m_wndView.NativeChromeHosted() && !HasDedicatedFSVideoWindow())
+                coveredHeight = std::max(coveredHeight, m_controls.GetVisibleHostedToolbarsHeight());
+#endif
+            uncoveredHeight -= std::min(uncoveredHeight, coveredHeight);
+#endif
+            windowRect.bottom += uncoveredHeight;
         }
 
         int nCompensateForMenubar = m_bShowingFloatingMenubar && !IsD3DFullScreenMode() ? GetSystemMetrics(SM_CYMENU) : 0;
@@ -16197,6 +16334,11 @@ void CMainFrame::OpenSetupVideo()
     m_pVW->put_MessageDrain((OAHWND)m_pVideoWnd->m_hWnd);
 
     for (CWnd* pWnd = m_pVideoWnd->GetWindow(GW_CHILD); pWnd; pWnd = pWnd->GetNextWindow()) {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        // Disable renderer children as before, but keep the interactive window
+        // command header enabled so it receives hover and button input.
+        if (m_wndView.IsNativeHeaderWindow(pWnd->GetSafeHwnd())) continue;
+#endif
         // 1. lets WM_SETCURSOR through (not needed as of now)
         // 2. allows CMouse::CursorOnWindow() to work with m_pVideoWnd
         pWnd->EnableWindow(FALSE);
@@ -23861,6 +24003,17 @@ LRESULT CMainFrame::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
         ASSERT(false);
         return 0;
     }
+
+#ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
+    // Observe the real frame/style during the empty-window -> first-file path.
+    // Do not force caption styles: Normal/Compact/Minimal retain native policy.
+    if (message == WM_STYLECHANGED || message == WM_WINDOWPOSCHANGED) {
+        char tag[64] = {};
+        sprintf_s(tag, "frame.msg-%04x.mode-%d.load-%d", message,
+            int(AfxGetAppSettings().eCaptionMenuMode), int(GetLoadState()));
+        GeometryDiagnostics::Record(tag, m_hWnd);
+    }
+#endif
 
     // A message sent from another thread leaves that thread blocked in its stack
     // while we run, so releasing the graph or the frame here is the same hazard
