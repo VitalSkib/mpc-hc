@@ -586,15 +586,9 @@ void CChildView::OnWindowPosChanging(WINDOWPOS* position)
             position->flags &= ~SWP_NOZORDER;
         }
     }
-    // Do not preserve pixels from the old-sized video surface.
-    CRect before;
-    GetWindowRect(before);
-    if (CWnd* parent = GetParent()) parent->ScreenToClient(before);
-    const bool resized = !(position->flags & SWP_NOSIZE)
-        && (position->cx != before.Width() || position->cy != before.Height());
-    const bool moved = !(position->flags & SWP_NOMOVE)
-        && (position->x != before.left || position->y != before.top);
-    if (resized || moved) position->flags |= SWP_NOCOPYBITS;
+    // Keep the stock video view's valid-pixel policy. Discarding cached bits
+    // is needed by our transparent chrome hosts, not by the real video HWND.
+    // OnSize/OnPaint and the presenter still update the new video rectangle.
     __super::OnWindowPosChanging(position);
 #ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
     if (!(position->flags & SWP_NOSIZE)) {

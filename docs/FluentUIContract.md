@@ -57,3 +57,13 @@ Keep that opt-in for focused diagnostics. The normal styled build keeps the
 same native-controls/material flags without geometry/UI tracing. Compare with
 all effects restored first. SWP_NOCOPYBITS on the video view remains a separate
 historical intervention; do not conflate it with tracing in the same test.
+
+## Native video pixel retention
+
+Do not force SWP_NOCOPYBITS on CChildView during normal resize/move. Its native
+valid-pixel policy and presenter updates remain responsible for video pixels.
+Keep explicit discard flags on transparent chrome hosts separate: those flags
+addressed copied alpha bands, and are not a general policy for the video HWND.
+This comparison follows the uninstrumented control build, with effects enabled.
+Verify live resize as well as old-image strips under the seekbar, animation,
+fullscreen return and first media sizing before accepting the result.
