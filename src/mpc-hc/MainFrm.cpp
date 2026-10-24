@@ -20,6 +20,7 @@
  */
 
 #include "stdafx.h"
+#include "NativeResizeTiming.h"
 #include <optional>
 #include "MainFrm.h"
 #ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
@@ -1724,6 +1725,7 @@ BOOL CMainFrame::PreTranslateMessage(MSG* pMsg)
 
 void CMainFrame::RecalcLayout(BOOL bNotify)
 {
+    NativeResizeTiming::Scope timing(NativeResizeTiming::FrameLayout);
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
     // CFrameWnd positions the pane through DeferWindowPos. Extend that very
     // placement, before WM_SIZE updates the renderer, rather than resize twice.
@@ -1922,6 +1924,7 @@ void CMainFrame::OnMove(int x, int y)
 
 void CMainFrame::OnEnterSizeMove()
 {
+    NativeResizeTiming::Begin();
     if (m_bWasSnapped) {
         VERIFY(GetCursorPos(&m_snapStartPoint));
         GetWindowRect(m_snapStartRect);
@@ -1990,6 +1993,8 @@ void CMainFrame::OnMoving(UINT fwSide, LPRECT pRect)
 
 void CMainFrame::OnSize(UINT nType, int cx, int cy)
 {
+    NativeResizeTiming::Scope timing(NativeResizeTiming::FrameSize);
+    timing.Bounds(cx,cy);
     if (m_bTrayIcon && nType == SIZE_MINIMIZED) {
         ShowWindow(SW_HIDE);
     } else {
@@ -2238,6 +2243,7 @@ void CMainFrame::OnSizingSnapToScreen(UINT nSide, LPRECT lpRect, bool bCtrl /*= 
 
 void CMainFrame::OnExitSizeMove()
 {
+    NativeResizeTiming::End();
     if (m_wndView.Dragging()) {
         // HACK: windowed (not renderless) video renderers may not produce WM_MOUSEMOVE message here
         UpdateControlState(CMainFrame::UPDATE_CHILDVIEW_CURSOR_HACK);
@@ -13802,6 +13808,7 @@ void CMainFrame::AutoChangeMonitorMode()
 
 void CMainFrame::MoveVideoWindow(bool fShowStats/* = false*/, bool bSetStoppedVideoRect/* = false*/)
 {
+    NativeResizeTiming::Scope timing(NativeResizeTiming::MoveVideo);
     m_dLastVideoScaleFactor = 0;
     m_lastVideoSize.SetSize(0, 0);
 

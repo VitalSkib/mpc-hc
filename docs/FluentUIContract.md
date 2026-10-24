@@ -67,3 +67,14 @@ addressed copied alpha bands, and are not a general policy for the video HWND.
 This comparison follows the uninstrumented control build, with effects enabled.
 Verify live resize as well as old-image strips under the seekbar, animation,
 fullscreen return and first media sizing before accepting the result.
+
+## Opt-in live resize timing
+
+FluentResizeTiming=1 records UI-stage QPC durations into a fixed 4096-entry
+memory buffer only between native EnterSizeMove and ExitSizeMove. No hot-path
+I/O, formatting, heap allocations or additional window/toolbar queries are used.
+After the drag ends, MPC-HC-resize-profile.csv next to the executable is replaced
+with the last session. Durations are inclusive and nested; they cannot be summed
+as independent costs and do not measure GPU presentation or compositor latency.
+This diagnostic changes no layout, renderer or material behavior and is off by
+default. Keep the old geometry diagnostics disabled.
