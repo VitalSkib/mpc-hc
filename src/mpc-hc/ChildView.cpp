@@ -42,10 +42,18 @@ CChildView::CChildView(CMainFrame* pMainFrame)
     };
     m_nativeHeader.titleTarget = nullptr; // The visible header owns title hover and mouse input.
     m_nativeHeader.semiboldTitle = AfxGetApp()->GetProfileInt(L"Settings", L"FluentTitleSemibold", 1) != 0;
-    m_nativeHeader.windowDrag = [this](CPoint point) {
-        if (m_pMainFrame->IsFullScreenMode()) return;
-        ::ReleaseCapture();
-        m_pMainFrame->SendMessage(WM_NCLBUTTONDOWN, HTCAPTION, MAKELPARAM(point.x, point.y));
+    m_nativeHeader.frameTarget = m_pMainFrame;
+    m_nativeHeader.frameHitTest = [this](CPoint point) -> LRESULT {
+        if (m_pMainFrame->IsFullScreenMode()) return HTCLIENT;
+        if (!m_pMainFrame->IsZoomed()) {
+            const LPARAM position=MAKELPARAM(point.x,point.y);
+            const LRESULT frame=m_pMainFrame->SendMessage(WM_NCHITTEST,0,position);
+            if (NativeHeaderInput::Resize(frame)) return frame;
+            // Minimal's client-side resize band is defined by the stock view.
+            const LRESULT view=OnNcHitTest(point);
+            if (NativeHeaderInput::Resize(view)) return view;
+        }
+        return HTCAPTION;
     };
     m_nativeHeader.windowCommand = [this](int button) {
         if (button == 0) m_pMainFrame->PostMessage(WM_SYSCOMMAND, SC_MINIMIZE);

@@ -6,6 +6,7 @@
 #include <vector>
 #include "CMPCThemeToolTipCtrl.h"
 #include "NativePlaylistMaterial.h"
+#include "NativeHeaderInput.h"
 #ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
 #include "../DSUtil/GeometryDiagnostics.h"
 #endif
@@ -179,8 +180,33 @@ class CNativeControlsDecoration final : public CWnd
         if (message == WM_DESTROY) { m_material.Reset(); m_materialActive = false; }
         if (message == WM_ERASEBKGND) return TRUE;
         if (message == WM_PAINT) { CPaintDC dc(this); DrawSurface(); return 0; }
-        if (message == WM_NCHITTEST)
-            return m_header ? HTCLIENT : HTTRANSPARENT;
+        if (message == WM_NCHITTEST) {
+            if (!m_header) return HTTRANSPARENT;
+            CPoint screen(GET_X_LPARAM(lParam),GET_Y_LPARAM(lParam)), client(screen);
+            ScreenToClient(&client);
+            const LRESULT hit=frameHitTest?frameHitTest(screen):HTCLIENT;
+            return NativeHeaderInput::Hit(hit,HitButton(client)>=0);
+        }
+        if (m_header && frameTarget && NativeHeaderInput::Action(message)) {
+            if (m_tip.GetSafeHwnd()) m_tip.Pop();
+            return NativeHeaderInput::Forward(frameTarget->GetSafeHwnd(),message,wParam,lParam);
+        }
+        if (m_header && message==WM_NCMOUSEMOVE) {
+            // Native caption/border input is nonclient; tooltip tools use client coordinates.
+            CPoint screen(GET_X_LPARAM(lParam),GET_Y_LPARAM(lParam)), client(screen);
+            ScreenToClient(&client);
+            MSG hover{}; hover.hwnd=m_hWnd; hover.message=WM_MOUSEMOVE;
+            hover.lParam=MAKELPARAM(client.x,client.y); hover.pt=screen;
+            if (m_tip.GetSafeHwnd()) m_tip.RelayEvent(&hover);
+            if (m_hot!=-1) {m_hot=-1;DrawSurface();}
+            TRACKMOUSEEVENT track={sizeof(track),TME_LEAVE|TME_NONCLIENT,m_hWnd,0};
+            ::TrackMouseEvent(&track);
+            return 0;
+        }
+        if (m_header && message==WM_NCMOUSELEAVE) {
+            if (m_tip.GetSafeHwnd()) m_tip.Pop();
+            return 0;
+        }
         if (message == WM_MOUSEMOVE && m_header) {
             CPoint point(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
             const int hot = HitButton(point);
@@ -196,11 +222,6 @@ class CNativeControlsDecoration final : public CWnd
         if (message == WM_LBUTTONDOWN && m_header) {
             CPoint point(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
             m_pressed = HitButton(point);
-            if (m_pressed < 0 && windowDrag) {
-                ClientToScreen(&point);
-                windowDrag(point);
-                return 0;
-            }
             // Own the entire click, including release outside the header.
             // Window-button clicks retain their capture and command handling.
             SetCapture();
@@ -232,7 +253,8 @@ class CNativeControlsDecoration final : public CWnd
 public:
     std::function<bool(Gdiplus::Graphics&, const CRect&, LPCWSTR, bool)> customIcon;
     std::function<void(int)> windowCommand;
-    std::function<void(CPoint)> windowDrag;
+    CWnd* frameTarget = nullptr;
+    std::function<LRESULT(CPoint)> frameHitTest;
     bool semiboldTitle = true;
     CString titleTip;
     CWnd* titleTarget = nullptr;
