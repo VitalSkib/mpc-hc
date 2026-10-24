@@ -244,6 +244,12 @@ void CChildView::UpdateProgrammeCaption()
 
 void CChildView::UpdateNativeDecoration()
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    // RecalcLayout publishes the final hosted chrome immediately after its
+    // native DeferWindowPos transaction. Do not publish intermediate bounds.
+    // First mounting still runs here, so the frame can account for reparenting.
+    if (m_chromeHosted && m_pMainFrame->m_nativeVideoLayout) return;
+#endif
     if (m_refreshingNativeDecoration || !GetSafeHwnd() || !m_pMainFrame->CanHoverControls()) return;
     m_refreshingNativeDecoration = true;
     struct ResetFlag { bool& flag; ~ResetFlag() { flag = false; } } reset{m_refreshingNativeDecoration};
@@ -604,7 +610,14 @@ void CChildView::OnWindowPosChanging(WINDOWPOS* position)
 void CChildView::OnSize(UINT nType, int cx, int cy)
 {
     __super::OnSize(nType, cx, cy);
-    if (!m_bSwitchingFullscreen) {
+    bool updateVideo = !m_bSwitchingFullscreen;
+#if defined(MPC_EXPERIMENTAL_NATIVE_DECORATION) && defined(MPC_EXPERIMENTAL_NATIVE_SEEKBAR)
+    // Hosted chrome does not participate in native docking. While the frame
+    // is placing its children, use the existing final MoveVideoWindow call
+    // in RecalcLayout instead of submitting the renderer geometry twice.
+    updateVideo = updateVideo && !(m_chromeHosted && m_pMainFrame->m_nativeVideoLayout);
+#endif
+    if (updateVideo) {
         m_pMainFrame->MoveVideoWindow();
     }
     // bitmap OSD draws into the renderer, so it never gets its own WM_SIZE

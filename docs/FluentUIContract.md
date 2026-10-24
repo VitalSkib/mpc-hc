@@ -24,3 +24,10 @@ complete synchronous alpha publication, consume its pending paint region rather
 than upload the same layout again. Do not throttle, postpone or replace native
 video layout. Verify continuous dragging with visible and hidden chrome, corners,
 fullscreen return, caption input, playlist animation and native text bars.
+
+During native frame RecalcLayout, already-mounted chrome and its video geometry
+are published at the existing synchronous final update, not again from child
+WM_SIZE inside DeferWindowPos. Direct view resizing and initial chrome mounting
+keep their original handlers. No resize timer, frame-rate cap or renderer change
+is introduced. Re-test opening media, docking, fullscreen return, text bars and
+live corner dragging before accepting the candidate.
