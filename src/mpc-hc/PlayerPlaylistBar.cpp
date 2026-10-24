@@ -2678,12 +2678,11 @@ void CPlayerPlaylistBar::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruc
     fmt.Format(_T("[%%0%dd]"), (int)log10(0.1 + m_pl.GetCount()) + 1);
     num.Format(fmt, nItem + 1);
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-    const bool guideRows = !m_programmeGuide.rows.empty() && !pli.m_fns.IsEmpty()
-        && pli.m_fns.GetHead() == m_programmeGuide.stream.c_str();
-    const bool channelRow = guideRows && nItem == 0
-        && pli.m_label == m_programmeGuide.channel.c_str();
-    if (guideRows) {
-        if (channelRow) num.Empty();
+    const CPlaylistItem& firstItem = m_pl.GetHead();
+    const bool hasChannelHeader = !firstItem.m_fns.IsEmpty()
+        && m_programmeGuide.HasChannelHeader(firstItem.m_fns.GetHead().GetString(), firstItem.m_label.GetString());
+    if (hasChannelHeader) {
+        if (nItem == 0) num.Empty();
         else if (UsesNativePopup()) num.Format(L"%d.", nItem);
         else num.Format(fmt, nItem);
     } else if (UsesNativePopup()) num.Format(L"%d.", nItem + 1);

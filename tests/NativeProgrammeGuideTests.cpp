@@ -68,6 +68,22 @@ int main(){
         check(g.Caption(L"https://other.example/index.m3u8",L"https://other.example/index.m3u8",begin,false,title,tip)
             && tip.empty(), "raw source labels are not repeated in a tooltip");
     }
+    {
+        G channelOnly;
+        const std::wstring partial=LR"({"version":1,"stream":"https://example.org/live.m3u8","context":{"channelName":"Channel","programmes":[]}})";
+        check(channelOnly.Parse(partial,L"https://example.org/live.m3u8"), "retain source-bound channel with label-only schedule");
+        check(channelOnly.rows.empty() && channelOnly.HasChannelHeader(channelOnly.stream,L"Channel"),
+            "channel header identity does not require EPG intervals");
+        check(!channelOnly.HasChannelHeader(channelOnly.stream,L"13:00 Programme")
+            && !channelOnly.HasChannelHeader(L"https://other.example/live.m3u8",L"Channel"),
+            "do not mistake a programme or another source for a channel header");
+        std::wstring title, tip;
+        check(channelOnly.Caption(channelOnly.stream,L"13:00 Programme",begin,true,title,tip)
+            && title==L"Programme" && tip==L"13:00 Programme",
+            "retaining channel metadata must not replace fallback programme title with channel name");
+        check(channelOnly.Caption(channelOnly.stream,L"Channel",begin,false,title,tip) && tip==L"Channel",
+            "channel-only tooltip retains channel identity");
+    }
     g.rows.push_back(g.rows[0]);
     check(!g.Current(g.stream,begin),"overlapping guide rejected");
     check(!g.Parse(json,L"https://other.example/live.m3u8")&&g.rows.empty(),"mismatch clears old metadata");

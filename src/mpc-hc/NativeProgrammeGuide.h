@@ -44,6 +44,9 @@ public:
         ticks-=(s[15]==L'+'?1LL:-1LL)*(oh*60+om)*600000000LL;
         return ticks>0?ULONGLONG(ticks):0;
     }
+    bool HasChannelHeader(const std::wstring& source, const std::wstring& label) const {
+        return !stream.empty() && source==stream && !channel.empty() && label==channel;
+    }
     const Programme* Current(const std::wstring& source,ULONGLONG now) const {
         if(source!=stream)return nullptr;
         const Programme* found=nullptr;
@@ -89,7 +92,7 @@ public:
         if (source == stream) {
             if (current) {
                 if (const auto p = Current(source, now)) { title=p->title; tip=Tooltip(*p); return true; }
-                if (!channel.empty()) { title=tip=channel; return true; }
+                if (!channel.empty() && (!rows.empty() || label==channel)) { title=tip=channel; return true; }
             } else {
                 if (!channel.empty() && label == channel) { title=tip=channel; return true; }
                 for (const auto& p : rows) if (label == Clock(p.start)+L" "+p.title) {
@@ -141,7 +144,10 @@ public:
         }
         std::sort(rows.begin(),rows.end(),[](const Programme&a,const Programme&b){return a.start<b.start;});
         rows.erase(std::unique(rows.begin(),rows.end(),[](const Programme&a,const Programme&b){return a.start==b.start&&a.stop==b.stop&&a.title==b.title;}),rows.end());
-        if(rows.empty()){Clear();return false;}stream=expected;return true;
+        // Channel identity is valid independently of dated programme intervals.
+        // Keep it for native playlists whose schedule exists only as row labels.
+        if(rows.empty() && channel.empty()){Clear();return false;}
+        stream=expected;return true;
     }
     bool Load(const std::wstring& path,const std::wstring& expected) {
         Clear();std::ifstream f(path.c_str(),std::ios::binary);if(!f)return false;

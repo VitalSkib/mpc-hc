@@ -42,6 +42,11 @@ CChildView::CChildView(CMainFrame* pMainFrame)
     };
     m_nativeHeader.titleTarget = nullptr; // The visible header owns title hover and mouse input.
     m_nativeHeader.semiboldTitle = AfxGetApp()->GetProfileInt(L"Settings", L"FluentTitleSemibold", 1) != 0;
+    m_nativeHeader.windowDrag = [this](CPoint point) {
+        if (m_pMainFrame->IsFullScreenMode()) return;
+        ::ReleaseCapture();
+        m_pMainFrame->SendMessage(WM_NCLBUTTONDOWN, HTCAPTION, MAKELPARAM(point.x, point.y));
+    };
     m_nativeHeader.windowCommand = [this](int button) {
         if (button == 0) m_pMainFrame->PostMessage(WM_SYSCOMMAND, SC_MINIMIZE);
         else if (button == 1) {

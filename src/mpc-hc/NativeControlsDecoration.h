@@ -196,8 +196,13 @@ class CNativeControlsDecoration final : public CWnd
         if (message == WM_LBUTTONDOWN && m_header) {
             CPoint point(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
             m_pressed = HitButton(point);
+            if (m_pressed < 0 && windowDrag) {
+                ClientToScreen(&point);
+                windowDrag(point);
+                return 0;
+            }
             // Own the entire click, including release outside the header.
-            // Only the native window buttons produce a command.
+            // Window-button clicks retain their capture and command handling.
             SetCapture();
             if (m_pressed >= 0) { m_hot = m_pressed; DrawSurface(); }
             return 0;
@@ -212,7 +217,11 @@ class CNativeControlsDecoration final : public CWnd
             return 0;
         }
         if (message == WM_CAPTURECHANGED && m_pressed >= 0) { m_pressed = -1; m_hot = -1; DrawSurface(); }
-        if (message == WM_LBUTTONDBLCLK && m_header) return 0;
+        if (message == WM_LBUTTONDBLCLK && m_header) {
+            CPoint point(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+            if (HitButton(point) < 0 && windowCommand) windowCommand(1);
+            return 0;
+        }
         return __super::WindowProc(message, wParam, lParam);
     }
     BOOL PreTranslateMessage(MSG* message) override {
@@ -223,6 +232,7 @@ class CNativeControlsDecoration final : public CWnd
 public:
     std::function<bool(Gdiplus::Graphics&, const CRect&, LPCWSTR, bool)> customIcon;
     std::function<void(int)> windowCommand;
+    std::function<void(CPoint)> windowDrag;
     bool semiboldTitle = true;
     CString titleTip;
     CWnd* titleTarget = nullptr;
@@ -255,7 +265,7 @@ public:
             m_header = header;
             const DWORD extended = WS_EX_NOACTIVATE | (header ? WS_EX_NOREDIRECTIONBITMAP
                 : WS_EX_LAYERED | WS_EX_TRANSPARENT);
-            if (!CreateEx(extended, AfxRegisterWndClass(0), L"Native control decoration",
+            if (!CreateEx(extended, AfxRegisterWndClass(header ? CS_DBLCLKS : 0), L"Native control decoration",
                     WS_CHILD, rectangle, view, 0)) return;
             if (header) {
                 m_materialActive = m_material.Start(m_hWnd, 3, false);
