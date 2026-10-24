@@ -78,3 +78,14 @@ with the last session. Durations are inclusive and nested; they cannot be summed
 as independent costs and do not measure GPU presentation or compositor latency.
 This diagnostic changes no layout, renderer or material behavior and is off by
 default. Keep the old geometry diagnostics disabled.
+
+## Hosted transport layout dependencies
+
+A hosted toolbar is centred in its own client row. Its geometry signature must
+not include ancestor screen position, frame size or frame-to-toolbar origin;
+those values change before the row width during a left/top resize and throughout
+slide motion. Keep frame-relative dependencies only for the actual frame-parent
+native docking path. Native button rectangles and visibility still participate.
+Do not unconditionally arrange a hosted toolbar in RecalcLayout before its final
+row placement. Keep PrepareNativePresentation after placement and before reveal;
+that surface revision check preserves fullscreen/hidden-resize correctness.

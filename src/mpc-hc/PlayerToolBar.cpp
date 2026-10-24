@@ -1018,13 +1018,21 @@ std::vector<LONG> CPlayerToolBar::TransportGeometry()
     CRect rect;
     // Resolve MFC's deferred layout before inspecting the real button geometry.
     if (GetToolBarCtrl().GetButtonCount()) GetItemRect(0, rect);
-    GetWindowRect(rect);
-    geometry.insert(geometry.end(), {rect.left, rect.top, rect.right, rect.bottom});
-    m_pMainFrame->GetClientRect(rect);
-    geometry.insert(geometry.end(), {rect.left, rect.top, rect.right, rect.bottom});
-    CPoint frameOrigin(0, 0);
-    m_pMainFrame->MapWindowPoints(this, &frameOrigin, 1);
-    geometry.insert(geometry.end(), {frameOrigin.x, LONG(GetParent() == m_pMainFrame)});
+    const bool frameParent = GetParent() == m_pMainFrame;
+    geometry.push_back(LONG(frameParent));
+    if (frameParent) {
+        // Native docking centres against the frame, so keep that dependency.
+        GetWindowRect(rect);
+        geometry.insert(geometry.end(), {rect.left, rect.top, rect.right, rect.bottom});
+        m_pMainFrame->GetClientRect(rect);
+        geometry.insert(geometry.end(), {rect.left, rect.top, rect.right, rect.bottom});
+        CPoint frameOrigin(0, 0);
+        m_pMainFrame->MapWindowPoints(this, &frameOrigin, 1);
+        geometry.push_back(frameOrigin.x);
+    }
+    // Hosted transport is centred in its own client row. Ancestor movement
+    // (including a left/top resize or slide animation) changes screen bounds
+    // without changing this layout; do not invalidate its artwork for that.
     GetClientRect(rect);
     geometry.insert(geometry.end(), {rect.left, rect.top, rect.right, rect.bottom});
     auto& tb = GetToolBarCtrl();

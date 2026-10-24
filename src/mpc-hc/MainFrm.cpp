@@ -1753,9 +1753,14 @@ void CMainFrame::RecalcLayout(BOOL bNotify)
         MoveWindow(r);
     }
 #ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
-    // OnSize may run inside the deferred placement transaction. Arrange once
-    // more with final frame/bar bounds, including the first media auto-size.
-    if (m_wndToolBar.GetSafeHwnd()) m_wndToolBar.ArrangeControls();
+    // Docked native controls still need final frame-relative placement.
+    // Hosted controls are placed by UpdateNativeDecoration below; arranging
+    // here uses their previous row width and invalidates the surface twice.
+    bool hostedTransport = false;
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    hostedTransport = m_wndView.NativeChromeHosted() && !HasDedicatedFSVideoWindow();
+#endif
+    if (m_wndToolBar.GetSafeHwnd() && !hostedTransport) m_wndToolBar.ArrangeControls();
     // A dock may change the requested pane size without changing its expanded
     // actual size. WM_SIZE is then absent: commit the final renderer rectangle here.
     MoveVideoWindow();
