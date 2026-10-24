@@ -286,6 +286,11 @@ public:
         }
     }
     void Refresh(CWnd* view, const CRect& rectangle, bool header, const CString& title, int dpi, bool restore = false) {
+        // Isolate the shared shade from the actual native controls. Disabled
+        // at startup, this path creates no layered backdrop HWND or bitmap.
+        if (!header && !AfxGetApp()->GetProfileInt(L"Settings", L"FluentFooterBackdrop", 1)) {
+            Hide(); return;
+        }
         if (rectangle.IsRectEmpty()) { Hide(); return; }
         if (!GetSafeHwnd()) {
             m_header = header;

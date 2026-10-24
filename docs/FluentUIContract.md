@@ -41,3 +41,9 @@ chrome animation, footer and playlist remain selected as before. Tint=0 is not
 an off switch. Restore the baseline before testing a different effect. Record
 the tested commit and setting; this diagnostic option is not a permanent style
 decision. HWND style selection follows the option at creation time.
+
+`[Settings] FluentFooterBackdrop=1` is the normal shared shade beneath the
+hosted footer. Set only this option to `0` to omit that decoration window and
+bitmap while keeping control layout/input, header material and chrome motion.
+Restart for a clean comparison. This does not disable the toolbar alpha artwork
+or the playlist material. Restore the previous test's options before using it.
