@@ -1,4 +1,4 @@
-name: Prepare chrome surfaces before viewport placement
+name: Native chrome baseline without resize experiments
 
 on:
   pull_request:
@@ -98,7 +98,7 @@ jobs:
           call build.user.bat
           call "%MPCHC_VS_PATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
           cl /nologo /c /EHsc /std:c++17 /DMPC_EXPERIMENTAL_NATIVE_DECORATION /DMPC_MATERIAL_STANDALONE /I"src\mpc-hc\wasdk-probe\generated" src\mpc-hc\NativePlaylistMaterial.cpp /Fo"src\mpc-hc\wasdk-probe\preflight.obj"
-      - name: Build styled x64 viewport ordering test
+      - name: Build native-controls x64 probe
         shell: cmd
         env:
           CL: /DMPC_EXPERIMENTAL_NATIVE_SEEKBAR /DMPC_EXPERIMENTAL_NO_BACKDROP /DMPC_EXPERIMENTAL_NATIVE_DECORATION
@@ -120,9 +120,9 @@ jobs:
             'Thin blue/grey native seekbar with zero-alpha background above the backdrop.',
             'Moving video must show through ABOVE and BELOW the thin track.',
             'Check native seek, outside release, hover time and seek preview.',
-            'Control build: per-message UI and per-present geometry diagnostics are compiled out.',
-            'Compare resize on the same video with all accepted visual effects enabled.',
-            'Geometry/UI logs left by older builds are not refreshed by this build.',
+            'Diagnostics: MPC-HC-geometry.log is created beside the EXE and overwritten on each run.',
+            'Open the same video, resize until the fault, hide/show controls, toggle fullscreen, close.',
+            'Keep the log from that run. No frames or media filenames are logged.',
             'Transparent pixels may pass mouse input through: check button targeting too.',
             'Native toolbar artwork selection, state backgrounds, input and commands remain unchanged.',
             'The empty seekbar is already thin/transparent before opening media.',
@@ -136,7 +136,7 @@ jobs:
       - name: Upload standalone test build
         uses: actions/upload-artifact@v4
         with:
-          name: MPC-HC-x64-viewport-order-${{ github.sha }}
+          name: MPC-HC-x64-minimal-resize-baseline-${{ github.sha }}
           path: |
             bin/mpc-hc_x64 Lite/mpc-hc64.exe
             bin/mpc-hc_x64 Lite/mpc-hc64.ini

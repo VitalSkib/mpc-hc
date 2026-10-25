@@ -101,7 +101,6 @@ struct CNativePlaylistMaterial::State {
     winrt::Windows::UI::Composition::ContainerVisual viewport{nullptr}, panel{nullptr}, content{nullptr};
     winrt::Windows::UI::Composition::SpriteVisual shadowVisual{nullptr}, material{nullptr};
     winrt::Windows::UI::Composition::CompositionDrawingSurface shadowMask{nullptr};
-    winrt::Windows::UI::Composition::CompositionRoundedRectangleGeometry foregroundShape{nullptr};
     int width = 0, height = 0;
     float radius = 8.f;
     winrt::Microsoft::UI::Composition::SystemBackdrops::SystemBackdropConfiguration configuration{nullptr};
@@ -124,7 +123,7 @@ struct CNativePlaylistMaterial::State {
         try { if (acrylic) acrylic.Close(); if (mica) mica.Close(); } catch (...) {}
         acrylic = nullptr; mica = nullptr; configuration = nullptr;
         try { if (target) { target.Root(nullptr); target.Close(); } } catch (...) {}
-        artwork = nullptr; foreground = nullptr; foregroundShape = nullptr; shadowMask = nullptr;
+        artwork = nullptr; foreground = nullptr; shadowMask = nullptr;
         material = nullptr; shadowVisual = nullptr; content = nullptr; panel = nullptr; viewport = nullptr;
         graphics = nullptr; target = nullptr;
         try { if (compositor) compositor.Close(); } catch (...) {}
@@ -245,30 +244,21 @@ bool CNativePlaylistMaterial::UpdateForeground(const void* pixels, int width, in
         auto& state = *m_state;
         state.SynchronizeBrush();
         if (!state.foreground || state.width != width || state.height != height) {
-            if (!state.foreground) {
-                namespace dx = winrt::Windows::Graphics::DirectX;
-                state.foreground = state.graphics.CreateDrawingSurface(
-                    {static_cast<float>(width), static_cast<float>(height)},
-                    dx::DirectXPixelFormat::B8G8R8A8UIntNormalized, dx::DirectXAlphaMode::Premultiplied);
-                state.artwork.Brush(state.compositor.CreateSurfaceBrush(state.foreground));
-                state.foregroundShape = state.compositor.CreateRoundedRectangleGeometry();
-                state.content.Clip(state.compositor.CreateGeometricClip(state.foregroundShape));
-                MaterialLog("Foreground surface created", S_OK);
-            } else {
-                // Preserve the surface and its brush during live sizing. Replacing
-                // the brush on each WM_SIZE publishes an empty surface before its
-                // first drawing transaction has finished.
-                const SIZE size{width, height};
-                winrt::check_hresult(state.foreground.as<ABI::Windows::UI::Composition::ICompositionDrawingSurfaceInterop>()->Resize(size));
-            }
+            namespace dx = winrt::Windows::Graphics::DirectX;
+            state.foreground = state.graphics.CreateDrawingSurface(
+                {static_cast<float>(width), static_cast<float>(height)},
+                dx::DirectXPixelFormat::B8G8R8A8UIntNormalized, dx::DirectXAlphaMode::Premultiplied);
+            state.artwork.Brush(state.compositor.CreateSurfaceBrush(state.foreground));
             state.artwork.Size({static_cast<float>(width), static_cast<float>(height)});
             state.viewport.Size({static_cast<float>(width), static_cast<float>(height)});
             state.panel.Size({static_cast<float>(width), static_cast<float>(height)});
             state.content.Size({static_cast<float>(width), static_cast<float>(height)});
             state.shadowVisual.Size({static_cast<float>(width), static_cast<float>(height)});
             state.material.Size({static_cast<float>(width), static_cast<float>(height)});
-            state.foregroundShape.Size({static_cast<float>(width), static_cast<float>(height)});
-            state.foregroundShape.CornerRadius({state.radius, state.radius});
+            auto shape = state.compositor.CreateRoundedRectangleGeometry();
+            shape.Size({static_cast<float>(width), static_cast<float>(height)});
+            shape.CornerRadius({state.radius, state.radius});
+            state.content.Clip(state.compositor.CreateGeometricClip(shape));
             state.width = width; state.height = height;
         }
         auto surface = state.foreground.as<ABI::Windows::UI::Composition::ICompositionDrawingSurfaceInterop>();
@@ -307,8 +297,10 @@ bool CNativePlaylistMaterial::PrepareSlide(float radius)
     try {
         auto& s = *m_state;
         s.radius = radius;
-        s.foregroundShape.Size({static_cast<float>(s.width), static_cast<float>(s.height)});
-        s.foregroundShape.CornerRadius({radius, radius});
+        auto shape = s.compositor.CreateRoundedRectangleGeometry();
+        shape.Size({static_cast<float>(s.width), static_cast<float>(s.height)});
+        shape.CornerRadius({radius, radius});
+        s.content.Clip(s.compositor.CreateGeometricClip(shape));
         // Shadow and content share the moving parent. The explicit stationary
         // viewport clips both, including the blur outside the panel's bounds.
         namespace dx = winrt::Windows::Graphics::DirectX;
