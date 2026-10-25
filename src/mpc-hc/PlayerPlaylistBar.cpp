@@ -1889,6 +1889,43 @@ bool CPlayerPlaylistBar::GetStreamDisplayCaption(const CPlaylistItem& item, CStr
     return true;
 }
 
+bool CPlayerPlaylistBar::GetDisplayCaption(const CPlaylistItem& item, CString& title,
+        CString& tip, bool current, CString* playlistText) const
+{
+    title.Empty(); tip.Empty();
+    if (item.m_fns.IsEmpty() || item.m_type != CPlaylistItem::file) return false;
+    const CString source(item.m_fns.GetHead());
+    if (GetStreamDisplayCaption(item, title, tip, current)) {
+        if (playlistText) *playlistText = item.m_label;
+        if (!title.IsEmpty()) return true;
+        // A bare URL has no programme metadata. Its resource name is the only
+        // available title; never expose the query/authentication string.
+        CString clean(source); const int query = clean.FindOneOf(L"?#");
+        if (query >= 0) clean.Truncate(query);
+        title = PathUtils::StripPathOrUrl(clean);
+        const int dot = title.ReverseFind(L'.');
+        if (dot > 0) title.Truncate(dot);
+        tip = title;
+        if (playlistText) *playlistText = title;
+        return true;
+    }
+    // Preserve cue-track and extractor-provided labels. For ordinary disk
+    // files presentation uses the filename, not embedded tags/history labels.
+    if (PathUtils::IsURL(source) || item.m_cue || item.m_bYoutubeDL) return false;
+    title = PathUtils::StripPathOrUrl(source);
+    const int dot = title.ReverseFind(L'.');
+    if (dot > 0) title.Truncate(dot);
+    tip = title;
+    if (item.m_duration > 0) {
+        const REFERENCE_TIME seconds = (item.m_duration + 5000000) / 10000000;
+        CString duration; duration.Format(L"%02d:%02d:%02d", int(seconds / 3600),
+            int(seconds / 60 % 60), int(seconds % 60));
+        tip = duration + L" " + title;
+    }
+    if (playlistText) *playlistText = title;
+    return !title.IsEmpty();
+}
+
 bool CPlayerPlaylistBar::UpdateProgrammeCaption()
 {
     CString title, tip;
@@ -2833,6 +2870,10 @@ void CPlayerPlaylistBar::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruc
     pli.inlineEditMaxWidth = std::max(0, (int)timept.x - dpi6 - inlineEditXpos); //leave the same gap before the time as the truncated filename
 
     file = pli.GetLabel(0);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    CString captionTitle, captionTip, captionRow;
+    if (GetDisplayCaption(pli, captionTitle, captionTip, false, &captionRow)) file = captionRow;
+#endif
     CSize filesize = pDC->GetTextExtent(file);
     while (dpi3 + numWidth.cx + filesize.cx + dpi6 > timept.x && file.GetLength() > 3) {
         file = file.Left(file.GetLength() - 4) + _T("...");
@@ -3069,7 +3110,7 @@ BOOL CPlayerPlaylistBar::OnToolTipNotify(UINT id, NMHDR* pNMHDR, LRESULT* pResul
     if (col == COL_NAME) {
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
         CString displayTitle, displayTip;
-        if (GetStreamDisplayCaption(pli, displayTitle, displayTip, false)) {
+        if (GetDisplayCaption(pli, displayTitle, displayTip, false)) {
             strTipText = displayTip.IsEmpty() ? displayTitle : displayTip;
             if (strTipText.IsEmpty()) return FALSE;
         } else
@@ -3593,6 +3634,12 @@ void CPlayerPlaylistBar::OnLvnGetDispInfoList(NMHDR* pNMHDR, LRESULT* pResult)
 
     if (item.mask & LVIF_TEXT) {
         CString text = pli.GetLabel(item.iSubItem);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        if (item.iSubItem == COL_NAME) {
+            CString title, tip, row;
+            if (GetDisplayCaption(pli, title, tip, false, &row)) text = row;
+        }
+#endif
         _tcsncpy_s(item.pszText, item.cchTextMax, text, _TRUNCATE);
     }
 

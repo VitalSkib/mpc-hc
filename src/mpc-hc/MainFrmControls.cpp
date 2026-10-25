@@ -465,6 +465,11 @@ void CMainFrameControls::UpdateToolbarsVisibility()
                               (m_pMainFrame->IsFullScreenMainFrame() || s.bHideWindowedControls && !m_pMainFrame->IsFullScreenSeparate()) &&
                               ePolicy != CAppSettings::HideFullscreenControlsPolicy::SHOW_NEVER;
     const bool bCanHideDockedPanels = s.bHideFullscreenDockedPanels;
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    const bool sizing = m_pMainFrame->NativeChromeSizing();
+#else
+    const bool sizing = false;
+#endif
 
     bool bEnumedPanelZones = false;
 
@@ -495,7 +500,10 @@ void CMainFrameControls::UpdateToolbarsVisibility()
         bExclSeekbar = true;
     }
 
-    if (m_pMainFrame->IsFullScreenMainFrame() && s.bHideFullscreenControls &&
+    if (sizing) {
+        // Feed the ordinary hider rather than changing the selected controls.
+        mask.hide(DOCK_BOTTOM | DOCK_RIGHT | DOCK_LEFT | DOCK_TOP);
+    } else if (m_pMainFrame->IsFullScreenMainFrame() && s.bHideFullscreenControls &&
             ePolicy == CAppSettings::HideFullscreenControlsPolicy::SHOW_NEVER) {
         // hide completely
         mask.hide(maskAll);
@@ -519,7 +527,11 @@ void CMainFrameControls::UpdateToolbarsVisibility()
                     mask.maskHide &= ~zone;
                 }
             }
-            const bool bOnWindow = CMouse::CursorOnRootWindow(screenPoint, *m_pMainFrame);
+            const bool bOnWindow = CMouse::CursorOnRootWindow(screenPoint, *m_pMainFrame)
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+                && m_pMainFrame->NativeChromeHoverAt(screenPoint)
+#endif
+                ;
             auto testCapture = [&]() {
                 bool ret = false;
                 if (HWND hWnd = GetCapture()) {
@@ -701,6 +713,7 @@ void CMainFrameControls::UpdateToolbarsVisibility()
         for (const auto& pair : m_panels) {
             if (pair.second->IsAutohidden()
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+                    && !(sizing && pair.first == Panel::PLAYLIST)
                     && !emptyPlaylist(pair.first)
 #endif
                     ) {
@@ -795,9 +808,10 @@ void CMainFrameControls::UpdateToolbarsVisibility()
             ASSERT(zone != DOCK_NONE);
             if (zone & mask.maskHide) {
                 auto it = m_panelZones.find(zone);
-                if (it != m_panelZones.end() && bCanHideDockedPanels) {
+                if (it != m_panelZones.end() && (bCanHideDockedPanels || sizing)) {
                     const auto panels = it->second; // copy
                     for (const auto panel : panels) {
+                        if (!bCanHideDockedPanels && panel != Panel::PLAYLIST) continue;
                         auto pBar = m_panels[panel];
                         if (!pBar->IsAutohidden() && !ToolbarInputActive(pBar) && !pBar->HasActivePopup()) {
                             bRecalcLayout = true;

@@ -123,3 +123,33 @@ Two local-file display issues remain separate and are NOT fixed by this restore:
   history or explicit playlist labels to disguise a presentation-policy issue.
 
 No further live-resize experiments or GUI automation without a new user request.
+
+
+## Resize visibility and shared captions, 2026-10-25
+
+Keep 7ca9dfc application behavior except these requested changes. No renewed
+resize-layout, renderer, timer or surface-publication experiments.
+
+A single frame flag identifies the native SC_SIZE/WM_SIZING operation. Feed
+hide requests to the existing native toolbar/panel hider; the chrome hosts use
+normal Present(false) and the playlist uses normal HideEnabled fade. Keep the
+flag until WM_EXITSIZEMOVE (and clear it after cancelled SC_SIZE), so hover,
+input ownership and deadlines cannot reopen overlays while the user resizes.
+Do not activate this on SC_MOVE or on WM_ENTERSIZEMOVE alone. Preserve selected
+controls and playlist selection; on exit recompute ordinary hover/deadline
+visibility rather than force every panel visible. Skip rebuilding hidden chrome
+artwork inside the resize loop. Reuse the existing frameless resize-band width
+as the border exclusion for hover activation; do not change nonclient input.
+
+GetDisplayCaption is the presentation boundary for header text/tooltip and
+playlist labels/tooltips. Ordinary local files show filename without extension,
+not embedded Title/history metadata. Their tooltip adds native rounded duration;
+the playlist retains its existing duration column, without duplicating it in
+text. Stream programmes retain title-only header, time/channel tooltip and timed
+schedule rows. Channel-heading identity and unnumbered first row are unchanged.
+Preserve CUE/extractor labels and native fallback behavior for devices. Do not
+mutate actual file tags, history, saved playlist labels or URL query strings.
+
+CI cannot prove visual performance. The user checks resizing, cancellation,
+move-only behavior, hover reveal/hide, local captions and schedule numbering.
+No GUI automation or player launch by the agent.

@@ -298,10 +298,11 @@ CRect CNativePlaylistPopup::HoverRect() const
 
 bool CNativePlaylistPopup::WantsReveal() const
 {
-    if (!m_bar->m_pMainFrame->CanHoverControls()
+    if (!m_bar->m_pMainFrame->CanHoverControls() || m_bar->m_pMainFrame->NativeChromeSizing()
             || !m_bar->m_nativePopupSelected || m_band.IsRectEmpty()) return false;
     CPoint cursor; ::GetCursorPos(&cursor);
     return m_forceReveal || (!IsWindowVisible() && cursor != m_hiddenPoint && HoverRect().PtInRect(cursor)
+        && m_bar->m_pMainFrame->NativeChromeHoverAt(cursor)
         && CMouse::CursorOnRootWindow(cursor, *m_bar->m_pMainFrame));
 }
 
@@ -332,6 +333,7 @@ void CNativePlaylistPopup::Dismiss()
 void CNativePlaylistPopup::Refresh(const CRect& band, bool show, int dpi, bool controlsVisible)
 {
     if (!m_bar->m_pMainFrame->CanHoverControls()) { HideEnabled(false); return; }
+    if (m_bar->m_pMainFrame->NativeChromeSizing()) { HideEnabled(); return; }
     const bool sameLayout = m_band == band && m_dpi == dpi;
     m_band = band;
     if (m_dpi != dpi || !m_titleFont.GetSafeHandle()) {
@@ -799,7 +801,7 @@ LRESULT CNativePlaylistPopup::WindowProc(UINT message, WPARAM wParam, LPARAM lPa
 
 bool CPlayerPlaylistBar::NativePopupInputActive() const
 {
-    if (!UsesNativePopup() || !m_pMainFrame->CanHoverControls()) return false;
+    if (!UsesNativePopup() || !m_pMainFrame->CanHoverControls() || m_pMainFrame->NativeChromeSizing()) return false;
     if (!m_nativePopup.IsWindowVisible()) return m_nativePopup.Revealing() || m_nativePopup.WantsReveal();
     if (HasActivePopup() || m_bDragging) return true;
     HWND capture = ::GetCapture();

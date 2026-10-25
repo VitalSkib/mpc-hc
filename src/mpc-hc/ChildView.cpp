@@ -249,6 +249,19 @@ void CChildView::UpdateNativeDecoration()
     if (m_refreshingNativeDecoration || !GetSafeHwnd() || !m_pMainFrame->CanHoverControls()) return;
     m_refreshingNativeDecoration = true;
     struct ResetFlag { bool& flag; ~ResetFlag() { flag = false; } } reset{m_refreshingNativeDecoration};
+    if (m_pMainFrame->NativeChromeSizing()) {
+        // Reuse normal host hide and playlist fade paths. Keep selection and
+        // layout intact; defer expensive hidden artwork updates until exit.
+        if (m_chromeHosted) {
+            BOOL motion = TRUE; SystemParametersInfo(SPI_GETCLIENTAREAANIMATION, 0, &motion, 0);
+            const bool animate = motion && AfxGetApp()->GetProfileInt(L"Settings", L"FluentChromeAnimation", 1) != 0;
+            m_topChromeHost.Present(false, animate);
+            m_bottomChromeHost.Present(false, animate);
+        } else { m_nativeHeader.Hide(); m_nativeBackdrop.Hide(); }
+        if (m_pMainFrame->m_wndPlaylistBar.UsesNativePopup())
+            m_pMainFrame->m_wndPlaylistBar.RefreshNativePopup(CRect(0, 0, 0, 0), false, 96, false);
+        return;
+    }
     // Mount before the first artwork allocation, not after its first paint.
     // During frame construction native bars may not exist yet; wait for them.
     if (!m_chromeHosted && !m_pMainFrame->HasDedicatedFSVideoWindow()) {
@@ -274,52 +287,13 @@ void CChildView::UpdateNativeDecoration()
         m_nativeHeader.Hide(); m_nativeBackdrop.Hide(); return;
     }
     CString title; m_pMainFrame->GetWindowText(title);
-    // Remove the suffix of an actual resource name, not the last dotted
-    // word of an arbitrary metadata/stream title. No format allow-list.
-    CString source = m_pMainFrame->m_wndPlaylistBar.GetCurFileName();
-    CString cleanSource(source);
-    const int scheme = source.Find(L"://");
-    const bool url = scheme > 1;
-    if (url) {
-        const int query = cleanSource.FindOneOf(L"?#");
-        if (query >= 0) cleanSource.Truncate(query);
-    }
-    CString filename = PathUtils::StripPathOrUrl(cleanSource);
-    const int urlPath = url ? cleanSource.Find(L'/', scheme + 3) : -1;
-    const bool resourceName = !url || (urlPath >= 0 && cleanSource.Right(1) != L"/");
-    CString candidate;
-    if (resourceName && !source.IsEmpty() && (title.CompareNoCase(source) == 0 || title.CompareNoCase(cleanSource) == 0))
-        candidate = cleanSource;
-    else if (resourceName && !filename.IsEmpty() && (title.CompareNoCase(filename) == 0
-            || title.CompareNoCase(m_pMainFrame->GetFileName()) == 0)) candidate = filename;
-    const int dot = candidate.ReverseFind(L'.');
-    const int separator = std::max(candidate.ReverseFind(L'/'), candidate.ReverseFind(L'\\'));
-    if (dot > separator + 1 && dot < candidate.GetLength() - 1) title = candidate.Left(dot);
-    // EXTINF/imported/edited playlist labels are authoritative stream names.
-    // A URL alone cannot supply a programme title; retain the native fallback
-    // when the playlist has no distinct label. Do not strip dots from labels.
-    if (url) {
-        CPlaylistItem item;
-        if (m_pMainFrame->m_wndPlaylistBar.GetCur(item)) {
-            CString label(item.m_label); label.Trim();
-            CString stem(filename);
-            const int suffix = stem.ReverseFind(L'.');
-            if (suffix > 0) stem.Truncate(suffix);
-            if (!label.IsEmpty() && label.CompareNoCase(source) != 0
-                    && label.CompareNoCase(cleanSource) != 0 && label.CompareNoCase(filename) != 0
-                    && label.CompareNoCase(stem) != 0)
-                title = label;
-        }
-    }
-    CString programmeTip;
-    if (url) {
-        CPlaylistItem item;
-        CString displayTitle, displayTip;
-        if (m_pMainFrame->m_wndPlaylistBar.GetCur(item)
-                && m_pMainFrame->m_wndPlaylistBar.GetStreamDisplayCaption(item, displayTitle, displayTip)) {
-            if (!displayTitle.IsEmpty()) title = displayTitle;
-            programmeTip = displayTip;
-        }
+    CString captionTip;
+    CPlaylistItem captionItem;
+    CString displayTitle, displayTip;
+    if (m_pMainFrame->m_wndPlaylistBar.GetCur(captionItem)
+            && m_pMainFrame->m_wndPlaylistBar.GetDisplayCaption(captionItem, displayTitle, displayTip)) {
+        if (!displayTitle.IsEmpty()) title = displayTitle;
+        captionTip = displayTip;
     }
     const int dpi = m_pMainFrame->m_dpi.ScaleY(96);
     CRect bottom(view); bottom.top = std::max(view.top, view.bottom - int(height));
@@ -355,7 +329,7 @@ void CChildView::UpdateNativeDecoration()
     }
     top.bottom = std::min(bottomVisible ? bottom.top : view.bottom, top.top + headerHeight);
     const bool headerVisible = !mediaLoaded || nativeVisible;
-    m_nativeHeader.titleTip = headerVisible ? programmeTip : CString();
+    m_nativeHeader.titleTip = headerVisible ? captionTip : CString();
     if (m_chromeHosted) {
         BOOL systemMotion = TRUE; SystemParametersInfo(SPI_GETCLIENTAREAANIMATION, 0, &systemMotion, 0);
         const bool animate = mediaLoaded && systemMotion

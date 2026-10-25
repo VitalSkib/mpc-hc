@@ -2019,6 +2019,13 @@ void CMainFrame::OnSize(UINT nType, int cx, int cy)
 
 void CMainFrame::OnSizing(UINT nSide, LPRECT lpRect)
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    // Fallback for sizing loops that did not arrive through SC_SIZE.
+    if (!m_nativeChromeSizing && !IsFullScreenMode()) {
+        m_nativeChromeSizing = true;
+        m_controls.UpdateToolbarsVisibility();
+    }
+#endif
     __super::OnSizing(nSide, lpRect);
 
     if (m_fFullScreen) {
@@ -2249,6 +2256,12 @@ void CMainFrame::OnSizingSnapToScreen(UINT nSide, LPRECT lpRect, bool bCtrl /*= 
 void CMainFrame::OnExitSizeMove()
 {
     NativeResizeTiming::End();
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (m_nativeChromeSizing) {
+        m_nativeChromeSizing = false;
+        m_controls.UpdateToolbarsVisibility();
+    }
+#endif
     if (m_wndView.Dragging()) {
         // HACK: windowed (not renderless) video renderers may not produce WM_MOUSEMOVE message here
         UpdateControlState(CMainFrame::UPDATE_CHILDVIEW_CURSOR_HACK);
@@ -2331,6 +2344,19 @@ LRESULT CMainFrame::OnDpiChanged(WPARAM wParam, LPARAM lParam)
     return 0;
 }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+bool CMainFrame::NativeChromeHoverAt(CPoint point)
+{
+    if (NativeChromeSizing() || !CanHoverControls()) return false;
+    CRect bounds; GetWindowRect(bounds);
+    // Match the existing frameless view's resize band. The band is not a
+    // hover target, but actual nonclient resize input remains unchanged.
+    if (!IsFullScreenMode() && !IsZoomed())
+        bounds.DeflateRect(GetSystemMetrics(SM_CXSIZEFRAME), GetSystemMetrics(SM_CYSIZEFRAME));
+    return bounds.PtInRect(point);
+}
+#endif
+
 void CMainFrame::OnSysCommand(UINT nID, LPARAM lParam)
 {
     if ((nID & 0xFFF0) == SC_SCREENSAVE || (nID & 0xFFF0) == SC_MONITORPOWER) {
@@ -2350,7 +2376,21 @@ void CMainFrame::OnSysCommand(UINT nID, LPARAM lParam)
         PLAYER_LOG(_T("CMainFrame::OnSysCommand - nID=0x%x lParam=%ld"), nID, lParam);
     }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    const bool sizing = (nID & 0xFFF0) == SC_SIZE && !IsFullScreenMode();
+    if (sizing) {
+        m_nativeChromeSizing = true;
+        m_controls.UpdateToolbarsVisibility();
+    }
+#endif
     __super::OnSysCommand(nID, lParam);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    // Also restore after cancellation/early return from the system loop.
+    if (sizing && m_nativeChromeSizing) {
+        m_nativeChromeSizing = false;
+        m_controls.UpdateToolbarsVisibility();
+    }
+#endif
 }
 
 void CMainFrame::OnActivateApp(BOOL bActive, DWORD dwThreadID)

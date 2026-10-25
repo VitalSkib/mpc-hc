@@ -651,6 +651,11 @@ private:
 
 public:
     bool CanHoverControls() { return IsWindowEnabled() && GetModalParent()->IsWindowEnabled(); }
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    bool m_nativeChromeSizing = false;
+    bool NativeChromeSizing() const { return m_nativeChromeSizing; }
+    bool NativeChromeHoverAt(CPoint point);
+#endif
     void StartWebServer(int nPort);
     void StopWebServer();
 

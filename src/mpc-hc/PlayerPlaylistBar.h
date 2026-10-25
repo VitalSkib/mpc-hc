@@ -208,6 +208,8 @@ public:
     CString m_programmeCaption;
     bool GetProgrammeCaption(const CString& source, CString& title, CString& tip) const;
     bool GetStreamDisplayCaption(const CPlaylistItem& item, CString& title, CString& tip, bool current = true) const;
+    bool GetDisplayCaption(const CPlaylistItem& item, CString& title, CString& tip,
+        bool current = true, CString* playlistText = nullptr) const;
     bool UpdateProgrammeCaption();
 #endif
 
