@@ -153,3 +153,26 @@ mutate actual file tags, history, saved playlist labels or URL query strings.
 CI cannot prove visual performance. The user checks resizing, cancellation,
 move-only behavior, hover reveal/hide, local captions and schedule numbering.
 No GUI automation or player launch by the agent.
+
+
+## Early animated hide and label-only programme priority
+
+User clarified that slow edge press works and immediate press/drag starts hide
+late. Keep normal hide animation: do not substitute instant disappearance.
+Classify hovering the existing resize band as an ordinary hide request. On the
+stock view's resize button-down call BeginNativeChromeSizing before SC_SIZE;
+use the same idempotent entry from frame SC_SIZE and WM_SIZING fallback. Start
+host/playlist hide before native toolbar hider layout. Use the request timestamp
+for host hide elapsed time so a late first WM_TIMER cannot defer its start.
+No new timer, no sleep, no move/sizing emulation; stock resize input is retained.
+Opening animation duration and timing remain unchanged.
+
+Current-stream captions only: if the exact source has a known channel header
+but zero structured intervals, choose the first same-source timed programme label
+from the imported list. The source-bound label-only list is supplied with the
+current programme first. Keep playback selection, labels and numbering intact.
+The shared GetStreamDisplayCaption serves header and OSD. Hovering the channel
+row still describes the channel. With structured intervals keep Current() and
+its expired/overlap protection; do not substitute an arbitrary future programme.
+Without a programme label keep the existing channel fallback. Label-only times
+remain imported text; do not invent dates or intervals.

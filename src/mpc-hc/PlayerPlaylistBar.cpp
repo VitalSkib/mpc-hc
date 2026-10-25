@@ -1882,8 +1882,23 @@ bool CPlayerPlaylistBar::GetProgrammeCaption(const CString& source, CString& tit
 bool CPlayerPlaylistBar::GetStreamDisplayCaption(const CPlaylistItem& item, CString& title, CString& tip, bool current) const
 {
     if (item.m_fns.IsEmpty()) return false;
+    const std::wstring source(item.m_fns.GetHead().GetString());
+    std::wstring label(item.m_label.GetString());
+    if (current && m_programmeGuide.rows.empty() && m_programmeGuide.HasChannelHeader(source, label)) {
+        // Imported label-only schedules keep the channel selected as the live
+        // URL. For captions use their first programme, not the channel heading.
+        // Never substitute a future row for a structured guide's Current().
+        POSITION pos = m_pl.GetHeadPosition();
+        while (pos) {
+            const CPlaylistItem& row = m_pl.GetNext(pos);
+            if (row.m_fns.IsEmpty() || row.m_fns.GetHead() != item.m_fns.GetHead()) continue;
+            const auto candidate = CNativeProgrammeGuide::Clean(row.m_label.GetString());
+            if (m_programmeGuide.HasChannelHeader(source, candidate)) continue;
+            if (CNativeProgrammeGuide::LabelTitle(candidate) != candidate) { label = candidate; break; }
+        }
+    }
     std::wstring displayTitle, displayTip;
-    if (!m_programmeGuide.Caption(item.m_fns.GetHead().GetString(), item.m_label.GetString(),
+    if (!m_programmeGuide.Caption(source, label,
             CNativeProgrammeGuide::Now(), current, displayTitle, displayTip)) return false;
     title = displayTitle.c_str(); tip = displayTip.c_str();
     return true;

@@ -2021,10 +2021,7 @@ void CMainFrame::OnSizing(UINT nSide, LPRECT lpRect)
 {
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
     // Fallback for sizing loops that did not arrive through SC_SIZE.
-    if (!m_nativeChromeSizing && !IsFullScreenMode()) {
-        m_nativeChromeSizing = true;
-        m_controls.UpdateToolbarsVisibility();
-    }
+    BeginNativeChromeSizing();
 #endif
     __super::OnSizing(nSide, lpRect);
 
@@ -2345,15 +2342,28 @@ LRESULT CMainFrame::OnDpiChanged(WPARAM wParam, LPARAM lParam)
 }
 
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-bool CMainFrame::NativeChromeHoverAt(CPoint point)
+void CMainFrame::BeginNativeChromeSizing()
 {
+    if (m_nativeChromeSizing || IsFullScreenMode()) return;
+    m_nativeChromeSizing = true;
+    // Start the existing hide before the native hider can recalculate layout.
+    m_wndView.UpdateNativeDecoration();
+    m_controls.UpdateToolbarsVisibility();
+}
+
+bool CMainFrame::NativeChromeHoverAt(CPoint point, bool* resizeBorder)
+{
+    if (resizeBorder) *resizeBorder = false;
     if (NativeChromeSizing() || !CanHoverControls()) return false;
     CRect bounds; GetWindowRect(bounds);
+    const bool onWindow = bounds.PtInRect(point);
     // Match the existing frameless view's resize band. The band is not a
     // hover target, but actual nonclient resize input remains unchanged.
     if (!IsFullScreenMode() && !IsZoomed())
         bounds.DeflateRect(GetSystemMetrics(SM_CXSIZEFRAME), GetSystemMetrics(SM_CYSIZEFRAME));
-    return bounds.PtInRect(point);
+    const bool hovering = bounds.PtInRect(point);
+    if (resizeBorder) *resizeBorder = onWindow && !hovering;
+    return hovering;
 }
 #endif
 
@@ -2378,10 +2388,7 @@ void CMainFrame::OnSysCommand(UINT nID, LPARAM lParam)
 
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
     const bool sizing = (nID & 0xFFF0) == SC_SIZE && !IsFullScreenMode();
-    if (sizing) {
-        m_nativeChromeSizing = true;
-        m_controls.UpdateToolbarsVisibility();
-    }
+    if (sizing) BeginNativeChromeSizing();
 #endif
     __super::OnSysCommand(nID, lParam);
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION

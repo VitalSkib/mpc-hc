@@ -654,7 +654,8 @@ public:
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
     bool m_nativeChromeSizing = false;
     bool NativeChromeSizing() const { return m_nativeChromeSizing; }
-    bool NativeChromeHoverAt(CPoint point);
+    bool NativeChromeHoverAt(CPoint point, bool* resizeBorder = nullptr);
+    void BeginNativeChromeSizing();
 #endif
     void StartWebServer(int nPort);
     void StopWebServer();

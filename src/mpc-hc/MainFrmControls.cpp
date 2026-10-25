@@ -467,8 +467,10 @@ void CMainFrameControls::UpdateToolbarsVisibility()
     const bool bCanHideDockedPanels = s.bHideFullscreenDockedPanels;
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
     const bool sizing = m_pMainFrame->NativeChromeSizing();
+    bool resizeBorder = false;
+    const bool chromeHover = m_pMainFrame->NativeChromeHoverAt(screenPoint, &resizeBorder);
 #else
-    const bool sizing = false;
+    const bool sizing = false, resizeBorder = false;
 #endif
 
     bool bEnumedPanelZones = false;
@@ -500,7 +502,7 @@ void CMainFrameControls::UpdateToolbarsVisibility()
         bExclSeekbar = true;
     }
 
-    if (sizing) {
+    if (sizing || resizeBorder) {
         // Feed the ordinary hider rather than changing the selected controls.
         mask.hide(DOCK_BOTTOM | DOCK_RIGHT | DOCK_LEFT | DOCK_TOP);
     } else if (m_pMainFrame->IsFullScreenMainFrame() && s.bHideFullscreenControls &&
@@ -529,7 +531,7 @@ void CMainFrameControls::UpdateToolbarsVisibility()
             }
             const bool bOnWindow = CMouse::CursorOnRootWindow(screenPoint, *m_pMainFrame)
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-                && m_pMainFrame->NativeChromeHoverAt(screenPoint)
+                && chromeHover
 #endif
                 ;
             auto testCapture = [&]() {

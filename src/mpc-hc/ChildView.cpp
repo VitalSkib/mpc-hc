@@ -668,6 +668,9 @@ void CChildView::OnNcLButtonDown(UINT nHitTest, CPoint point)
             break;
     }
     if (flag) {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        m_pMainFrame->BeginNativeChromeSizing();
+#endif
         m_pMainFrame->SendMessage(WM_SYSCOMMAND, SC_SIZE | flag, MAKELPARAM(point.x, point.y));
     }
 }

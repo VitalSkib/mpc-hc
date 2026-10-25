@@ -142,7 +142,10 @@ public:
             if (revealing) RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_NOERASE);
             return;
         }
-        m_from = m_position; m_start = 0;
+        // A busy native sizing loop may deliver the first WM_TIMER late.
+        // Hide time starts at the request, not at that first timer delivery.
+        // Keep the established reveal timing unchanged.
+        m_from = m_position; m_start = visible ? 0 : GetTickCount64();
         Apply();
         if (visible || m_position > 0) ShowWindow(SW_SHOWNOACTIVATE);
         // A hidden ancestor may discard a keyed descendant's backing surface.

@@ -333,7 +333,10 @@ void CNativePlaylistPopup::Dismiss()
 void CNativePlaylistPopup::Refresh(const CRect& band, bool show, int dpi, bool controlsVisible)
 {
     if (!m_bar->m_pMainFrame->CanHoverControls()) { HideEnabled(false); return; }
-    if (m_bar->m_pMainFrame->NativeChromeSizing()) { HideEnabled(); return; }
+    bool resizeBorder = false;
+    CPoint hoverPoint; ::GetCursorPos(&hoverPoint);
+    m_bar->m_pMainFrame->NativeChromeHoverAt(hoverPoint, &resizeBorder);
+    if (m_bar->m_pMainFrame->NativeChromeSizing() || resizeBorder) { HideEnabled(); return; }
     const bool sameLayout = m_band == band && m_dpi == dpi;
     m_band = band;
     if (m_dpi != dpi || !m_titleFont.GetSafeHandle()) {
