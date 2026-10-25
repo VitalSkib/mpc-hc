@@ -1894,7 +1894,7 @@ bool CPlayerPlaylistBar::GetDisplayCaption(const CPlaylistItem& item, CString& t
 {
     title.Empty(); tip.Empty();
     if (item.m_fns.IsEmpty() || item.m_type != CPlaylistItem::file) return false;
-    const CString source(item.m_fns.GetHead());
+    CString source(item.m_fns.GetHead());
     if (GetStreamDisplayCaption(item, title, tip, current)) {
         if (playlistText) *playlistText = item.m_label;
         if (!title.IsEmpty()) return true;
