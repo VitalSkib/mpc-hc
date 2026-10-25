@@ -1,4 +1,4 @@
-name: Native chrome baseline without resize experiments
+name: Native video geometry fix
 
 on:
   pull_request:
@@ -120,9 +120,9 @@ jobs:
             'Thin blue/grey native seekbar with zero-alpha background above the backdrop.',
             'Moving video must show through ABOVE and BELOW the thin track.',
             'Check native seek, outside release, hover time and seek preview.',
-            'Diagnostics: MPC-HC-geometry.log is created beside the EXE and overwritten on each run.',
-            'Open the same video, resize until the fault, hide/show controls, toggle fullscreen, close.',
-            'Keep the log from that run. No frames or media filenames are logged.',
+            'Control build: per-message UI and per-present geometry diagnostics are compiled out.',
+            'Compare resize on the same video with all accepted visual effects enabled.',
+            'Geometry/UI logs left by older builds are not refreshed by this build.',
             'Transparent pixels may pass mouse input through: check button targeting too.',
             'Native toolbar artwork selection, state backgrounds, input and commands remain unchanged.',
             'The empty seekbar is already thin/transparent before opening media.',
@@ -136,7 +136,7 @@ jobs:
       - name: Upload standalone test build
         uses: actions/upload-artifact@v4
         with:
-          name: MPC-HC-x64-minimal-resize-baseline-${{ github.sha }}
+          name: MPC-HC-x64-native-video-layout-${{ github.sha }}
           path: |
             bin/mpc-hc_x64 Lite/mpc-hc64.exe
             bin/mpc-hc_x64 Lite/mpc-hc64.ini

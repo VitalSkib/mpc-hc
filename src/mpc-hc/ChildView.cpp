@@ -20,6 +20,7 @@
  */
 
 #include "stdafx.h"
+#include "NativeResizeTiming.h"
 #include "mplayerc.h"
 #include "ChildView.h"
 #include "MainFrm.h"
@@ -244,6 +245,7 @@ void CChildView::UpdateProgrammeCaption()
 
 void CChildView::UpdateNativeDecoration()
 {
+    NativeResizeTiming::Scope timing(NativeResizeTiming::Decoration);
     if (m_refreshingNativeDecoration || !GetSafeHwnd() || !m_pMainFrame->CanHoverControls()) return;
     m_refreshingNativeDecoration = true;
     struct ResetFlag { bool& flag; ~ResetFlag() { flag = false; } } reset{m_refreshingNativeDecoration};
@@ -255,6 +257,7 @@ void CChildView::UpdateNativeDecoration()
         EnsureNativeChromeHosts();
     }
     CRect view; GetClientRect(view);
+    timing.Bounds(view.Width(),view.Height());
     const unsigned height = m_pMainFrame->m_controls.GetVisibleToolbarsHeight();
     const bool mediaLoaded = m_pMainFrame->GetLoadState() == MLS::LOADED;
     const bool videoLoaded = mediaLoaded && !m_pMainFrame->m_fAudioOnly;
@@ -369,7 +372,9 @@ void CChildView::UpdateNativeDecoration()
         }
         const unsigned visibleHosted = controls.GetVisibleHostedToolbarsHeight();
         CRect footer(view); footer.top = std::max(footer.top, footer.bottom-totalHeight);
+        { NativeResizeTiming::Scope phase(NativeResizeTiming::Hosts);
         m_topChromeHost.Layout(top); m_bottomChromeHost.Layout(footer);
+        }
         m_nativeBackdrop.separators.clear();
         int rowTop = 0;
         for (const auto& row : rows) {
@@ -384,16 +389,22 @@ void CChildView::UpdateNativeDecoration()
         // Complete layout and update the toolbar's layered bitmap while the
         // viewport is still hidden/clipped. Showing it must not reuse an image
         // rendered at the previous fullscreen width.
+        { NativeResizeTiming::Scope phase(NativeResizeTiming::Toolbar);
         m_pMainFrame->m_wndToolBar.PrepareNativePresentation();
+        }
         const CRect footerClient(0, 0, footer.Width(), footer.Height());
         m_nativeBackdrop.shadedAreas = {footerClient}; m_nativeBackdrop.headerExclusion.SetRectEmpty();
         if (!footerClient.IsRectEmpty()) {
+            { NativeResizeTiming::Scope phase(NativeResizeTiming::Footer);
             m_nativeBackdrop.Refresh(m_bottomChromeHost.Content(), footerClient, false, CString(), dpi);
+            }
             if (::GetWindow(m_nativeBackdrop.m_hWnd, GW_HWNDNEXT))
                 m_nativeBackdrop.SetWindowPos(&wndBottom, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         }
+        { NativeResizeTiming::Scope phase(NativeResizeTiming::Header);
         m_nativeHeader.Refresh(m_topChromeHost.Content(), CRect(0, 0, top.Width(), top.Height()), true,
             mediaLoaded ? title : CString(), dpi, m_pMainFrame->IsFullScreenMode() || m_pMainFrame->IsZoomed());
+        }
         m_topChromeHost.Present(headerVisible, animate);
         // The old video-only condition controlled decoration, not the real
         // toolbar. The hosted native controls must remain available for audio.
@@ -580,15 +591,9 @@ void CChildView::OnWindowPosChanging(WINDOWPOS* position)
             position->flags &= ~SWP_NOZORDER;
         }
     }
-    // Do not preserve pixels from the old-sized video surface.
-    CRect before;
-    GetWindowRect(before);
-    if (CWnd* parent = GetParent()) parent->ScreenToClient(before);
-    const bool resized = !(position->flags & SWP_NOSIZE)
-        && (position->cx != before.Width() || position->cy != before.Height());
-    const bool moved = !(position->flags & SWP_NOMOVE)
-        && (position->x != before.left || position->y != before.top);
-    if (resized || moved) position->flags |= SWP_NOCOPYBITS;
+    // Keep the stock video view's valid-pixel policy. Discarding cached bits
+    // is needed by our transparent chrome hosts, not by the real video HWND.
+    // OnSize/OnPaint and the presenter still update the new video rectangle.
     __super::OnWindowPosChanging(position);
 #ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
     if (!(position->flags & SWP_NOSIZE)) {
@@ -604,6 +609,9 @@ void CChildView::OnWindowPosChanging(WINDOWPOS* position)
 void CChildView::OnSize(UINT nType, int cx, int cy)
 {
     __super::OnSize(nType, cx, cy);
+    // Preserve the stock view-size notification path, including notifications
+    // inside the frame's deferred child placement. The new client size is
+    // already installed here; do not postpone its renderer update to the frame.
     if (!m_bSwitchingFullscreen) {
         m_pMainFrame->MoveVideoWindow();
     }

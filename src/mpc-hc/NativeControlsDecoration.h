@@ -286,14 +286,23 @@ public:
         }
     }
     void Refresh(CWnd* view, const CRect& rectangle, bool header, const CString& title, int dpi, bool restore = false) {
+        // Isolate the shared shade from the actual native controls. Disabled
+        // at startup, this path creates no layered backdrop HWND or bitmap.
+        if (!header && !AfxGetApp()->GetProfileInt(L"Settings", L"FluentFooterBackdrop", 1)) {
+            Hide(); return;
+        }
         if (rectangle.IsRectEmpty()) { Hide(); return; }
         if (!GetSafeHwnd()) {
             m_header = header;
-            const DWORD extended = WS_EX_NOACTIVATE | (header ? WS_EX_NOREDIRECTIONBITMAP
-                : WS_EX_LAYERED | WS_EX_TRANSPARENT);
+            // Diagnostic isolation: zero tint still runs Acrylic. Disable
+            // its controller/target entirely and use the existing alpha path.
+            const bool acrylic = header
+                && AfxGetApp()->GetProfileInt(L"Settings", L"FluentHeaderAcrylic", 1) != 0;
+            const DWORD extended = WS_EX_NOACTIVATE | (acrylic ? WS_EX_NOREDIRECTIONBITMAP
+                : WS_EX_LAYERED | (header ? 0 : WS_EX_TRANSPARENT));
             if (!CreateEx(extended, AfxRegisterWndClass(header ? CS_DBLCLKS : 0), L"Native control decoration",
                     WS_CHILD, rectangle, view, 0)) return;
-            if (header) {
+            if (acrylic) {
                 m_materialActive = m_material.Start(m_hWnd, 3, false);
                 if (!m_materialActive) ModifyStyleEx(WS_EX_NOREDIRECTIONBITMAP, WS_EX_LAYERED);
             }
@@ -340,8 +349,12 @@ public:
         }
         if (m_tip.GetSafeHwnd()) m_tip.UpdateTipText(m_restore ? L"Restore" : L"Maximize", this, 2);
         SetWindowPos(&wndTop, rectangle.left, rectangle.top, rectangle.Width(), rectangle.Height(), SWP_NOACTIVATE);
-        if (DrawSurface()) ShowWindow(SW_SHOWNOACTIVATE);
-        else Hide(); // leave native controls usable if decoration cannot be rendered
+        if (DrawSurface()) {
+            ShowWindow(SW_SHOWNOACTIVATE);
+            // SetWindowPos/ShowWindow can leave WM_PAINT pending after the
+            // complete alpha surface was already published above.
+            ValidateRect(nullptr);
+        } else Hide(); // leave native controls usable if decoration cannot be rendered
 #ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
         const RECT expected = rectangle;
         GeometryDiagnostics::Record(m_header ? "decor.header-layout" : "decor.backdrop-layout",
