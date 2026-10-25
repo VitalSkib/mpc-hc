@@ -1,4 +1,4 @@
-name: Opaque native controls resize comparison
+name: Prepare chrome surfaces before viewport placement
 
 on:
   pull_request:
@@ -98,12 +98,10 @@ jobs:
           call build.user.bat
           call "%MPCHC_VS_PATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
           cl /nologo /c /EHsc /std:c++17 /DMPC_EXPERIMENTAL_NATIVE_DECORATION /DMPC_MATERIAL_STANDALONE /I"src\mpc-hc\wasdk-probe\generated" src\mpc-hc\NativePlaylistMaterial.cpp /Fo"src\mpc-hc\wasdk-probe\preflight.obj"
-      - name: Build opaque stock-presentation x64 control
+      - name: Build styled x64 viewport ordering test
         shell: cmd
         env:
-          # Temporary whole-presentation control. Normal flags are preserved in
-          # docs/FluentUIContract.md; application source changes are not reverted.
-          CL: /DMPC_OPAQUE_RESIZE_CONTROL
+          CL: /DMPC_EXPERIMENTAL_NATIVE_SEEKBAR /DMPC_EXPERIMENTAL_NO_BACKDROP /DMPC_EXPERIMENTAL_NATIVE_DECORATION
         run: build.bat Build x64 Main Release Lite
       - name: Package isolated test settings
         shell: pwsh
@@ -138,7 +136,7 @@ jobs:
       - name: Upload standalone test build
         uses: actions/upload-artifact@v4
         with:
-          name: MPC-HC-x64-opaque-control-${{ github.sha }}
+          name: MPC-HC-x64-viewport-order-${{ github.sha }}
           path: |
             bin/mpc-hc_x64 Lite/mpc-hc64.exe
             bin/mpc-hc_x64 Lite/mpc-hc64.ini

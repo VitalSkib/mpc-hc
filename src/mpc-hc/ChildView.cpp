@@ -372,9 +372,9 @@ void CChildView::UpdateNativeDecoration()
         }
         const unsigned visibleHosted = controls.GetVisibleHostedToolbarsHeight();
         CRect footer(view); footer.top = std::max(footer.top, footer.bottom-totalHeight);
-        { NativeResizeTiming::Scope phase(NativeResizeTiming::Hosts);
-        m_topChromeHost.Layout(top); m_bottomChromeHost.Layout(footer);
-        }
+        // Prepare descendants at their final row sizes before moving the
+        // visible viewports. Otherwise the new host geometry exposes surfaces
+        // still rendered for the previous window width.
         m_nativeBackdrop.separators.clear();
         int rowTop = 0;
         for (const auto& row : rows) {
@@ -391,6 +391,10 @@ void CChildView::UpdateNativeDecoration()
         // rendered at the previous fullscreen width.
         { NativeResizeTiming::Scope phase(NativeResizeTiming::Toolbar);
         m_pMainFrame->m_wndToolBar.PrepareNativePresentation();
+        // The native seekbar invalidates on placement, but its queued paint
+        // must not lag behind the host move. Only service its pending paint;
+        // do not invalidate or repaint the video view from this path.
+        m_pMainFrame->m_wndSeekBar.UpdateWindow();
         }
         const CRect footerClient(0, 0, footer.Width(), footer.Height());
         m_nativeBackdrop.shadedAreas = {footerClient}; m_nativeBackdrop.headerExclusion.SetRectEmpty();
@@ -404,6 +408,12 @@ void CChildView::UpdateNativeDecoration()
         { NativeResizeTiming::Scope phase(NativeResizeTiming::Header);
         m_nativeHeader.Refresh(m_topChromeHost.Content(), CRect(0, 0, top.Width(), top.Height()), true,
             mediaLoaded ? title : CString(), dpi, m_pMainFrame->IsFullScreenMode() || m_pMainFrame->IsZoomed());
+        }
+        // Publish viewport placement last, after artwork, shade and header
+        // have their new sizes. This is ordering, not a cross-HWND atomic
+        // compositor transaction; no freeze, timer or visibility toggle.
+        { NativeResizeTiming::Scope phase(NativeResizeTiming::Hosts);
+        m_topChromeHost.Layout(top); m_bottomChromeHost.Layout(footer);
         }
         m_topChromeHost.Present(headerVisible, animate);
         // The old video-only condition controlled decoration, not the real

@@ -101,7 +101,7 @@ normal unattended workflow. Keep FluentResizeTiming disabled for ordinary use.
 
 ## Temporary opaque-presentation control (2026-10-25)
 
-The current CI application build deliberately defines only MPC_OPAQUE_RESIZE_CONTROL
+The temporary opaque comparison build 0ea783b deliberately defined only MPC_OPAQUE_RESIZE_CONTROL
 and omits MPC_EXPERIMENTAL_NATIVE_SEEKBAR, MPC_EXPERIMENTAL_NO_BACKDROP and
 MPC_EXPERIMENTAL_NATIVE_DECORATION. This selects the existing ordinary/native
 opaque paint and docking branches, without the added layered controls, chrome
@@ -115,3 +115,23 @@ Do not re-enable MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS. Keep the current rendere
 and current user INI unchanged when installing this one-factor control. Do not
 run interactive UI checks without a separate agreement; the user checks visuals.
 Absence of the new composition/host paths in the control is intentional.
+
+## Prepare chrome before viewport placement (2026-10-25)
+
+The opaque comparison is complete; normal styled compiler flags are restored,
+without heavy geometry diagnostics. User observed more control jumping with the
+styled presentation than with the original EXE. Do not treat the opaque result
+as excluding an amplifying contribution from custom layered presentation.
+
+In hosted UpdateNativeDecoration, arrange the rows and prepare the toolbar,
+service the seekbar's pending native paint, and refresh shade/header before
+moving/resizing their visible viewports. Previously viewport Layout ran first,
+exposing the old-sized descendants while their images were being rebuilt.
+UpdateWindow only services an existing seekbar update region; do not force a
+video redraw, call a renderer, add sleeps/flushes or toggle host visibility.
+This does not promise atomic presentation across separate HWNDs. Keep all
+appearance, input, native status/statistics, playlist and guide behavior.
+
+CI and source review do not establish a visual fix. User checks continuous
+resize, fullscreen return, hover reveal/hide and seek/button input; no agent
+GUI automation without separate authorization. Keep current portable settings.
