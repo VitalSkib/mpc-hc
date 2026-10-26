@@ -40,6 +40,8 @@ int main(){
     check(xml(guide,L"Yosso TV Adventure",g),"exact name match ignores case");
     check(g.rows.size()==1&&g.rows[0].title==L"Film & test","XML escaped title and intervals");
     check(g.rows[0].start==CNativeProgrammeGuide::Stamp(L"20261026154100 +0500"),"local timezone conversion");
+    CNativeProgrammeGuide withDtd;
+    check(xml("<!DOCTYPE tv SYSTEM \"https://iptvx.one/xmltv.dtd\">"+guide,L"Yosso TV Adventure",withDtd),"real XMLTV external DTD ignored without fetching");
     CNativeProgrammeGuide wrong;
     check(!xml(guide,L"Other channel",wrong),"no approximate channel match");
     const auto ambiguous="<tv><channel id=\"test\"><display-name>YOSSO TV Adventure</display-name></channel><channel id=\"other\"><display-name>YOSSO TV Adventure</display-name></channel>"+programme+"</tv>";
