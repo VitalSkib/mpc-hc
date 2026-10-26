@@ -89,8 +89,9 @@ inline bool ReadGuide(IStream* stream,const std::wstring& service,CNativeProgram
     IXmlReader* raw=nullptr;if(FAILED(CreateXmlReader(__uuidof(IXmlReader),reinterpret_cast<void**>(&raw),nullptr)))return false;
     std::unique_ptr<IXmlReader,void(*)(IXmlReader*)> reader(raw,[](IXmlReader* p){p->Release();});
     // XMLTV declares an external DTD; ignore it without resolving or loading it.
-    raw->SetProperty(XmlReaderProperty_DtdProcessing,DtdProcessing_Ignore);
+    raw->SetProperty(XmlReaderProperty_DtdProcessing,DtdProcessing_Parse);
     raw->SetProperty(XmlReaderProperty_XmlResolver,0);
+    raw->SetProperty(XmlReaderProperty_MaxEntityExpansion,4096);
     if(FAILED(raw->SetInput(stream)))return false;
     std::set<std::wstring> matches;std::map<std::wstring,std::wstring> labels;std::wstring channelId,display,programmeId,field;unsigned channelDepth=0,programmeDepth=0;
     CNativeProgrammeGuide::Programme programme;std::map<std::wstring,std::vector<CNativeProgrammeGuide::Programme>> candidates;

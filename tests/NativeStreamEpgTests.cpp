@@ -48,7 +48,7 @@ int main(){
     check(!xml(ambiguous,L"Yosso TV Adventure",wrong),"ambiguous XMLTV channels rejected");
     const auto overlapping="<tv><channel id=\"test\"><display-name>YOSSO TV Adventure</display-name></channel>"+programme+"<programme channel=\"test\" start=\"20261026140000 +0300\" stop=\"20261026160000 +0300\"><title>Conflict</title></programme></tv>";
     check(!xml(overlapping,L"Yosso TV Adventure",wrong),"overlapping current programmes rejected");
-    check(!xml("<!DOCTYPE tv [<!ENTITY x SYSTEM 'file:///test'>]><tv/>",L"Yosso TV Adventure",wrong),"external entities prohibited");
+    check(!xml("<!DOCTYPE tv [<!ENTITY x SYSTEM 'file:///test'>]><tv><channel id='test'><display-name>&x;</display-name></channel></tv>",L"Yosso TV Adventure",wrong),"external entities prohibited");
     check(!xml("<tv><channel id=\"history\"><display-name>History Europe</display-name></channel><programme channel=\"history\" start=\"20261025130000 +0300\" stop=\"20261025140000 +0300\"><title>Old</title></programme></tv>",L"History PAN EURO HD_Virtual_ENC",wrong),"expired guide rejected");
     std::vector<unsigned char> compressed={31,139,8,0,0,0,0,0,2,255,85,141,203,10,194,48,16,69,127,37,100,43,146,105,42,93,77,103,171,191,17,108,180,3,121,145,14,133,250,245,90,90,170,46,6,46,231,112,239,160,204,132,247,209,165,228,131,226,161,215,35,79,146,235,162,9,7,158,74,112,203,57,185,232,233,182,97,52,127,20,205,94,37,44,53,63,171,139,209,171,29,125,167,212,36,174,74,175,45,216,174,89,175,189,52,0,234,4,45,192,42,115,249,113,29,216,195,17,10,75,240,116,125,113,81,15,14,17,205,6,208,28,239,62,89,102,122,3,53,169,198,240,199,0,0,0};
     auto gzip=new NativeStreamEpg::GzipStream(compressed);g.stream=L"https://example.test/live/index.m3u8";
