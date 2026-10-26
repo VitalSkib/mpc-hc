@@ -50,6 +50,17 @@ jobs:
           if errorlevel 1 exit /b 1
           programme-guide-tests.exe
           if errorlevel 1 exit /b 1
+      - name: Test bare-stream service and XMLTV parsing
+        shell: cmd
+        run: |
+          call build.user.bat
+          call "%MPCHC_VS_PATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+          cl /nologo /c /TC /I"src\thirdparty\zlib" src\thirdparty\zlib\adler32.c src\thirdparty\zlib\crc32.c src\thirdparty\zlib\inflate.c src\thirdparty\zlib\inftrees.c src\thirdparty\zlib\inffast.c src\thirdparty\zlib\zutil.c
+          if errorlevel 1 exit /b 1
+          cl /nologo /EHsc /std:c++17 /utf-8 /I"src\mpc-hc" /I"src\thirdparty" tests\NativeStreamEpgTests.cpp adler32.obj crc32.obj inflate.obj inftrees.obj inffast.obj zutil.obj /Fe:"stream-epg-tests.exe" /link ole32.lib
+          if errorlevel 1 exit /b 1
+          stream-epg-tests.exe
+          if errorlevel 1 exit /b 1
       - name: Test native playlist scrolling without intermediate painting
         shell: cmd
         run: |

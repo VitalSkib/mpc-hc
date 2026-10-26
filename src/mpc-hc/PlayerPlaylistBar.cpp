@@ -1298,6 +1298,7 @@ bool CPlayerPlaylistBar::ParseMPCPlayList(CString fn)
     // Optional sidecar is scoped to this local imported playlist and exact URL.
     // Ordinary MPCPL parsing and all playlists without valid EPG stay unchanged.
     m_programmeGuide.Clear();
+    m_autoProgrammeGuide = false;
     if (!PathUtils::IsURL(fn) && !idx.empty() && !pli[idx.front()].m_fns.IsEmpty()) {
         CString source = pli[idx.front()].m_fns.GetHead();
         bool sameSource = PathUtils::IsURL(source);
@@ -1505,6 +1506,12 @@ void CPlayerPlaylistBar::PlayListChanged() {
 bool CPlayerPlaylistBar::Empty()
 {
     CAutoLock pledit(&m_plEditLock);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    m_streamEpg.Reset();
+    m_autoProgrammeGuide = false;
+    m_programmeGuide.Clear();
+    m_programmeCaption.Empty();
+#endif
 
     bool bWasPlaying = m_pl.RemoveAll();
     m_list.SetItemCountEx(0);
@@ -1941,8 +1948,59 @@ bool CPlayerPlaylistBar::GetDisplayCaption(const CPlaylistItem& item, CString& t
     return !title.IsEmpty();
 }
 
+void CPlayerPlaylistBar::UpdateStreamEpg()
+{
+    const CString source = GetCurFileName();
+    CString resource(source); resource.MakeLower();
+    const int query = resource.FindOneOf(L"?#");
+    if (query >= 0) resource.Truncate(query);
+    const bool hls = (resource.Left(7) == L"http://" || resource.Left(8) == L"https://")
+        && resource.Right(5) == L".m3u8";
+    if (!hls || m_pl.IsEmpty()) { m_streamEpg.Reset(); return; }
+    // A browser/imported guide keeps precedence. Ordinary mixed playlists and
+    // local files never become synthetic channel schedules.
+    if (m_programmeGuide.stream == source.GetString() && !m_autoProgrammeGuide) return;
+    POSITION position = m_pl.GetHeadPosition();
+    while (position) {
+        const auto& item = m_pl.GetNext(position);
+        if (item.m_fns.GetCount() != 1 || item.m_fns.GetHead() != source || item.m_bYoutubeDL) {
+            m_streamEpg.Reset(); return;
+        }
+    }
+    CString hint;
+    if (m_streamEpg.NeedsRequest(source.GetString())) hint = m_pMainFrame->NativeStreamServiceName();
+    CNativeProgrammeGuide guide;
+    if (!m_streamEpg.Poll(source.GetString(), hint.GetString(), guide)) return;
+    if (GetCurFileName() != source || guide.stream != source.GetString()) return;
+    const auto remaining = guide.Remaining(CNativeProgrammeGuide::Now());
+    if (guide.channel.empty()) return;
+    CAutoLock lock(&m_plEditLock);
+    // Keep the original media item (URL, options, subtitles and duration).
+    // This only rebuilds its displayed schedule; it never reopens playback.
+    if (!GetCur()) return;
+    CPlaylistItem channel(*GetCur());
+    channel.m_label = guide.channel.c_str();
+    m_pl.RemoveAll();
+    const POSITION current = m_pl.AddTail(channel);
+    for (const auto& programme : remaining) {
+        CPlaylistItem item;
+        const UINT id = item.m_id;
+        item = channel;
+        item.m_id = id;
+        item.m_label = (CNativeProgrammeGuide::Clock(programme.start) + L" " + programme.title).c_str();
+        m_pl.AddTail(item);
+    }
+    m_pl.SetPos(current);
+    m_programmeGuide = std::move(guide);
+    m_autoProgrammeGuide = true;
+    m_programmeCaption.Empty();
+    Refresh();
+    m_SaveDelayed = true;
+}
+
 bool CPlayerPlaylistBar::UpdateProgrammeCaption()
 {
+    UpdateStreamEpg();
     CString title, tip;
     GetProgrammeCaption(GetCurFileName(), title, tip);
     if (tip == m_programmeCaption) return false;

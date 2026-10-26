@@ -36,6 +36,7 @@
 #include "NativePlaylistPresentation.h"
 #include "NativePlaylistPopup.h"
 #include "NativeProgrammeGuide.h"
+#include "NativeStreamEpg.h"
 #include <functional>
 #endif
 
@@ -205,6 +206,9 @@ public:
     CPlaylist m_pl;
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
     CNativeProgrammeGuide m_programmeGuide;
+    NativeStreamEpg::Resolver m_streamEpg;
+    bool m_autoProgrammeGuide = false;
+    void UpdateStreamEpg();
     CString m_programmeCaption;
     bool GetProgrammeCaption(const CString& source, CString& title, CString& tip) const;
     bool GetStreamDisplayCaption(const CPlaylistItem& item, CString& title, CString& tip, bool current = true) const;

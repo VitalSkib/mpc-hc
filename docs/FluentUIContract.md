@@ -176,3 +176,30 @@ row still describes the channel. With structured intervals keep Current() and
 its expired/overlap protection; do not substitute an arbitrary future programme.
 Without a programme label keep the existing channel fallback. Label-only times
 remain imported text; do not invent dates or intervals.
+
+
+## Bare HLS to XMLTV test (2026-10-26)
+
+Keep the accepted resize, painting, titlebar hit testing and all icon assets.
+Only a current HTTP(S) .m3u8 with one exact shared source is eligible. Local
+files, mixed playlists and source-bound imported browser guides are unchanged.
+On the existing position update poll a background resolver, never perform HTTP
+or XML parsing on the UI thread. Prefer source-filter service_name; otherwise
+read one manifest chain and at most 512 KiB of one TS segment, validate SDT CRC,
+and reject missing/ambiguous/unsupported service names. This bounded fallback
+temporarily uses another HTTP media connection; it is not per-frame polling.
+
+Use public https://iptvx.one/EPG_LITE, cache compressed bytes beside the portable
+player under EpgCache for 12 hours, and parse with a forward-only gzip XML reader.
+Never parse the website or use browser script context. Exact display-name match
+or explicit provider service alias -> stable XMLTV ID; preserve regional variants.
+The initial History PAN EURO HD_Virtual_ENC -> history mapping is an explicit
+test mapping to History Europe and must be compared with the actual broadcast.
+Require a unique current interval. Failed/expired/unmatched EPG leaves playback
+and the existing fallback caption intact; no fabricated programme.
+
+Apply completed results only to the exact still-selected source; cancellation
+uses owned worker state with no CWnd/COM/UI pointers crossing threads. Do not
+reopen media to fill the schedule. Retain native guide formatting: title only in
+caption, local time and channel in tooltip, numberless channel heading and first
+programme numbered 1. Imported sidecars retain precedence.

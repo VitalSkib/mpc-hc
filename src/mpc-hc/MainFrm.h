@@ -656,6 +656,13 @@ public:
     bool NativeChromeSizing() const { return m_nativeChromeSizing; }
     bool NativeChromeHoverAt(CPoint point, bool* resizeBorder = nullptr);
     void BeginNativeChromeSizing();
+    CString NativeStreamServiceName() const {
+        CComQIPtr<IPropertyBag> metadata = m_pFSF;
+        CComVariant value;
+        if (metadata && SUCCEEDED(metadata->Read(L"service_name", &value, nullptr))
+                && value.vt == VT_BSTR && value.bstrVal) return CString(value.bstrVal);
+        return CString();
+    }
 #endif
     void StartWebServer(int nPort);
     void StopWebServer();
