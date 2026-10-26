@@ -110,13 +110,14 @@ inline bool ReadGuide(IStream* stream,const std::wstring& service,CNativeProgram
             if(field==L"display-name")display.append(value,count);
             else if(field==L"title")programme.title.append(value,count);
         }else if(type==XmlNodeType_EndElement){
+            // XmlLite reports closing elements one level deeper than their opening node.
             if(tag==L"display-name"){
                 if(Name(display)==wanted||(!alias.empty()&&channelId==alias))matches.insert(channelId);
                 if(!labels.count(channelId))labels[channelId]=CNativeProgrammeGuide::Clean(display);
                 field.clear();
             }else if(tag==L"title")field.clear();
-            else if(tag==L"channel"&&depth==channelDepth){channelId.clear();}
-            else if(tag==L"programme"&&depth==programmeDepth){
+            else if(tag==L"channel"&&depth==channelDepth+1){channelId.clear();}
+            else if(tag==L"programme"&&depth==programmeDepth+1){
                 if(matches.count(programmeId)&&programme.start&&programme.stop>programme.start&&!programme.title.empty()){
                     programme.title=CNativeProgrammeGuide::Clean(programme.title);
                     auto& rows=candidates[programmeId];if(rows.size()>=4096)return false;rows.push_back(programme);
