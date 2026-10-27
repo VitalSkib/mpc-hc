@@ -11,9 +11,9 @@
 class CNativeProgrammeGuide {
 public:
     struct Programme { ULONGLONG start = 0, stop = 0; std::wstring title; };
-    std::wstring stream, channel;
+    std::wstring stream, channel, xmltvId, pageUrl;
     std::vector<Programme> rows;
-    void Clear() { stream.clear(); channel.clear(); rows.clear(); }
+    void Clear() { stream.clear(); channel.clear(); xmltvId.clear(); pageUrl.clear(); rows.clear(); }
     static ULONGLONG Now() { FILETIME f; GetSystemTimeAsFileTime(&f); return (ULONGLONG(f.dwHighDateTime)<<32)|f.dwLowDateTime; }
     static bool Local(ULONGLONG ticks, SYSTEMTIME& local) {
         FILETIME f{DWORD(ticks),DWORD(ticks>>32)}; SYSTEMTIME utc{};
@@ -126,6 +126,7 @@ public:
             ||!d.HasMember(L"stream")||!d[L"stream"].IsString()||expected!=d[L"stream"].GetString()
             ||!d.HasMember(L"context")||!d[L"context"].IsObject())return false;
         const auto& c=d[L"context"];
+        if(c.HasMember(L"pageUrl")&&c[L"pageUrl"].IsString())pageUrl=c[L"pageUrl"].GetString();
         if(!c.HasMember(L"programmes")||!c[L"programmes"].IsArray()||c[L"programmes"].Size()>4096)return false;
         if(c.HasMember(L"channelName")&&c[L"channelName"].IsString())channel=Clean(c[L"channelName"].GetString());
         for(const auto& v:c[L"programmes"].GetArray()) {

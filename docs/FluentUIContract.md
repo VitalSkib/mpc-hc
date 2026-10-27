@@ -203,3 +203,30 @@ uses owned worker state with no CWnd/COM/UI pointers crossing threads. Do not
 reopen media to fill the schedule. Retain native guide formatting: title only in
 caption, local time and channel in tooltip, numberless channel heading and first
 programme numbered 1. Imported sidecars retain precedence.
+
+
+## Learned stream identities (2026-10-27)
+
+Record confirmed browser sidecar identity asynchronously, only when its HTTP
+source and page context match; retain the existing imported guide and native UI.
+Persist hashes, channel/XMLTV identity and up to32 dated fallback rows in the
+portable EpgCache/stream-identities.json. Never persist token-bearing URLs.
+On the next bare URL open, consult learned identity before probing service names.
+No runtime per-channel aliases remain. Promote a display name to XMLTV ID only
+on a unique name match or at least two matching programme intervals/titles from
+the current browser guide. Reject ambiguous regional/simulcast schedules.
+Old/current programme rows are never treated as a new programme after expiry.
+
+One narrow provider URL schema supports rotating path token/expiry fields for
+tvcdnpotok.com; the channel path field, scheme and every query parameter remain
+part of identity. Unknown hosts or URL shapes retain exact-only matching.
+Conflicting confirmations disable the shared key rather than choose a channel.
+Identities expire after30days; cached-only reads do not renew confirmation age.
+Generic ServiceNN/ProgramNN labels are not recognised channel names.
+
+Batch validation covers key equivalence/separation, secret-free persistence,
+restarts/conflicts/expiry, current programme fallback, XMLTV IDs, fingerprint
+uniqueness, timezones, local-file exclusion and all existing rendering checks.
+The previous History test alias is migrated once as confirmed data in the cache,
+not an executable channel rule. ID/Viasat are not preseeded: learn via a real
+browser launch, disable scripts, then paste a newly signed URL to verify.

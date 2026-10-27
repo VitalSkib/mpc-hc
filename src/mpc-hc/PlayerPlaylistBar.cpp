@@ -1959,7 +1959,10 @@ void CPlayerPlaylistBar::UpdateStreamEpg()
     if (!hls || m_pl.IsEmpty()) { m_streamEpg.Reset(); return; }
     // A browser/imported guide keeps precedence. Ordinary mixed playlists and
     // local files never become synthetic channel schedules.
-    if (m_programmeGuide.stream == source.GetString() && !m_autoProgrammeGuide) return;
+    if (m_programmeGuide.stream == source.GetString() && !m_autoProgrammeGuide) {
+        m_streamEpg.Remember(m_programmeGuide);
+        return;
+    }
     POSITION position = m_pl.GetHeadPosition();
     while (position) {
         const auto& item = m_pl.GetNext(position);

@@ -1,6 +1,7 @@
 // Optional bare-HLS programme resolver. GPLv3+.
 #pragma once
 #include "NativeProgrammeGuide.h"
+#include "NativeStreamIdentity.h"
 #include <set>
 #include <map>
 #include <mutex>
@@ -16,8 +17,7 @@
 namespace NativeStreamEpg {
 inline std::wstring Name(std::wstring s) {
     s=CNativeProgrammeGuide::Clean(s);
-    for(auto& c:s)c=wchar_t(towlower(c));
-    return s;
+    return StreamIdentity::Lower(s);
 }
 inline std::wstring Utf8(const char* p, int n) {
     const int size=MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,p,n,nullptr,0);
@@ -77,15 +77,11 @@ inline std::wstring Service(const std::vector<unsigned char>& bytes) {
     }
     return names.size()==1?*names.begin():L"";
 }
-// A provider's exact technical service alias; never strip regional suffixes globally.
-inline std::wstring Alias(const std::wstring& name) {
-    return Name(name)==L"history pan euro hd_virtual_enc"?L"history":L"";
-}
 inline std::wstring Attribute(IXmlReader* r,const wchar_t* key) {
     if(r->MoveToAttributeByName(key,nullptr)!=S_OK)return {};
     const wchar_t* value=nullptr;UINT n=0;r->GetValue(&value,&n);std::wstring s(value?value:L"",n);r->MoveToElement();return s;
 }
-inline bool ReadGuide(IStream* stream,const std::wstring& service,CNativeProgrammeGuide& guide,ULONGLONG now=CNativeProgrammeGuide::Now()) {
+inline bool ReadGuide(IStream* stream,const std::wstring& service,CNativeProgrammeGuide& guide,ULONGLONG now=CNativeProgrammeGuide::Now(),const std::wstring& expectedId=L"",const CNativeProgrammeGuide* context=nullptr) {
     IXmlReader* raw=nullptr;if(FAILED(CreateXmlReader(__uuidof(IXmlReader),reinterpret_cast<void**>(&raw),nullptr)))return false;
     std::unique_ptr<IXmlReader,void(*)(IXmlReader*)> reader(raw,[](IXmlReader* p){p->Release();});
     // XMLTV declares an external DTD; ignore it without resolving or loading it.
@@ -95,7 +91,17 @@ inline bool ReadGuide(IStream* stream,const std::wstring& service,CNativeProgram
     if(FAILED(raw->SetInput(stream)))return false;
     std::set<std::wstring> matches;std::map<std::wstring,std::wstring> labels;std::wstring channelId,display,programmeId,field;unsigned channelDepth=0,programmeDepth=0;
     CNativeProgrammeGuide::Programme programme;std::map<std::wstring,std::vector<CNativeProgrammeGuide::Programme>> candidates;
-    const auto wanted=Name(service),alias=Alias(service);XmlNodeType type;HRESULT hr;
+    const auto wanted=Name(service);XmlNodeType type;HRESULT hr;
+    std::map<std::wstring,std::set<ULONGLONG>> fingerprints;
+    const bool contextCurrent=context&&context->Current(context->stream,now);
+    auto sameProgramme=[&](const CNativeProgrammeGuide::Programme& p){
+        if(!contextCurrent)return false;
+        for(const auto& r:context->rows){
+            if(r.stop<=now||r.start>now+2ULL*24*60*60*10000000)continue;
+            if(p.start/600000000==r.start/600000000&&p.stop/600000000==r.stop/600000000&&Name(p.title)==Name(r.title))return true;
+        }
+        return false;
+    };
     // XMLTV channels precede programmes; only retain rows for matching channels.
     while((hr=raw->Read(&type))==S_OK){
         const wchar_t* ptr=nullptr;UINT n=0;raw->GetLocalName(&ptr,&n);std::wstring tag(ptr?ptr:L"",n);UINT depth=0;raw->GetDepth(&depth);
@@ -115,21 +121,26 @@ inline bool ReadGuide(IStream* stream,const std::wstring& service,CNativeProgram
         }else if(type==XmlNodeType_EndElement){
             // XmlLite reports closing elements one level deeper than their opening node.
             if(tag==L"display-name"){
-                if(Name(display)==wanted||(!alias.empty()&&channelId==alias))matches.insert(channelId);
+                if(expectedId.empty()?Name(display)==wanted:channelId==expectedId)matches.insert(channelId);
                 if(!labels.count(channelId))labels[channelId]=CNativeProgrammeGuide::Clean(display);
                 field.clear();
             }else if(tag==L"title")field.clear();
             else if(tag==L"channel"&&depth==channelDepth+1){channelId.clear();}
             else if(tag==L"programme"&&depth==programmeDepth+1){
-                if(matches.count(programmeId)&&programme.start&&programme.stop>programme.start&&!programme.title.empty()){
+                if(programme.start&&programme.stop>programme.start&&!programme.title.empty()){
                     programme.title=CNativeProgrammeGuide::Clean(programme.title);
+                    if(expectedId.empty()&&sameProgramme(programme))fingerprints[programmeId].insert(programme.start);
+                    if(!matches.count(programmeId)&&!fingerprints.count(programmeId)){programmeId.clear();field.clear();continue;}
                     auto& rows=candidates[programmeId];if(rows.size()>=4096)return false;rows.push_back(programme);
                 }
                 programmeId.clear();field.clear();
             }
         }
     }
-    if(hr!=S_FALSE||matches.size()!=1)return false;
+    if(hr!=S_FALSE)return false;
+    if(matches.empty()&&expectedId.empty())for(const auto& f:fingerprints)if(f.second.size()>=2)matches.insert(f.first);
+    if(matches.size()!=1)return false;
+    guide.xmltvId=*matches.begin();
     guide.channel=labels[*matches.begin()];guide.rows=std::move(candidates[*matches.begin()]);
     std::sort(guide.rows.begin(),guide.rows.end(),[](const auto& a,const auto& b){return a.start<b.start;});
     guide.rows.erase(std::unique(guide.rows.begin(),guide.rows.end(),[](const auto& a,const auto& b){return a.start==b.start&&a.stop==b.stop&&a.title==b.title;}),guide.rows.end());
@@ -223,8 +234,7 @@ public:
 };
 inline std::vector<unsigned char> GuideBytes(const std::shared_ptr<std::atomic_bool>& cancel) {
     if(cancel->load())return {};
-    wchar_t module[32768];DWORD n=GetModuleFileNameW(nullptr,module,32768);if(!n||n>=32768)return {};
-    std::wstring folder(module,n);folder.erase(folder.find_last_of(L"\\/")+1);folder+=L"EpgCache";CreateDirectoryW(folder.c_str(),nullptr);
+    auto folder=StreamIdentity::Folder();if(folder.empty())return {};
     auto file=folder+L"\\iptvx-lite.xml.gz";WIN32_FILE_ATTRIBUTE_DATA info{};
     if(GetFileAttributesExW(file.c_str(),GetFileExInfoStandard,&info)&&!info.nFileSizeHigh&&info.nFileSizeLow<=40*1024*1024){
         ULONGLONG written=(ULONGLONG(info.ftLastWriteTime.dwHighDateTime)<<32)|info.ftLastWriteTime.dwLowDateTime;
@@ -240,10 +250,34 @@ inline std::vector<unsigned char> GuideBytes(const std::shared_ptr<std::atomic_b
 }
 class Resolver {
     struct Result{std::mutex mutex;bool done=false;CNativeProgrammeGuide guide;std::shared_ptr<std::atomic_bool> cancel=std::make_shared<std::atomic_bool>(false);};
-    std::shared_ptr<Result> result;std::wstring source;ULONGLONG requested=0;bool delivered=false;
+    std::shared_ptr<Result> result;std::wstring source,remembered;ULONGLONG requested=0;bool delivered=false;
 public:
     ~Resolver(){Reset();}
-    void Reset(){if(result)result->cancel->store(true);result.reset();source.clear();requested=0;delivered=false;}
+    void Reset(){if(result)result->cancel->store(true);result.reset();source.clear();remembered.clear();requested=0;delivered=false;}
+    void Remember(const CNativeProgrammeGuide& imported){
+        if(!StreamIdentity::Useful(imported.channel)||StreamIdentity::Transport(imported.pageUrl).empty()||StreamIdentity::ExactKey(imported.stream).empty())return;
+        const auto signature=imported.stream+L"\n"+imported.channel;
+        if(remembered==signature)return;remembered=signature;
+        auto context=imported;
+        try{std::thread([context]{
+            try{
+                StreamIdentity::Store store;StreamIdentity::Binding binding;
+                binding.channel=context.channel;binding.id=context.xmltvId;
+                for(const auto& row:context.Remaining(CNativeProgrammeGuide::Now())){if(binding.rows.size()>=32)break;binding.rows.push_back(row);}
+                const auto previous=store.Lookup(context.stream);
+                const bool resolveAliasFirst=!previous.id.empty()&&binding.id.empty()
+                    &&Name(previous.channel)!=Name(binding.channel);
+                if(!resolveAliasFirst&&!store.Remember(context.stream,binding))return;
+                auto cancel=std::make_shared<std::atomic_bool>(false);auto bytes=GuideBytes(cancel);if(bytes.empty())return;
+                HRESULT co=CoInitializeEx(nullptr,COINIT_MULTITHREADED);auto stream=new GzipStream(bytes);
+                CNativeProgrammeGuide resolved;resolved.stream=context.stream;
+                if(ReadGuide(stream,context.channel,resolved,CNativeProgrammeGuide::Now(),context.xmltvId,&context)){
+                    binding.id=resolved.xmltvId;binding.rows.clear();store.Remember(context.stream,binding);
+                }else if(resolveAliasFirst){store.Remember(context.stream,binding);}
+                stream->Release();if(SUCCEEDED(co))CoUninitialize();
+            }catch(...){}
+        }).detach();}catch(...){}
+    }
     bool NeedsRequest(const std::wstring& url)const{return source!=url||!result;}
     bool Poll(const std::wstring& url,const std::wstring& hint,CNativeProgrammeGuide& guide){
         if(url.empty()){Reset();return false;}
@@ -254,17 +288,26 @@ public:
             try { std::thread([state,input,known]{
                 CNativeProgrammeGuide found;found.stream=input;
                 try{
-                    auto name=known.empty()?Probe(input,state->cancel):known;
-                    found.channel=name;
+                    StreamIdentity::Store store;auto binding=store.Lookup(input);
+                    auto name=binding.channel;
+                    if(name.empty())name=StreamIdentity::Useful(known)?known:Probe(input,state->cancel);
+                    if(!StreamIdentity::Useful(name))name.clear();
+                    found.channel=name;found.rows=binding.rows;
+                    CNativeProgrammeGuide context=found;
                     if(!name.empty()&&!state->cancel->load()){
                         auto bytes=GuideBytes(state->cancel);
                         if(!bytes.empty()){
-                            HRESULT co=CoInitializeEx(nullptr,COINIT_MULTITHREADED);
-                            auto stream=new GzipStream(bytes);
-                            if(!ReadGuide(stream,name,found)){found.Clear();found.stream=input;found.channel=name;}stream->Release();
-                            if(SUCCEEDED(co))CoUninitialize();
+                            HRESULT co=CoInitializeEx(nullptr,COINIT_MULTITHREADED);auto stream=new GzipStream(bytes);
+                            CNativeProgrammeGuide resolved;resolved.stream=input;
+                            if(ReadGuide(stream,name,resolved,CNativeProgrammeGuide::Now(),binding.id,&context)){
+                                found=std::move(resolved);
+                                StreamIdentity::Binding learned;learned.channel=name;learned.id=found.xmltvId;
+                                if(binding.channel.empty()||binding.id.empty())store.Remember(input,learned);
+                            }
+                            stream->Release();if(SUCCEEDED(co))CoUninitialize();
                         }
                     }
+                    if(!found.Current(input,CNativeProgrammeGuide::Now()))found.rows.clear();
                 }catch(...){found.Clear();}
                 std::lock_guard<std::mutex> lock(state->mutex);state->guide=std::move(found);state->done=true;
             }).detach(); } catch(...) { state->done=true; }

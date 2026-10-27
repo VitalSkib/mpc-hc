@@ -31,9 +31,6 @@ int main(){
     check(NativeStreamEpg::Service(std::vector<unsigned char>(100,0)).empty(),"short malformed TS");
     auto other=transport("Other channel");ts.insert(ts.end(),other.begin(),other.end());
     check(NativeStreamEpg::Service(ts).empty(),"ambiguous services rejected");
-    check(NativeStreamEpg::Alias(L"History PAN EURO HD_Virtual_ENC")==L"history","explicit History Europe alias");
-    check(NativeStreamEpg::Alias(L"History HD IL").empty(),"preserve regional versions");
-    check(NativeStreamEpg::Alias(L"Viasat History").empty(),"preserve different channels");
     const std::string programme="<programme channel=\"test\" start=\"20261026134100 +0300\" stop=\"20261026160200 +0300\"><title>Film &amp; test</title></programme>";
     const std::string guide="<tv><channel id=\"test\"><display-name>YOSSO TV Adventure</display-name></channel>"+programme+"</tv>";
     CNativeProgrammeGuide g;
@@ -52,9 +49,27 @@ int main(){
     check(!xml("<tv><channel id=\"history\"><display-name>History Europe</display-name></channel><programme channel=\"history\" start=\"20261025130000 +0300\" stop=\"20261025140000 +0300\"><title>Old</title></programme></tv>",L"History PAN EURO HD_Virtual_ENC",wrong),"expired guide rejected");
     std::vector<unsigned char> compressed={31,139,8,0,0,0,0,0,2,255,85,141,203,10,194,48,16,69,127,37,100,43,146,105,42,93,77,103,171,191,17,108,180,3,121,145,14,133,250,245,90,90,170,46,6,46,231,112,239,160,204,132,247,209,165,228,131,226,161,215,35,79,146,235,162,9,7,158,74,112,203,57,185,232,233,182,97,52,127,20,205,94,37,44,53,63,171,139,209,171,29,125,167,212,36,174,74,175,45,216,174,89,175,189,52,0,234,4,45,192,42,115,249,113,29,216,195,17,10,75,240,116,125,113,81,15,14,17,205,6,208,28,239,62,89,102,122,3,53,169,198,240,199,0,0,0};
     auto gzip=new NativeStreamEpg::GzipStream(compressed);g.stream=L"https://example.test/live/index.m3u8";
-    check(NativeStreamEpg::ReadGuide(gzip,L"History PAN EURO HD_Virtual_ENC",g,CNativeProgrammeGuide::Stamp(L"20261026150000 +0300")),"forward-only gzip XML reader");gzip->Release();
+    check(NativeStreamEpg::ReadGuide(gzip,L"Learned technical name",g,CNativeProgrammeGuide::Stamp(L"20261026150000 +0300"),L"history"),"forward-only gzip XML reader");gzip->Release();
     check(g.channel==L"History"&&g.rows[0].title==L"Gzip film","canonical channel name from XMLTV");
     compressed.resize(compressed.size()-6);gzip=new NativeStreamEpg::GzipStream(compressed);
     check(!NativeStreamEpg::ReadGuide(gzip,L"History",wrong,CNativeProgrammeGuide::Stamp(L"20261026150000 +0300")),"reject truncated gzip");gzip->Release();
+    CNativeProgrammeGuide context;context.stream=L"https://example.test/live/index.m3u8";context.channel=L"Site display name";
+    context.rows={{CNativeProgrammeGuide::Stamp(L"20261026134100 +0300"),CNativeProgrammeGuide::Stamp(L"20261026160200 +0300"),L"Film & test"},{CNativeProgrammeGuide::Stamp(L"20261026160200 +0300"),CNativeProgrammeGuide::Stamp(L"20261026180000 +0300"),L"Next programme"}};
+    const std::string pair="<tv><channel id=\"stable-id\"><display-name>Different catalogue alias</display-name></channel><programme channel=\"stable-id\" start=\"20261026134100 +0300\" stop=\"20261026160200 +0300\"><title>Film &amp; test</title></programme><programme channel=\"stable-id\" start=\"20261026160200 +0300\" stop=\"20261026180000 +0300\"><title>Next programme</title></programme></tv>";
+    auto memory=SHCreateMemStream(reinterpret_cast<const BYTE*>(pair.data()),UINT(pair.size()));g.stream=context.stream;
+    check(NativeStreamEpg::ReadGuide(memory,context.channel,g,CNativeProgrammeGuide::Stamp(L"20261026150000 +0300"),L"",&context),"two programme fingerprints identify a differently named channel");memory->Release();
+    check(g.xmltvId==L"stable-id","resolved identity preserves XMLTV ID");
+    context.rows.resize(1);memory=SHCreateMemStream(reinterpret_cast<const BYTE*>(pair.data()),UINT(pair.size()));
+    check(!NativeStreamEpg::ReadGuide(memory,context.channel,g,CNativeProgrammeGuide::Stamp(L"20261026150000 +0300"),L"",&context),"single programme insufficient for identity");memory->Release();
+    memory=SHCreateMemStream(reinterpret_cast<const BYTE*>(pair.data()),UINT(pair.size()));
+    check(!NativeStreamEpg::ReadGuide(memory,L"Different catalogue alias",g,CNativeProgrammeGuide::Stamp(L"20261026150000 +0300"),L"other-id"),"stored ID never falls back to another channel name");memory->Release();
+    context.rows.push_back({CNativeProgrammeGuide::Stamp(L"20261026160200 +0300"),CNativeProgrammeGuide::Stamp(L"20261026180000 +0300"),L"Next programme"});
+    auto duplicate=pair.substr(0,pair.size()-5)+pair.substr(4);
+    for(size_t pos=duplicate.find("stable-id",pair.size());pos!=duplicate.npos;pos=duplicate.find("stable-id",pos+8))duplicate.replace(pos,9,"other-id");
+    memory=SHCreateMemStream(reinterpret_cast<const BYTE*>(duplicate.data()),UINT(duplicate.size()));
+    check(!NativeStreamEpg::ReadGuide(memory,context.channel,g,CNativeProgrammeGuide::Stamp(L"20261026150000 +0300"),L"",&context),"shared simulcast schedule is ambiguous");memory->Release();
+    CNativeProgrammeGuide imported;
+    check(imported.Parse(LR"({"version":1,"stream":"https://example.test/live/index.m3u8","context":{"channelName":"Site channel","pageUrl":"https://site.test/channel","programmes":[]}})",L"https://example.test/live/index.m3u8")&&imported.pageUrl==L"https://site.test/channel","browser origin preserved without rewriting labels");
+    imported.xmltvId=L"learned-id";imported.Clear();check(imported.pageUrl.empty()&&imported.xmltvId.empty(),"clearing media also clears identity context");
     CoUninitialize();std::cout<<checks<<" stream EPG checks passed\n";
 }
