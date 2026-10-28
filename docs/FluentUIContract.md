@@ -244,3 +244,11 @@ still rejecting expired or overlapping programme intervals. Unique temp names.
 Refresh native synthetic rows only when first remaining interval changes, also for
 browser guides and when the final interval expires; do not touch undated labels,
 mixed playlists, playback graph, geometry, icon resources or window interaction.
+
+## Responsive toolbar (2026-10-28)
+Minimize/Maximize hover uses the toolbar highlight (white alpha 40; pressed 65).
+The native toolbar progressively hides secondary transport buttons as width falls,
+retaining Play/Pause, More and mute. Hidden commands stay in the existing native
+overflow menu, in toolbar order, and return when width grows. Native playback
+updates own Play/Pause visibility. Runtime hiding is never saved as customization.
+The minimum toolbar width reserves only these essential controls, not all transport.

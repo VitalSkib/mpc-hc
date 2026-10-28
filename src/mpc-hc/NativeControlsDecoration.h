@@ -41,7 +41,7 @@ class CNativeControlsDecoration final : public CWnd
         const bool hot = m_hot == button;
         if (hot) {
             const Gdiplus::Color fill = button == 2 ? Gdiplus::Color(255, 196, 43, 28)
-                : Gdiplus::Color(m_pressed == button ? 65 : 85, 255, 255, 255);
+                : Gdiplus::Color(m_pressed == button ? 65 : 40, 255, 255, 255);
             Gdiplus::SolidBrush background(fill);
             const int side = std::min({rect.Width(), rect.Height(), Scale(36)});
             const float left = float(rect.CenterPoint().x - side / 2), top = float(rect.CenterPoint().y - side / 2);

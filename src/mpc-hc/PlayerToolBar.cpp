@@ -1277,6 +1277,11 @@ bool CPlayerToolBar::ArrangeTransportControls(const CRect& client)
         if (info != supportedSvgButtons.end() && !info->second.positionLocked
                 && !IsTransportButton(id)) tb.HideButton(id, FALSE);
     }
+    // Restore only layout-hidden transport controls. Play/Pause visibility
+    // remains owned by the native playback command update handlers.
+    for (UINT id : transportButtons) {
+        if (id != ID_PLAY_PLAY && id != ID_PLAY_PAUSE) tb.HideButton(id, FALSE);
+    }
     m_overflowButtons.clear();
     tb.HideButton(ID_TRANSPORT_OVERFLOW, FALSE);
     const auto widthOf = [&](UINT id) {
@@ -1284,6 +1289,26 @@ bool CPlayerToolBar::ArrangeTransportControls(const CRect& client)
         if (index < 0 || (tb.GetState(id) & TBSTATE_HIDDEN)) return 0;
         GetItemRect(index, rect); return static_cast<int>(rect.Width());
     };
+    const int gap = m_pMainFrame->m_dpi.ScaleX(8);
+    const int inset = m_pMainFrame->m_dpi.ScaleX(9);
+    const int layoutWidth = std::max(0, static_cast<int>(client.Width()) - inset);
+    const int mute = widthOf(ID_VOLUME_MUTE), overflow = widthOf(ID_TRANSPORT_OVERFLOW);
+    int transportWidth = 0;
+    for (UINT id : transportButtons) transportWidth += widthOf(id);
+    // Drop secondary actions first; keep native commands reachable through More.
+    for (UINT id : {ID_PLAY_DECRATE, ID_PLAY_INCRATE, ID_PLAY_FRAMESTEP_BACK,
+            ID_PLAY_FRAMESTEP, ID_PLAY_SEEKBACKWARDMED, ID_PLAY_SEEKFORWARDMED,
+            ID_NAVIGATE_SKIPBACK, ID_NAVIGATE_SKIPFORWARD}) {
+        if (transportWidth + mute + overflow + gap + inset <= layoutWidth) break;
+        const int width = widthOf(id);
+        if (width > 0) { transportWidth -= width; tb.HideButton(id, TRUE); }
+    }
+    // Preserve the normal toolbar order in the existing overflow menu.
+    for (UINT id : transportButtons) {
+        if (id != ID_PLAY_PLAY && id != ID_PLAY_PAUSE
+                && tb.CommandToIndex(id) >= 0 && (tb.GetState(id) & TBSTATE_HIDDEN))
+            m_overflowButtons.push_back(id);
+    }
     int core = 0, beforePlay = 0, play = 0;
     for (UINT id : transportButtons) {
         const int width = widthOf(id);
@@ -1291,10 +1316,6 @@ bool CPlayerToolBar::ArrangeTransportControls(const CRect& client)
         else if (!play) beforePlay += width;
         core += width;
     }
-    const int gap = m_pMainFrame->m_dpi.ScaleX(8);
-    const int inset = m_pMainFrame->m_dpi.ScaleX(9);
-    const int layoutWidth = std::max(0, static_cast<int>(client.Width()) - inset);
-    const int mute = widthOf(ID_VOLUME_MUTE), overflow = widthOf(ID_TRANSPORT_OVERFLOW);
     // Hosted bars fill their viewport. Their layout must not depend on the
     // frame's transient screen origin during a fullscreen placement transaction.
     CPoint middle(client.CenterPoint().x, 0);
@@ -1314,11 +1335,11 @@ bool CPlayerToolBar::ArrangeTransportControls(const CRect& client)
             i < tb.CommandToIndex(ID_TRANSPORT_OVERFLOW); ++i) {
         const UINT id = GetItemID(i); extras.push_back(id); total += widthOf(id);
     }
-    const bool needsOverflow = total > capacity;
+    const bool needsOverflow = !m_overflowButtons.empty() || total > capacity;
     int used = 0;
     for (UINT id : extras) {
         const int width = widthOf(id);
-        if (!m_overflowButtons.empty() || used + width > capacity - (needsOverflow ? overflow : 0)) {
+        if (used + width > capacity - (needsOverflow ? overflow : 0)) {
             m_overflowButtons.push_back(id); tb.HideButton(id, TRUE);
         } else used += width;
     }
@@ -1619,13 +1640,8 @@ int CPlayerToolBar::GetMinWidth() const
                 && GetToolBarCtrl().GetItemRect(index, rect)) return std::max<int>(fallback, rect.Width());
         return fallback;
     };
-    int width = 0;
-    for (UINT id : transportButtons) {
-        if (id == ID_PLAY_PAUSE) continue;
-        width += id == ID_PLAY_PLAY ? std::max(measuredWidth(ID_PLAY_PLAY, play), measuredWidth(ID_PLAY_PAUSE, play))
-            : measuredWidth(id, button);
-    }
-    width += measuredWidth(ID_TRANSPORT_OVERFLOW, button) + measuredWidth(ID_VOLUME_MUTE, button);
+    const int width = std::max(measuredWidth(ID_PLAY_PLAY, play), measuredWidth(ID_PLAY_PAUSE, play))
+        + measuredWidth(ID_TRANSPORT_OVERFLOW, button) + measuredWidth(ID_VOLUME_MUTE, button);
     const CRect borders = GetBorders();
     return width + m_pMainFrame->m_dpi.ScaleX(26) + borders.left + borders.right;
 #else
