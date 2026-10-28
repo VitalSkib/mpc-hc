@@ -1299,6 +1299,7 @@ bool CPlayerPlaylistBar::ParseMPCPlayList(CString fn)
     // Ordinary MPCPL parsing and all playlists without valid EPG stay unchanged.
     m_programmeGuide.Clear();
     m_autoProgrammeGuide = false;
+    m_programmeRowsKnown = false;
     if (!PathUtils::IsURL(fn) && !idx.empty() && !pli[idx.front()].m_fns.IsEmpty()) {
         CString source = pli[idx.front()].m_fns.GetHead();
         bool sameSource = PathUtils::IsURL(source);
@@ -1315,6 +1316,8 @@ bool CPlayerPlaylistBar::ParseMPCPlayList(CString fn)
                     pli[i].m_label = (CNativeProgrammeGuide::Clock(programme.start) + L" " + programme.title).c_str();
                     idx.push_back(i++);
                 }
+                m_programmeRowsKey = m_programmeGuide.RemainingKey(CNativeProgrammeGuide::Now());
+                m_programmeRowsKnown = true;
             }
         }
     }
@@ -1508,6 +1511,7 @@ bool CPlayerPlaylistBar::Empty()
     CAutoLock pledit(&m_plEditLock);
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
     m_streamEpg.Reset();
+    m_programmeRowsKnown = false;
     m_autoProgrammeGuide = false;
     m_programmeGuide.Clear();
     m_programmeCaption.Empty();
@@ -1961,6 +1965,7 @@ void CPlayerPlaylistBar::UpdateStreamEpg()
     // local files never become synthetic channel schedules.
     if (m_programmeGuide.stream == source.GetString() && !m_autoProgrammeGuide) {
         m_streamEpg.Remember(m_programmeGuide);
+        RefreshProgrammeRows();
         return;
     }
     POSITION position = m_pl.GetHeadPosition();
@@ -1973,16 +1978,37 @@ void CPlayerPlaylistBar::UpdateStreamEpg()
     CString hint;
     if (m_streamEpg.NeedsRequest(source.GetString())) hint = m_pMainFrame->NativeStreamServiceName();
     CNativeProgrammeGuide guide;
-    if (!m_streamEpg.Poll(source.GetString(), hint.GetString(), guide)) return;
-    if (GetCurFileName() != source || guide.stream != source.GetString()) return;
-    const auto remaining = guide.Remaining(CNativeProgrammeGuide::Now());
-    if (guide.channel.empty()) return;
+    if (m_streamEpg.Poll(source.GetString(), hint.GetString(), guide)) {
+        if (GetCurFileName() != source || guide.stream != source.GetString()) return;
+        m_programmeGuide = std::move(guide);
+        m_autoProgrammeGuide = true;
+        m_programmeRowsKnown = false;
+        m_programmeCaption.Empty();
+    }
+    RefreshProgrammeRows();
+}
+
+void CPlayerPlaylistBar::RefreshProgrammeRows()
+{
+    const CString source = GetCurFileName();
+    if (m_programmeGuide.stream != source.GetString() || m_programmeGuide.channel.empty()) return;
+    // Undated imported labels stay intact: there is no reliable clock boundary.
+    if (m_programmeGuide.rows.empty() && !m_autoProgrammeGuide) return;
+    const auto now = CNativeProgrammeGuide::Now();
+    const auto key = m_programmeGuide.RemainingKey(now);
+    if (m_programmeRowsKnown && key == m_programmeRowsKey) return;
+    POSITION pos = m_pl.GetHeadPosition();
+    while (pos) {
+        const auto& item = m_pl.GetNext(pos);
+        if (item.m_fns.GetCount() != 1 || item.m_fns.GetHead() != source || item.m_bYoutubeDL) return;
+    }
+    const auto remaining = m_programmeGuide.Remaining(now);
     CAutoLock lock(&m_plEditLock);
     // Keep the original media item (URL, options, subtitles and duration).
     // This only rebuilds its displayed schedule; it never reopens playback.
     if (!GetCur()) return;
     CPlaylistItem channel(*GetCur());
-    channel.m_label = guide.channel.c_str();
+    channel.m_label = m_programmeGuide.channel.c_str();
     m_pl.RemoveAll();
     const POSITION current = m_pl.AddTail(channel);
     for (const auto& programme : remaining) {
@@ -1994,9 +2020,8 @@ void CPlayerPlaylistBar::UpdateStreamEpg()
         m_pl.AddTail(item);
     }
     m_pl.SetPos(current);
-    m_programmeGuide = std::move(guide);
-    m_autoProgrammeGuide = true;
-    m_programmeCaption.Empty();
+    m_programmeRowsKey = key;
+    m_programmeRowsKnown = true;
     Refresh();
     m_SaveDelayed = true;
 }

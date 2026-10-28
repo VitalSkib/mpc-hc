@@ -2,6 +2,7 @@
 #pragma once
 #include "NativeProgrammeGuide.h"
 #include "NativeStreamIdentity.h"
+#include "NativeEpgWorkQueue.h"
 #include <set>
 #include <map>
 #include <mutex>
@@ -81,7 +82,7 @@ inline std::wstring Attribute(IXmlReader* r,const wchar_t* key) {
     if(r->MoveToAttributeByName(key,nullptr)!=S_OK)return {};
     const wchar_t* value=nullptr;UINT n=0;r->GetValue(&value,&n);std::wstring s(value?value:L"",n);r->MoveToElement();return s;
 }
-inline bool ReadGuide(IStream* stream,const std::wstring& service,CNativeProgrammeGuide& guide,ULONGLONG now=CNativeProgrammeGuide::Now(),const std::wstring& expectedId=L"",const CNativeProgrammeGuide* context=nullptr) {
+inline bool ReadGuide(IStream* stream,const std::wstring& service,CNativeProgrammeGuide& guide,ULONGLONG now=CNativeProgrammeGuide::Now(),const std::wstring& expectedId=L"",const CNativeProgrammeGuide* context=nullptr,const Cancellation& cancel={}) {
     IXmlReader* raw=nullptr;if(FAILED(CreateXmlReader(__uuidof(IXmlReader),reinterpret_cast<void**>(&raw),nullptr)))return false;
     std::unique_ptr<IXmlReader,void(*)(IXmlReader*)> reader(raw,[](IXmlReader* p){p->Release();});
     // XMLTV declares an external DTD; ignore it without resolving or loading it.
@@ -104,6 +105,7 @@ inline bool ReadGuide(IStream* stream,const std::wstring& service,CNativeProgram
     };
     // XMLTV channels precede programmes; only retain rows for matching channels.
     while((hr=raw->Read(&type))==S_OK){
+        if(cancel&&cancel->load())return false;
         const wchar_t* ptr=nullptr;UINT n=0;raw->GetLocalName(&ptr,&n);std::wstring tag(ptr?ptr:L"",n);UINT depth=0;raw->GetDepth(&depth);
         if(type==XmlNodeType_Element){
             if(tag==L"channel"){channelId=Attribute(raw,L"id");channelDepth=depth;display.clear();}
@@ -207,16 +209,17 @@ inline std::wstring Probe(const std::wstring& input,const std::shared_ptr<std::a
 // Forward-only gzip IStream: XmlLite parses the full guide without a large DOM
 // or a second uncompressed 200+ MB buffer/file.
 class GzipStream final:public IStream {
-    LONG refs=1;z_stream z{};bool valid=false;size_t total=0;
+    LONG refs=1;z_stream z{};bool valid=false,finished=false;size_t total=0;Cancellation cancel;
 public:
-    explicit GzipStream(const std::vector<unsigned char>& bytes){z.next_in=const_cast<Bytef*>(bytes.data());z.avail_in=uInt(bytes.size());valid=inflateInit2(&z,15+32)==Z_OK;}
+    explicit GzipStream(const std::vector<unsigned char>& bytes,Cancellation token={}):cancel(std::move(token)){z.next_in=const_cast<Bytef*>(bytes.data());z.avail_in=uInt(bytes.size());valid=inflateInit2(&z,15+32)==Z_OK;}
     ~GzipStream(){if(valid)inflateEnd(&z);}
+    bool Finished()const{return valid&&finished&&z.avail_in==0;}
     STDMETHODIMP QueryInterface(REFIID id,void** out)override{if(!out)return E_POINTER;*out=nullptr;if(id==IID_IUnknown||id==IID_ISequentialStream||id==IID_IStream){*out=static_cast<IStream*>(this);AddRef();return S_OK;}return E_NOINTERFACE;}
     STDMETHODIMP_(ULONG) AddRef()override{return InterlockedIncrement(&refs);}
     STDMETHODIMP_(ULONG) Release()override{auto n=InterlockedDecrement(&refs);if(!n)delete this;return n;}
     STDMETHODIMP Read(void* out,ULONG count,ULONG* got)override{
-        if(got)*got=0;if(!valid)return STG_E_READFAULT;z.next_out=static_cast<Bytef*>(out);z.avail_out=count;
-        const int status=inflate(&z,Z_NO_FLUSH);ULONG n=count-z.avail_out;total+=n;if(total>384*1024*1024)return STG_E_READFAULT;
+        if(got)*got=0;if(cancel&&cancel->load())return E_ABORT;if(!valid)return STG_E_READFAULT;z.next_out=static_cast<Bytef*>(out);z.avail_out=count;
+        const int status=inflate(&z,Z_NO_FLUSH);finished=status==Z_STREAM_END;ULONG n=count-z.avail_out;total+=n;if(total>384*1024*1024)return STG_E_READFAULT;
         if(status!=Z_STREAM_END&&z.avail_in==0&&z.avail_out>0)return STG_E_READFAULT;
         if(got)*got=n;if(status!=Z_OK&&status!=Z_STREAM_END&&status!=Z_BUF_ERROR)return STG_E_READFAULT;
         return n==count?S_OK:S_FALSE;
@@ -232,34 +235,82 @@ public:
     STDMETHODIMP Stat(STATSTG* s,DWORD)override{if(!s)return E_POINTER;*s={};s->type=STGTY_STREAM;return S_OK;}
     STDMETHODIMP Clone(IStream**)override{return E_NOTIMPL;}
 };
-inline std::vector<unsigned char> GuideBytes(const std::shared_ptr<std::atomic_bool>& cancel) {
-    if(cancel->load())return {};
-    auto folder=StreamIdentity::Folder();if(folder.empty())return {};
-    auto file=folder+L"\\iptvx-lite.xml.gz";WIN32_FILE_ATTRIBUTE_DATA info{};
-    if(GetFileAttributesExW(file.c_str(),GetFileExInfoStandard,&info)&&!info.nFileSizeHigh&&info.nFileSizeLow<=40*1024*1024){
-        ULONGLONG written=(ULONGLONG(info.ftLastWriteTime.dwHighDateTime)<<32)|info.ftLastWriteTime.dwLowDateTime;
-        auto now=CNativeProgrammeGuide::Now();if(now>=written&&now-written<12ULL*60*60*10000000){
-            std::ifstream f(file.c_str(),std::ios::binary);std::vector<unsigned char> b(info.nFileSizeLow);if(f.read(reinterpret_cast<char*>(b.data()),b.size()))return b;
+class ComApartment {
+    HRESULT status=CoInitializeEx(nullptr,COINIT_MULTITHREADED);
+public:
+    ~ComApartment(){if(SUCCEEDED(status))CoUninitialize();}
+    bool Ready()const{return SUCCEEDED(status);}
+};
+struct ComRelease {template<class T>void operator()(T* value)const{if(value)value->Release();}};
+template<class T>using ComOwner=std::unique_ptr<T,ComRelease>;
+inline bool ValidateGuide(const std::vector<unsigned char>& bytes,const Cancellation& cancel){
+    if(bytes.size()<2||bytes[0]!=0x1f||bytes[1]!=0x8b||cancel->load())return false;
+    ComApartment apartment;if(!apartment.Ready())return false;
+    ComOwner<GzipStream> stream(new GzipStream(bytes,cancel));IXmlReader* raw=nullptr;
+    if(FAILED(CreateXmlReader(__uuidof(IXmlReader),reinterpret_cast<void**>(&raw),nullptr)))return false;
+    ComOwner<IXmlReader> reader(raw);raw->SetProperty(XmlReaderProperty_DtdProcessing,DtdProcessing_Parse);
+    raw->SetProperty(XmlReaderProperty_XmlResolver,0);raw->SetProperty(XmlReaderProperty_MaxEntityExpansion,4096);
+    if(FAILED(raw->SetInput(stream.get())))return false;
+    bool root=false,channel=false,programme=false;XmlNodeType type;HRESULT hr;
+    while((hr=raw->Read(&type))==S_OK){
+        if(cancel->load())return false;
+        if(type!=XmlNodeType_Element)continue;
+        const wchar_t* ptr=nullptr;UINT count=0,depth=0;raw->GetLocalName(&ptr,&count);raw->GetDepth(&depth);
+        const std::wstring tag(ptr?ptr:L"",count);
+        if(depth==0){if(tag!=L"tv")return false;root=true;}
+        if(depth==1&&tag==L"channel"&&!Attribute(raw,L"id").empty())channel=true;
+        if(depth==1&&tag==L"programme"){
+            auto start=CNativeProgrammeGuide::Stamp(Attribute(raw,L"start"));
+            auto stop=CNativeProgrammeGuide::Stamp(Attribute(raw,L"stop"));
+            if(start&&stop>start&&!Attribute(raw,L"channel").empty())programme=true;
         }
     }
-    auto b=Fetch(L"https://iptvx.one/EPG_LITE",40*1024*1024,false,cancel);
-    if(b.size()<2||b[0]!=0x1f||b[1]!=0x8b)return {};
-    // Failed/partial HTTP responses never replace the last successful download.
-    auto temporary=file+L".tmp."+std::to_wstring(GetCurrentThreadId());
-    std::ofstream f(temporary.c_str(),std::ios::binary);if(f.write(reinterpret_cast<const char*>(b.data()),b.size())){f.close();MoveFileExW(temporary.c_str(),file.c_str(),MOVEFILE_REPLACE_EXISTING);}else{f.close();DeleteFileW(temporary.c_str());}return b;
+    if(hr!=S_FALSE||!root||!channel||!programme||cancel->load())return false;
+    // Read through the gzip trailer even if the XML reader stopped buffering early.
+    unsigned char block[4096];ULONG got=0;
+    do{if(FAILED(stream->Read(block,sizeof(block),&got)))return false;}while(got);
+    return stream->Finished();
+}
+using GuideDownload=std::function<std::vector<unsigned char>(const Cancellation&)>;
+inline std::vector<unsigned char> LoadGuideCache(const std::wstring& file,const Cancellation& cancel,const GuideDownload& download,ULONGLONG now=CNativeProgrammeGuide::Now()){
+    if(cancel->load()||file.empty())return {};
+    std::vector<unsigned char> previous;bool fresh=false;WIN32_FILE_ATTRIBUTE_DATA info{};
+    if(GetFileAttributesExW(file.c_str(),GetFileExInfoStandard,&info)&&!info.nFileSizeHigh&&info.nFileSizeLow<=40*1024*1024){
+        ULONGLONG written=(ULONGLONG(info.ftLastWriteTime.dwHighDateTime)<<32)|info.ftLastWriteTime.dwLowDateTime;
+        std::ifstream f(file.c_str(),std::ios::binary);previous.resize(info.nFileSizeLow);
+        if(!f.read(reinterpret_cast<char*>(previous.data()),previous.size())||!ValidateGuide(previous,cancel))previous.clear();
+        fresh=now>=written&&now-written<12ULL*60*60*10000000;
+    }
+    if(cancel->load())return {};
+    if(fresh&&!previous.empty())return previous;
+    auto bytes=download(cancel);if(cancel->load())return {};
+    if(!ValidateGuide(bytes,cancel))return previous;
+    auto temporary=file+L".tmp."+std::to_wstring(GetCurrentProcessId())+L"."+std::to_wstring(GetCurrentThreadId());
+    std::ofstream f(temporary.c_str(),std::ios::binary);
+    if(f.write(reinterpret_cast<const char*>(bytes.data()),bytes.size())){
+        f.close();if(cancel->load()||!MoveFileExW(temporary.c_str(),file.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH))DeleteFileW(temporary.c_str());
+    }else{f.close();DeleteFileW(temporary.c_str());}
+    return cancel->load()?std::vector<unsigned char>{}:bytes;
+}
+inline std::vector<unsigned char> GuideBytes(const Cancellation& cancel){
+    auto folder=StreamIdentity::Folder();if(folder.empty())return {};
+    return LoadGuideCache(folder+L"\\iptvx-lite.xml.gz",cancel,[](const Cancellation& token){return Fetch(L"https://iptvx.one/EPG_LITE",40*1024*1024,false,token);});
 }
 class Resolver {
     struct Result{std::mutex mutex;bool done=false;CNativeProgrammeGuide guide;std::shared_ptr<std::atomic_bool> cancel=std::make_shared<std::atomic_bool>(false);};
+    LatestWorkQueue work;
     std::shared_ptr<Result> result;std::wstring source,remembered;ULONGLONG requested=0;bool delivered=false;
 public:
     ~Resolver(){Reset();}
-    void Reset(){if(result)result->cancel->store(true);result.reset();source.clear();remembered.clear();requested=0;delivered=false;}
+    void Reset(){work.Cancel();if(result)result->cancel->store(true);result.reset();source.clear();remembered.clear();requested=0;delivered=false;}
     void Remember(const CNativeProgrammeGuide& imported){
-        if(!StreamIdentity::Useful(imported.channel)||StreamIdentity::Transport(imported.pageUrl).empty()||StreamIdentity::ExactKey(imported.stream).empty())return;
         const auto signature=imported.stream+L"\n"+imported.channel;
-        if(remembered==signature)return;remembered=signature;
+        if(remembered==signature)return;
+        if(!StreamIdentity::Useful(imported.channel)||StreamIdentity::Transport(imported.pageUrl).empty()||StreamIdentity::ExactKey(imported.stream).empty())return;
+        remembered=signature;
         auto context=imported;
-        try{std::thread([context]{
+        context.rows=context.Remaining(CNativeProgrammeGuide::Now());if(context.rows.size()>32)context.rows.resize(32);
+        try{work.Submit([context](const Cancellation& cancel){
             try{
                 StreamIdentity::Store store;StreamIdentity::Binding binding;
                 binding.channel=context.channel;binding.id=context.xmltvId;
@@ -267,16 +318,16 @@ public:
                 const auto previous=store.Lookup(context.stream);
                 const bool resolveAliasFirst=!previous.id.empty()&&binding.id.empty()
                     &&Name(previous.channel)!=Name(binding.channel);
+                if(cancel->load())return;
                 if(!resolveAliasFirst&&!store.Remember(context.stream,binding))return;
-                auto cancel=std::make_shared<std::atomic_bool>(false);auto bytes=GuideBytes(cancel);if(bytes.empty())return;
-                HRESULT co=CoInitializeEx(nullptr,COINIT_MULTITHREADED);auto stream=new GzipStream(bytes);
+                auto bytes=GuideBytes(cancel);if(bytes.empty())return;
+                ComApartment apartment;if(!apartment.Ready())throw HRESULT(E_FAIL);ComOwner<GzipStream> stream(new GzipStream(bytes,cancel));
                 CNativeProgrammeGuide resolved;resolved.stream=context.stream;
-                if(ReadGuide(stream,context.channel,resolved,CNativeProgrammeGuide::Now(),context.xmltvId,&context)){
-                    binding.id=resolved.xmltvId;binding.rows.clear();store.Remember(context.stream,binding);
-                }else if(resolveAliasFirst){store.Remember(context.stream,binding);}
-                stream->Release();if(SUCCEEDED(co))CoUninitialize();
+                if(ReadGuide(stream.get(),context.channel,resolved,CNativeProgrammeGuide::Now(),context.xmltvId,&context,cancel)){
+                    binding.id=resolved.xmltvId;binding.rows.clear();if(!cancel->load())store.Remember(context.stream,binding);
+                }else if(resolveAliasFirst&&!cancel->load()){store.Remember(context.stream,binding);}
             }catch(...){}
-        }).detach();}catch(...){}
+        });}catch(...){}
     }
     bool NeedsRequest(const std::wstring& url)const{return source!=url||!result;}
     bool Poll(const std::wstring& url,const std::wstring& hint,CNativeProgrammeGuide& guide){
@@ -285,32 +336,32 @@ public:
         if(result&&delivered&&GetTickCount64()-requested>(result->guide.rows.empty()?10ULL*60*1000:12ULL*60*60*1000)){Reset();source=url;}
         if(!result){
             result=std::make_shared<Result>();auto state=result;auto input=url;auto known=hint;requested=GetTickCount64();
-            try { std::thread([state,input,known]{
+            try { state->cancel=work.Submit([state,input,known](const Cancellation& cancel){
                 CNativeProgrammeGuide found;found.stream=input;
                 try{
                     StreamIdentity::Store store;auto binding=store.Lookup(input);
                     auto name=binding.channel;
-                    if(name.empty())name=StreamIdentity::Useful(known)?known:Probe(input,state->cancel);
+                    if(name.empty())name=StreamIdentity::Useful(known)?known:Probe(input,cancel);
                     if(!StreamIdentity::Useful(name))name.clear();
                     found.channel=name;found.rows=binding.rows;
                     CNativeProgrammeGuide context=found;
-                    if(!name.empty()&&!state->cancel->load()){
-                        auto bytes=GuideBytes(state->cancel);
+                    if(!name.empty()&&!cancel->load()){
+                        auto bytes=GuideBytes(cancel);
                         if(!bytes.empty()){
-                            HRESULT co=CoInitializeEx(nullptr,COINIT_MULTITHREADED);auto stream=new GzipStream(bytes);
+                            ComApartment apartment;if(!apartment.Ready())throw HRESULT(E_FAIL);ComOwner<GzipStream> stream(new GzipStream(bytes,cancel));
                             CNativeProgrammeGuide resolved;resolved.stream=input;
-                            if(ReadGuide(stream,name,resolved,CNativeProgrammeGuide::Now(),binding.id,&context)){
+                            if(ReadGuide(stream.get(),name,resolved,CNativeProgrammeGuide::Now(),binding.id,&context,cancel)){
                                 found=std::move(resolved);
                                 StreamIdentity::Binding learned;learned.channel=name;learned.id=found.xmltvId;
-                                if(binding.channel.empty()||binding.id.empty())store.Remember(input,learned);
+                                if(!cancel->load()&&(binding.channel.empty()||binding.id.empty()))store.Remember(input,learned);
                             }
-                            stream->Release();if(SUCCEEDED(co))CoUninitialize();
                         }
                     }
                     if(!found.Current(input,CNativeProgrammeGuide::Now()))found.rows.clear();
                 }catch(...){found.Clear();}
+                if(cancel->load())return;
                 std::lock_guard<std::mutex> lock(state->mutex);state->guide=std::move(found);state->done=true;
-            }).detach(); } catch(...) { state->done=true; }
+            });if(state->cancel->load())state->done=true; } catch(...) { state->done=true; }
         }
         std::lock_guard<std::mutex> lock(result->mutex);
         if(!result->done||delivered)return false;delivered=true;

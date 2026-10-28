@@ -209,6 +209,9 @@ public:
     NativeStreamEpg::Resolver m_streamEpg;
     bool m_autoProgrammeGuide = false;
     void UpdateStreamEpg();
+    void RefreshProgrammeRows();
+    bool m_programmeRowsKnown = false;
+    std::pair<ULONGLONG,ULONGLONG> m_programmeRowsKey = {};
     CString m_programmeCaption;
     bool GetProgrammeCaption(const CString& source, CString& title, CString& tip) const;
     bool GetStreamDisplayCaption(const CPlaylistItem& item, CString& title, CString& tip, bool current = true) const;

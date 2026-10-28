@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <fstream>
 #include <cmath>
+#include <utility>
 #include "rapidjson/include/rapidjson/document.h"
 
 class CNativeProgrammeGuide {
@@ -58,6 +59,10 @@ public:
         // Absolute timestamps retain the source order across local midnight.
         for (const auto& p : rows) if (p.stop > now) out.push_back(p);
         return out;
+    }
+    std::pair<ULONGLONG,ULONGLONG> RemainingKey(ULONGLONG now)const {
+        for(const auto& p:rows)if(p.stop>now)return {p.start,p.stop};
+        return {0,0};
     }
     std::wstring Tooltip(const Programme& p) const {
         return Clock(p.start)+L" - "+Clock(p.stop)+L" \u00ab"+p.title+L"\u00bb"+(channel.empty()?L"":L" / "+channel);

@@ -230,3 +230,17 @@ uniqueness, timezones, local-file exclusion and all existing rendering checks.
 The previous History test alias is migrated once as confirmed data in the cache,
 not an executable channel rule. ID/Viasat are not preseeded: learn via a real
 browser launch, disable scripts, then paste a newly signed URL to verify.
+
+
+## EPG lifecycle hardening (2026-10-28)
+One owned worker, one replaceable pending task, cooperative cancellation shared
+by remembering/probing/downloading/gzip/XML. No CWnd/player COM references or
+blocking join on UI. Cancellation of synchronous network operations is observed
+between operations and after configured timeouts, not promised instantaneous.
+COM apartment and gzip stream are scope-owned on exception paths.
+Validate complete gzip CRC/trailer plus XMLTV structure before atomically replacing
+cache; retain last valid cached bytes on download/validation failure, with Current()
+still rejecting expired or overlapping programme intervals. Unique temp names.
+Refresh native synthetic rows only when first remaining interval changes, also for
+browser guides and when the final interval expires; do not touch undated labels,
+mixed playlists, playback graph, geometry, icon resources or window interaction.
