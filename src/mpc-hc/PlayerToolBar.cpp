@@ -1098,11 +1098,20 @@ LRESULT CPlayerToolBar::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
     return result;
 }
 
+bool CPlayerToolBar::CompactControls() const
+{
+    CRect frame; m_pMainFrame->GetClientRect(frame);
+    const int width = MulDiv(frame.Width(), 96, m_pMainFrame->m_dpi.ScaleX(96));
+    if (width <= 480) m_compactControls = true;
+    else if (width >= 520) m_compactControls = false;
+    return m_compactControls;
+}
+
 CSize CPlayerToolBar::CalcFixedLayout(BOOL stretch, BOOL horizontal)
 {
     CSize size = CToolBar::CalcFixedLayout(stretch, horizontal);
     if (AppIsThemeLoaded()) size.cy = m_pMainFrame->m_dpi.ScaleY(
-        m_pMainFrame->NativeSeekbarSelected() ? 63 : 78);
+        m_pMainFrame->NativeSeekbarSelected() ? (CompactControls() ? 49 : 63) : (CompactControls() ? 62 : 78));
     return size;
 }
 
@@ -1149,7 +1158,7 @@ bool CPlayerToolBar::PaintNativeAlpha()
         graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
         auto& toolbar = GetToolBarCtrl();
         const int centreY = m_pMainFrame->m_dpi.ScaleY(
-            m_pMainFrame->NativeSeekbarSelected() ? 24 : 39);
+            m_pMainFrame->NativeSeekbarSelected() ? (CompactControls() ? 18 : 24) : (CompactControls() ? 31 : 39));
         const int hotItem = toolbar.GetHotItem();
         for (int i = 0; i < toolbar.GetButtonCount(); ++i) {
             TBBUTTON button = {};
@@ -1162,14 +1171,14 @@ bool CPlayerToolBar::PaintNativeAlpha()
             const bool main = button.idCommand == ID_PLAY_PLAY || button.idCommand == ID_PLAY_PAUSE;
             const float cx = float(rect.CenterPoint().x), cy = float(centreY);
             if (main) {
-                const float diameter = float(m_pMainFrame->m_dpi.ScaleY(45)); // 48px including 3px stroke
+                const float diameter = float(m_pMainFrame->m_dpi.ScaleY(CompactControls() ? 33 : 45)); // 36/48px including stroke
                 Gdiplus::SolidBrush face(hot && !pressed ? Gdiplus::Color(40, 255, 255, 255)
                     : Gdiplus::Color(pressed ? 130 : 55, 0, 0, 0));
                 graphics.FillEllipse(&face, cx-diameter/2, cy-diameter/2, diameter, diameter);
                 Gdiplus::Pen ring(enabled ? Gdiplus::Color(255, 76, 194, 255) : Gdiplus::Color(255, 145, 180, 195), float(m_pMainFrame->m_dpi.ScaleY(3)));
                 graphics.DrawEllipse(&ring, cx-diameter/2, cy-diameter/2, diameter, diameter);
             } else if (hot || pressed) {
-                DrawFluentToolbarHover(graphics, rect, centreY, m_pMainFrame->m_dpi.ScaleY(96),
+                DrawFluentToolbarHover(graphics, rect, centreY, m_pMainFrame->m_dpi.ScaleY(CompactControls() ? 82 : 96),
                     Gdiplus::Color(pressed ? 65 : 40, 255, 255, 255));
             }
             // Extract the current native image: toggle, custom and disabled states
@@ -1225,7 +1234,8 @@ bool CPlayerToolBar::PaintNativeAlpha()
                         const int legacyDiameter = std::min(
                             std::max(m_nButtonHeight+7, m_pMainFrame->m_dpi.ScaleX(48))-6,
                             std::max(m_nButtonHeight+6, m_pMainFrame->m_dpi.ScaleY(42))-4);
-                        const int iconSize = main ? std::max(1, int(legacyDiameter*(0.46f/0.66f)+0.5f)) : iw;
+                        const int normalIcon = main ? std::max(1, int(legacyDiameter*(0.46f/0.66f)+0.5f)) : iw;
+                        const int iconSize = CompactControls() ? std::max(1, MulDiv(normalIcon, main ? 75 : 85, 100)) : normalIcon;
                         graphics.DrawImage(&artwork, int(cx)-iconSize/2, centreY-iconSize/2, iconSize, iconSize);
                     }
                 }
@@ -1258,14 +1268,14 @@ bool CPlayerToolBar::ArrangeTransportControls(const CRect& client)
     // Use its public accessor before reading common-control rectangles.
     if (tb.GetButtonCount() > 0) { CRect rect; GetItemRect(0, rect); }
     const int wantedHeight = m_pMainFrame->m_dpi.ScaleY(
-        m_pMainFrame->NativeSeekbarSelected() ? 63 : 78);
+        m_pMainFrame->NativeSeekbarSelected() ? (CompactControls() ? 49 : 63) : (CompactControls() ? 62 : 78));
     if (AppIsThemeLoaded() && HIWORD(tb.GetButtonSize()) != wantedHeight)
-        SetSizes(CSize(m_nButtonHeight+7, wantedHeight), CSize(m_nButtonHeight, m_nButtonHeight));
+        SetSizes(CSize(CompactControls() ? std::max(m_nButtonHeight, MulDiv(m_nButtonHeight+7, 85, 100)) : m_nButtonHeight+7, wantedHeight), CSize(m_nButtonHeight, m_nButtonHeight));
     HideVolumeFlyout();
     if (AppIsThemeLoaded()) {
         for (UINT id : {ID_PLAY_PLAY, ID_PLAY_PAUSE}) {
             TBBUTTONINFO info = {sizeof(info)}; info.dwMask = TBIF_SIZE;
-            info.cx = static_cast<WORD>(std::max(m_nButtonHeight + 7, m_pMainFrame->m_dpi.ScaleX(54)));
+            info.cx = static_cast<WORD>(std::max(m_nButtonHeight + 7, m_pMainFrame->m_dpi.ScaleX(CompactControls() ? 42 : 54)));
             tb.SetButtonInfo(id, &info);
         }
     }
@@ -1289,8 +1299,8 @@ bool CPlayerToolBar::ArrangeTransportControls(const CRect& client)
         if (index < 0 || (tb.GetState(id) & TBSTATE_HIDDEN)) return 0;
         GetItemRect(index, rect); return static_cast<int>(rect.Width());
     };
-    const int gap = m_pMainFrame->m_dpi.ScaleX(8);
-    const int inset = m_pMainFrame->m_dpi.ScaleX(9);
+    const int gap = m_pMainFrame->m_dpi.ScaleX(CompactControls() ? 6 : 8);
+    const int inset = m_pMainFrame->m_dpi.ScaleX(CompactControls() ? 7 : 9);
     const int layoutWidth = std::max(0, static_cast<int>(client.Width()) - inset);
     const int mute = widthOf(ID_VOLUME_MUTE), overflow = widthOf(ID_TRANSPORT_OVERFLOW);
     int transportWidth = 0;
@@ -1476,7 +1486,7 @@ void CPlayerToolBar::ArrangeControls() {
         for (UINT id : {ID_PLAY_PLAY, ID_PLAY_PAUSE}) {
             if (GetToolBarCtrl().CommandToIndex(id) >= 0) {
                 TBBUTTONINFO info = {sizeof(info)}; info.dwMask = TBIF_SIZE;
-                info.cx = static_cast<WORD>(std::max(m_nButtonHeight + 7, m_pMainFrame->m_dpi.ScaleX(54)));
+                info.cx = static_cast<WORD>(std::max(m_nButtonHeight + 7, m_pMainFrame->m_dpi.ScaleX(CompactControls() ? 42 : 54)));
                 GetToolBarCtrl().SetButtonInfo(id, &info);
             }
         }

@@ -255,3 +255,9 @@ The minimum toolbar width reserves only these essential controls, not all transp
 Playlist keeps its 12px inset and fits the available band. Below a 304x180 DIP
 band it temporarily hides without clearing selection; expanding restores normal
 hover. No unreadable miniature popup or resize-blocking off-window rectangle.
+
+## Compact controls
+At client width <=480 DIP use a 36px ring, 85% secondary artwork, smaller
+spacing and 49/62 DIP control row (with/without seekbar). Return to normal at
+>=520 DIP, avoiding threshold oscillation. Artwork stays centered in native
+button cells; commands, tooltips, overflow and saved configuration are unchanged.

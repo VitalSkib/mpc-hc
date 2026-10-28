@@ -93,6 +93,8 @@ private:
     int m_volumeGlyphState = -1;
     std::vector<UINT> m_overflowButtons;
     bool m_arrangingTransport = false;
+    mutable bool m_compactControls = false;
+    bool CompactControls() const;
     ULONGLONG m_nativeSurfaceRevision = 1, m_nativeRenderedRevision = 0;
     std::vector<LONG> m_transportGeometry;
     std::vector<LONG> TransportGeometry();
