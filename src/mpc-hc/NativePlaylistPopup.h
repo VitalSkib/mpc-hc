@@ -21,6 +21,7 @@ class CNativePlaylistPopup : public CWnd, public CDropClient {
     ULONG_PTR m_graphicsToken = 0;
     CRect CloseRect() const;
     void Position();
+    bool HasReadableSpace() const;
     bool EnsureSurfaceMode(bool composition);
     void PaintSurface(CDC& dc);
     CWnd m_revealWindow;

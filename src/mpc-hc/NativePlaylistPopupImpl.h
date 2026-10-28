@@ -266,6 +266,14 @@ bool CNativePlaylistPopup::PaintMaterialList()
     return true;
 }
 
+bool CNativePlaylistPopup::HasReadableSpace() const
+{
+    // Header plus at least three readable rows, inside the existing 12px inset.
+    // Keep selection enabled: expanding the player permits ordinary hover again.
+    return m_band.Width() >= MulDiv(304, m_dpi, 96)
+        && m_band.Height() >= MulDiv(180, m_dpi, 96);
+}
+
 void CNativePlaylistPopup::Position()
 {
     if (m_band.IsRectEmpty()) return;
@@ -299,7 +307,7 @@ CRect CNativePlaylistPopup::HoverRect() const
 bool CNativePlaylistPopup::WantsReveal() const
 {
     if (!m_bar->m_pMainFrame->CanHoverControls() || m_bar->m_pMainFrame->NativeChromeSizing()
-            || !m_bar->m_nativePopupSelected || m_band.IsRectEmpty()) return false;
+            || !m_bar->m_nativePopupSelected || !HasReadableSpace()) return false;
     CPoint cursor; ::GetCursorPos(&cursor);
     return m_forceReveal || (!IsWindowVisible() && cursor != m_hiddenPoint && HoverRect().PtInRect(cursor)
         && m_bar->m_pMainFrame->NativeChromeHoverAt(cursor)
@@ -346,6 +354,11 @@ void CNativePlaylistPopup::Refresh(const CRect& band, bool show, int dpi, bool c
             DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
     }
     m_dpi = dpi;
+    if (!HasReadableSpace()) {
+        HideEnabled(false);
+        KillTimer(1);
+        return;
+    }
     if (!show || m_band.IsRectEmpty()) {
         HideEnabled(!m_band.IsRectEmpty() && !m_bar->m_pMainFrame->IsIconic());
         KillTimer(1);

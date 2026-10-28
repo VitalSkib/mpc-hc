@@ -252,3 +252,6 @@ retaining Play/Pause, More and mute. Hidden commands stay in the existing native
 overflow menu, in toolbar order, and return when width grows. Native playback
 updates own Play/Pause visibility. Runtime hiding is never saved as customization.
 The minimum toolbar width reserves only these essential controls, not all transport.
+Playlist keeps its 12px inset and fits the available band. Below a 304x180 DIP
+band it temporarily hides without clearing selection; expanding restores normal
+hover. No unreadable miniature popup or resize-blocking off-window rectangle.
