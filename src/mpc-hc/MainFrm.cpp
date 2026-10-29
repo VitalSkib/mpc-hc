@@ -20,6 +20,7 @@
  */
 
 #include "stdafx.h"
+#include "NativeModernMenu.h"
 #include "NativeResizeTiming.h"
 #include <optional>
 #include "MainFrm.h"
@@ -1271,6 +1272,9 @@ LRESULT CMainFrame::OnLAVPropPageCallback(WPARAM, LPARAM lParam)
 
 void CMainFrame::OnDestroy()
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    NativeModernMenu::Shutdown();
+#endif
     WTSUnRegisterSessionNotification();
     ShowTrayIcon(false);
     m_dropTarget.Revoke();
@@ -4345,6 +4349,9 @@ BOOL CMainFrame::OnMenu(CMenu* pMenu)
     {
         // the popup carries the submenus a media change rebuilds
         CTrackedMenuScope trackedMenuScope(*this);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        if (!NativeModernMenu::Show(m_hWnd, pMenu->GetSafeHmenu(), point))
+#endif
         pMenu->TrackPopupMenu(TPM_RIGHTBUTTON | TPM_NOANIMATION, point.x, point.y, this);
     }
 

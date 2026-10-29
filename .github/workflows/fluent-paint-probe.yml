@@ -100,7 +100,9 @@ jobs:
           New-Item -ItemType Directory -Force $probe | Out-Null
           $packages = @(
             @('microsoft.windowsappsdk.foundation', '1.8.250906002', 'foundation', '77acb164613b71b55924e22f60da7c94f78ab9ebd426395f49e79ca3a0bea77c'),
-            @('microsoft.windowsappsdk.interactiveexperiences', '1.8.250906004', 'interactive', '454b682994bbbcf3f5029f42fa1aebff72b0bb29dde1ca6e1e99cae264c74451')
+            @('microsoft.windowsappsdk.interactiveexperiences', '1.8.250906004', 'interactive', '454b682994bbbcf3f5029f42fa1aebff72b0bb29dde1ca6e1e99cae264c74451'),
+            @('microsoft.windowsappsdk.winui', '1.8.250906003', 'winui', '5792d98965490e8871b31c9c34ed9c6b0392da0a444c929abf93b1f4802b2126'),
+            @('microsoft.web.webview2', '1.0.3179.45', 'webview', '70bd381c5d67f97a6a80294001cde125ab5b24b6d36098ad901d8e15efd752d0')
           )
           foreach ($package in $packages) {
             $id, $version, $folder, $digest = $package
@@ -111,7 +113,7 @@ jobs:
           $sdkRoot = "${env:ProgramFiles(x86)}/Windows Kits/10"
           $sdk = Get-ChildItem "$sdkRoot/Include" -Directory | Where-Object Name -Match '^10\.0\.\d+\.0$' | Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
           $cppwinrt = "$sdkRoot/bin/$($sdk.Name)/x64/cppwinrt.exe"
-          & $cppwinrt -input "$probe/interactive/metadata/10.0.18362.0" -reference "$sdkRoot/UnionMetadata/$($sdk.Name)/Windows.winmd" -output "$probe/generated"
+          & $cppwinrt -input "$probe/winui/metadata" -input "$probe/foundation/metadata" -input "$probe/webview/lib/Microsoft.Web.WebView2.Core.winmd" -input "$probe/interactive/metadata/10.0.18362.0" -reference "$sdkRoot/UnionMetadata/$($sdk.Name)/Windows.winmd" -output "$probe/generated"
           if ($LASTEXITCODE -ne 0) { throw 'C++/WinRT projection generation failed.' }
           $bytes = [IO.File]::ReadAllBytes("$probe/foundation/runtimes/win-x64/native/Microsoft.WindowsAppRuntime.Bootstrap.dll")
           $text = [Text.StringBuilder]::new('static const unsigned char kPlaylistBootstrap[] = {')
@@ -127,6 +129,21 @@ jobs:
           call build.user.bat
           call "%MPCHC_VS_PATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
           cl /nologo /c /EHsc /std:c++17 /DMPC_EXPERIMENTAL_NATIVE_DECORATION /DMPC_MATERIAL_STANDALONE /I"src\mpc-hc\wasdk-probe\generated" src\mpc-hc\NativePlaylistMaterial.cpp /Fo"src\mpc-hc\wasdk-probe\preflight.obj"
+      - name: Compile optional WinUI native-menu adapter
+        shell: cmd
+        run: |
+          call build.user.bat
+          call "%MPCHC_VS_PATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+          cl /nologo /LD /EHsc /std:c++17 /utf-8 /DUNICODE /D_UNICODE /I"src\mpc-hc\wasdk-probe\generated" /I"src\mpc-hc\wasdk-probe\interactive\include" probes\winui-menu\ModernMenu.cpp /Fe:ModernMenu.dll /link windowsapp.lib user32.lib runtimeobject.lib "src\mpc-hc\wasdk-probe\interactive\lib\native\win10-x64\Microsoft.UI.Dispatching.lib"
+          if errorlevel 1 exit /b 1
+      - name: Embed optional menu adapter
+        shell: pwsh
+        run: |
+          $bytes=[IO.File]::ReadAllBytes("$env:GITHUB_WORKSPACE/ModernMenu.dll")
+          $text=[Text.StringBuilder]::new('static const unsigned char kModernMenuAdapter[] = {')
+          for($i=0;$i -lt $bytes.Length;$i++) { if(($i % 64) -eq 0){[void]$text.AppendLine()};[void]$text.Append($bytes[$i]).Append(',') }
+          [void]$text.AppendLine('};')
+          [IO.File]::WriteAllText("$env:GITHUB_WORKSPACE/src/mpc-hc/wasdk-probe/modern-menu-bytes.h",$text.ToString(),[Text.Encoding]::ASCII)
       - name: Build native-controls x64 probe
         shell: cmd
         env:

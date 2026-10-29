@@ -261,3 +261,13 @@ At client width <=480 DIP use a 36px ring, 85% secondary artwork, smaller
 spacing and 49/62 DIP control row (with/without seekbar). Return to normal at
 >=520 DIP, avoiding threshold oscillation. Artwork stays centered in native
 button cells; commands, tooltips, overflow and saved configuration are unchanged.
+
+## Modern main context menu test
+Only CMainFrame::OnMenu uses the optional WinUI presentation adapter. HMENU
+remains authoritative; native WM_INITMENU/WM_INITMENUPOPUP populate all enabled
+branches before display. Commands return through WM_COMMAND after the menu scope.
+No command implementation, playlist context menu or toolbar menu is replaced.
+Acrylic uses MenuFlyout.SystemBackdrop. Failure before showing falls back to HMENU.
+This is an integration candidate, not visually or interactively confirmed.
+Dynamic branches are eagerly initialised; native keyboard mnemonics, accessibility
+check semantics and stale state during playback require further validation.
