@@ -1,35 +1,35 @@
-# Аудит форка, 2026-10-30
+# Fork audit, 2026-10-30
 
-## Область и границы
+## Scope and limits
 
-Проверена принятая база d7ef4ad и перечень всех 54 отличающихся файлов относительно общего предка 48478c2. Отдельно просмотрены добавленные фоновые задачи, окна/подклассы, таймеры, GDI/COM/Composition, кеш, обновление программы и раскладка. Это ревизия наших вмешательств, а не утверждение о безошибочности всего унаследованного MPC-HC и его библиотек. Финальная компиляция и тесты выполняются CI; реальный heap/GPU-профиль, длительный стресс и визуальная проверка автоматически на пользовательском экране не проводились.
+The review covered the accepted d7ef4ad baseline and all 54 changed files relative to common ancestor 48478c2. Background work, windows/subclasses, timers, GDI/COM/Composition, caches, updating and layout were reviewed separately. This audits our changes; it does not claim that all inherited MPC-HC code and libraries are defect-free. CI performs compilation and tests. Heap/GPU profiling, long-running stress and automated visual checks on the user's desktop were not performed.
 
-WinUI-меню a1c7e4a отклонено после пользовательской регрессии и не входит в эту ветку. UI-контракт основан на d7ef4ad. Оригинальный стабильный 2.8.4 включён обычным слиянием без конфликтов.
+The rejected a1c7e4a WinUI-menu experiment is excluded. The UI contract is based on d7ef4ad. Official stable 2.8.4 was incorporated through a conflict-free merge.
 
-## Результаты и исправления
+## Findings and fixes
 
-| Область | Результат |
+| Area | Result |
 |---|---|
-| EPG worker | Одна работающая и одна заменяемая ожидающая задача; отмена при смене источника и уничтожении. Поток спит на condition_variable, не крутится в ожидании. Отмена кооперативная, синхронный HTTP ждёт своего таймаута. |
-| Повторное расписание | Импортированное расписание имеет приоритет. Фоновое обучение соответствию XMLTV не заменяет его. Сигнатура не позволяет запускать обучение на каждом тике. |
-| HTTP/XML/gzip | Ограничены размер, глубина HLS-переходов, время чтения, развёрнутые данные и расширение XML-сущностей; внешнего XML-resolver нет. Ресурсы COM/gzip закрываются владельцами. |
-| Кеш | Один XMLTV до 40 МиБ, обновление при необходимости через 12 часов; identities до 2 МиБ/512 записей, старые записи отбрасываются. Новый кеш проверяется до замены. Исправлена проверка ошибок flush/close перед заменой файла. |
-| GDI на исключениях | В снимке Плейлиста и декорации ручной cleanup мог не выполниться при исключении. Добавлены стековые владельцы DC/bitmap, флага отрисовки и временного свойства списка. Нормальный рисунок не менялся. |
-| Buffered paint | Исправлено освобождение при неудачном CreateEx и при ошибке/исключении между BeginBufferedPaint и EndBufferedPaint. |
-| Таймеры | Chrome 1 — только переход; Playlist 2/4/5 — снимок/сдвиг/затухание, закрываются на завершении; 3 — объединённое одноразовое обновление. Playlist 1 — наблюдение hover 100 мс, пока панель включена. Thumb 0x7f31 — только короткий переход. HWND-уничтожение снимает оставшиеся оконные таймеры. |
-| Обратная связь paint | Изменения списка ставят одноразовое обновление, read-only запросы этого не делают. Неизменившиеся пиксели повторно не отправляются в Composition. Постоянного самоподдерживающегося цикла в этой цепочке не выявлено. |
-| Подклассы/окна | Штатные дочерние контролы возвращаются владельцу; обработчики снимаются при detach/WM_NCDESTROY. При отключённом материале остаётся штатный резервный путь. |
-| Composition | Состояние закрывает Acrylic/Mica, target и compositor. UI DispatcherQueue и bootstrap сохраняются на время процесса намеренно; количество не растёт на каждом показе панели. Динамический GPU stress не проводился. |
-| Диагностика | Тяжёлые per-present/per-message диагностические ветки не включаются в релизные флаги. Устаревшие тестовые заголовки не объявлены рабочими функциями. |
-| Обновлятор | Сохранён штатный UpdateChecker и диалог. URL ведут в форк без возврата к оригинальному серверу. Добавлены владелец HTTP-файла и ограничение размера ответа версии. |
+| EPG worker | One active and one replaceable pending task. Cancellation on source changes and destruction. The worker sleeps on a condition variable rather than spinning. Cancellation is cooperative; synchronous HTTP waits for its timeout. |
+| Imported schedules | Imported guides have priority. Background XMLTV identity learning cannot replace them. A signature prevents learning from restarting on every tick. |
+| HTTP/XML/gzip | Bounded input size, HLS recursion, reading time, inflated data and XML-entity expansion. No external XML resolver. Scoped owners release COM/gzip resources. |
+| Cache | One XMLTV file up to 40 MiB, refreshed on demand after 12 hours; identities up to 2 MiB/512 entries, with old entries pruned. New data is validated before replacement. Failed flush/close operations are now checked before replacing files. |
+| GDI exceptions | Manual cleanup in playlist snapshots and decoration could be skipped on exceptions. Stack owners now restore/release DCs, bitmaps, painting flags and temporary list properties. Normal artwork is unchanged. |
+| Buffered paint | Balanced cleanup after failed CreateEx and errors/exceptions between BeginBufferedPaint and EndBufferedPaint. |
+| Timers | Chrome 1 is transition-only. Playlist 2/4/5 serve snapshots/slide/fade and stop on completion; 3 is a coalesced one-shot update. Playlist 1 watches hover every 100 ms while enabled. Thumb 0x7f31 serves short transitions only. HWND destruction removes remaining window timers. |
+| Paint feedback | List changes schedule one update; read-only queries do not. Unchanged pixels are not republished to Composition. No continuously self-triggering paint loop was found in this path. |
+| Subclasses/windows | Native child controls return to their owners. Handlers detach on teardown/WM_NCDESTROY. Disabling material retains the native fallback. |
+| Composition | State releases Acrylic/Mica, target and compositor. The UI DispatcherQueue and bootstrap are intentionally retained for process lifetime; their number does not grow on every panel show. Dynamic GPU stress was not performed. |
+| Diagnostics | Heavy per-present/per-message diagnostics are not enabled in release flags. Obsolete experimental headers are not treated as supported features. |
+| Updater | Retains the native checker and dialog. URLs point to the fork without falling back to the official update server. Added scoped HTTP-file ownership and a bounded version response. |
 
-## Проверки
+## Tests
 
-- Существующие тесты программы, HLS/XMLTV, lifecycle, идентификаций, прокрутки и рамочного ввода остаются обязательными.
-- Новый Win32-тест 1000 раз выбрасывает исключение с активным bitmap/DC и проверяет возврат GDI-счётчика и флага отрисовки.
-- Проверки установщика на временных файлах: сохранность INI/EPG, hash маршрутизатора, отказ по неверному SHA256, возврат EXE при ошибке записи маршрутизатора, удержание трёх резервных копий.
-- Тесты разделения stable/beta и допустимых тегов; защита от возврата WinUI и потери ключевых частей UI-контракта.
+- Existing programme, HLS/XMLTV, lifecycle, identity, scrolling and frame-input tests remain required.
+- A Win32 test throws 1,000 exceptions while bitmap/DC ownership is active, checking that GDI counts and painting flags are restored.
+- Temporary-file update tests cover INI/EPG preservation, routing hashes, invalid SHA256 rejection, EXE rollback on routing-write failures and retention of three backups.
+- Release tests separate stable/beta channels and validate tags and revisions. Source guards protect retained UI features and exclude the rejected WinUI integration.
 
-## Оставшиеся ограничения
+## Remaining limitations
 
-Нельзя обещать отсутствие всех утечек по статическому просмотру. Не сняты с наблюдения ранее редкие ошибки подписей Statistics и переходов fullscreen/окно. Нехватка памяти/потеря устройства может включить резервный фон. Сбой питания способен оставить временный файл; автоматическая очистка произвольных пользовательских temp-файлов не выполняется. Неоднозначные или неидентифицируемые HLS-потоки не получают выдуманное название. При конкурирующих отдельных экземплярах плеера последнее сохранение identities может вытеснить более раннее — это не слияние базы между процессами.
+Static review cannot establish the absence of all leaks. Previously intermittent Statistics labels and fullscreen transitions remain under observation. Allocation/device failures may select the fallback background. Power loss can leave a temporary file; arbitrary user temporary files are not automatically deleted. Ambiguous or unidentifiable HLS streams do not receive invented titles. Concurrent independent player instances use last-writer-wins identity persistence rather than a merged cross-process database.
