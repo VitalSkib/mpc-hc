@@ -24,6 +24,7 @@
 #include "mplayerc.h"
 #include <mvrInterfaces.h>
 
+
 #define DELAY_SHOW_NOT_LOADED_TIME_MS 3000
 
 CMainFrameControls::ControlsVisibilityState::ControlsVisibilityState()
@@ -76,16 +77,56 @@ bool CMainFrameControls::ShowToolbars(UINT nCS)
 {
     bool bRecalcLayout = false;
     auto& st = m_controlsVisibilityState;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    // Only suppress presentation. Keep the user's selected controls unchanged,
+    // and keep native status/error messages available before a file is loaded.
+    const bool empty = m_pMainFrame->GetLoadState() != MLS::LOADED;
+    if (empty) nCS &= ~(CS_SEEKBAR | CS_TOOLBAR);
+    const auto visibleStyle = [](const CWnd& bar) {
+        return bar.GetSafeHwnd() && (bar.GetStyle() & WS_VISIBLE);
+    };
+    const bool emptyControlsVisible = empty && (visibleStyle(m_pMainFrame->m_wndSeekBar)
+        || visibleStyle(m_pMainFrame->m_wndToolBar));
+    if (nCS != st.nVisibleCS || emptyControlsVisible) {
+#else
     if (nCS != st.nVisibleCS) {
+#endif
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        const bool hosted = m_pMainFrame->m_wndView.EnsureNativeChromeHosts();
+        const UINT selected = GetEffectiveToolbarsSelection();
+#endif
         m_pMainFrame->m_pLastBar = nullptr;
         int i = 1;
         for (const auto& pair : m_toolbars) {
             auto& pCB = pair.second;
             if (pCB->m_hWnd) {
-                if (nCS & i) {
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+                const bool migrated = pair.first == Toolbar::CONTROLS || pair.first == Toolbar::SEEKBAR;
+                if ((nCS & i) && !migrated) {
+#else
+                bool show = (nCS & i) != 0;
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+                // Native bars stay mounted and painted inside a clipped host.
+                // Only the host handles transient show/hide. Selection and the
+                // upstream visibility state/deadlines remain independent.
+                if (hosted && m_pMainFrame->GetLoadState() == MLS::LOADED)
+                    show = (selected & i) != 0;
+#endif
+                if (show) {
+#endif
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+                    if (hosted)
+                        pCB->ShowWindow(SW_SHOWNOACTIVATE);
+                    else
+#endif
                     m_pMainFrame->ShowControlBar(pCB, TRUE, TRUE);
                     m_pMainFrame->m_pLastBar = pCB;
                 } else {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+                    if (hosted)
+                        pCB->ShowWindow(SW_HIDE);
+                    else
+#endif
                     m_pMainFrame->ShowControlBar(pCB, FALSE, TRUE);
                 }
             } else {
@@ -99,13 +140,25 @@ bool CMainFrameControls::ShowToolbars(UINT nCS)
     return bRecalcLayout;
 }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+unsigned CMainFrameControls::GetVisibleHostedToolbarsHeight() const
+{
+    return GetVisibleToolbarsHeight();
+}
+#endif
+
 unsigned CMainFrameControls::GetToolbarsHeight(UINT nCS) const
 {
     unsigned ret = 0;
     int i = 1;
     for (const auto& pair : m_toolbars) {
         auto& pCB = pair.second;
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+        const bool migrated = pair.first == Toolbar::CONTROLS || pair.first == Toolbar::SEEKBAR;
+        if ((nCS & i) && !migrated && IsWindow(pCB->m_hWnd)) {
+#else
         if ((nCS & i) && IsWindow(pCB->m_hWnd)) {
+#endif
             ret += pCB->CalcFixedLayout(TRUE, TRUE).cy;
         }
         i <<= 1;
@@ -157,6 +210,11 @@ bool CMainFrameControls::ControlChecked(Toolbar toolbar)
 
 bool CMainFrameControls::ControlChecked(Panel panel)
 {
+    if (!PanelEnabled(panel)) return false;
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (panel == Panel::PLAYLIST && m_pMainFrame->m_wndPlaylistBar.UsesNativePopup())
+        return m_pMainFrame->m_wndPlaylistBar.NativePopupSelected();
+#endif
     auto pBar = m_panels[panel];
     return pBar->IsAutohidden() || pBar->IsWindowVisible();
 }
@@ -173,6 +231,16 @@ void CMainFrameControls::ToggleControl(Toolbar toolbar)
 
 void CMainFrameControls::ToggleControl(Panel panel)
 {
+    if (!PanelEnabled(panel)) return;
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (panel == Panel::PLAYLIST && m_pMainFrame->m_wndPlaylistBar.UsesNativePopup()) {
+        m_pMainFrame->m_wndPlaylistBar.ToggleNativePopup();
+        LockHideZone(DOCK_BOTTOM);
+        ShowToolbarsSelection();
+        UpdateToolbarsVisibility();
+        return;
+    }
+#endif
     auto pBar = m_panels[panel];
     if (pBar->IsWindowVisible()) {
         m_pMainFrame->ShowControlBar(pBar, FALSE, FALSE);
@@ -208,7 +276,15 @@ void CMainFrameControls::LoadState()
     ASSERT(!m_panels.empty());
     for (const auto& pair : m_panels) {
         auto pBar = pair.second;
+        if (!PanelEnabled(pair.first)) continue; // Do not restore a saved visible/floating panel.
         pBar->LoadState(m_pMainFrame);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        if (pair.first == Panel::PLAYLIST && !pBar->IsFloating()
+                && m_pMainFrame->GetLoadState() != MLS::LOADED && (pBar->GetStyle() & WS_VISIBLE)) {
+            m_pMainFrame->ShowControlBar(pBar, FALSE, TRUE);
+            pBar->SetAutohidden(true);
+        }
+#endif
         if (pBar->IsFloating() && pBar->IsAutohidden()) {
             pBar->SetAutohidden(false);
             bool delay = pair.first != CMainFrameControls::Panel::PLAYLIST;
@@ -221,6 +297,7 @@ void CMainFrameControls::SaveState()
 {
     ASSERT(!m_panels.empty());
     for (const auto& pair : m_panels) {
+        if (!PanelEnabled(pair.first)) continue; // Preserve the previous native panel settings.
         pair.second->SaveState();
     }
 }
@@ -302,6 +379,16 @@ bool CMainFrameControls::PanelsCoverVideo() const
 
 bool CMainFrameControls::ToolbarsCoverVideo() const
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    // Presentation geometry is independent of the auto-hide policy. All native
+    // transparent bars, the header and the video pane consume this same result.
+    // Disabling Hide Windowed Controls must keep video beneath persistent bars.
+    if (!m_pMainFrame->HasDedicatedFSVideoWindow()
+            && !m_pMainFrame->IsD3DFullScreenMode()
+            && !m_pMainFrame->m_bIsMPCVRExclusiveMode) {
+        return true;
+    }
+#endif
     const auto& s = AfxGetAppSettings();
     return m_pMainFrame->IsFullScreenMainFrame() && !m_pMainFrame->m_bIsMPCVRExclusiveMode ||
         (!m_pMainFrame->IsD3DFullScreenMode() && s.bHideWindowedControls && s.bHideFullscreenControls &&
@@ -352,6 +439,9 @@ bool ToolbarInputActive(CPlayerBar *bar) {
 void CMainFrameControls::UpdateToolbarsVisibility()
 {
     ASSERT(GetCurrentThreadId() == AfxGetApp()->m_nThreadID);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (!m_pMainFrame->CanHoverControls()) return;
+#endif
 
     const auto& s = AfxGetAppSettings();
     auto& st = m_controlsVisibilityState;
@@ -365,11 +455,23 @@ void CMainFrameControls::UpdateToolbarsVisibility()
     m_pMainFrame->ScreenToClient(&clientPoint);
 
     const MLS mls = m_pMainFrame->GetLoadState();
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    const auto emptyPlaylist = [&](Panel panel) {
+        return panel == Panel::PLAYLIST && mls != MLS::LOADED && !m_panels[panel]->IsFloating();
+    };
+#endif
 
     const bool bCanAutoHide = s.bHideFullscreenControls && (mls == MLS::LOADED || m_bDelayShowNotLoaded) &&
                               (m_pMainFrame->IsFullScreenMainFrame() || s.bHideWindowedControls && !m_pMainFrame->IsFullScreenSeparate()) &&
                               ePolicy != CAppSettings::HideFullscreenControlsPolicy::SHOW_NEVER;
     const bool bCanHideDockedPanels = s.bHideFullscreenDockedPanels;
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    const bool sizing = m_pMainFrame->NativeChromeSizing();
+    bool resizeBorder = false;
+    const bool chromeHover = m_pMainFrame->NativeChromeHoverAt(screenPoint, &resizeBorder);
+#else
+    const bool sizing = false, resizeBorder = false;
+#endif
 
     bool bEnumedPanelZones = false;
 
@@ -400,12 +502,22 @@ void CMainFrameControls::UpdateToolbarsVisibility()
         bExclSeekbar = true;
     }
 
-    if (m_pMainFrame->IsFullScreenMainFrame() && s.bHideFullscreenControls &&
+    if (sizing || resizeBorder) {
+        // Feed the ordinary hider rather than changing the selected controls.
+        mask.hide(DOCK_BOTTOM | DOCK_RIGHT | DOCK_LEFT | DOCK_TOP);
+    } else if (m_pMainFrame->IsFullScreenMainFrame() && s.bHideFullscreenControls &&
             ePolicy == CAppSettings::HideFullscreenControlsPolicy::SHOW_NEVER) {
         // hide completely
         mask.hide(maskAll);
     } else if (bCanAutoHide) {
-        if (m_pMainFrame->m_wndSeekBar.DraggingThumb() || m_pMainFrame->m_bTBDropdownActive) {
+        if (m_pMainFrame->m_wndSeekBar.DraggingThumb() || m_pMainFrame->m_bTBDropdownActive
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+                || m_pMainFrame->m_wndToolBar.VolumeFlyoutActive()
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+                || m_pMainFrame->m_wndPlaylistBar.NativePopupInputActive()
+#endif
+#endif
+                ) {
             // show bottom while dragging the seekbar thumb
             mask.show(DOCK_BOTTOM);
         } else {
@@ -417,7 +529,11 @@ void CMainFrameControls::UpdateToolbarsVisibility()
                     mask.maskHide &= ~zone;
                 }
             }
-            const bool bOnWindow = CMouse::CursorOnRootWindow(screenPoint, *m_pMainFrame);
+            const bool bOnWindow = CMouse::CursorOnRootWindow(screenPoint, *m_pMainFrame)
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+                && chromeHover
+#endif
+                ;
             auto testCapture = [&]() {
                 bool ret = false;
                 if (HWND hWnd = GetCapture()) {
@@ -521,7 +637,18 @@ void CMainFrameControls::UpdateToolbarsVisibility()
                 }
                 return ret;
             };
-            if (!testCapture() && !testHovering() &&
+            const bool captured = testCapture();
+            const bool hovered = !captured && testHovering();
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+            CRect window;
+            m_pMainFrame->GetWindowRect(window);
+            if (!captured && !window.PtInRect(screenPoint) && m_pMainFrame->m_nTrackedMenuDepth == 0) {
+                // Reuse the native hider's existing checks/deadlines. Leaving
+                // the frame ends bottom-control visibility without a new timer.
+                mask.hide(bCanHideDockedPanels ? maskAll : DOCK_BOTTOM);
+            }
+#endif
+            if (!captured && !hovered &&
                     ePolicy == CAppSettings::HideFullscreenControlsPolicy::SHOW_WHEN_CURSOR_MOVED &&
                     bOnWindow && !CMouse::PointEqualsImprecise(screenPoint, st.lastShowPoint) &&
                     !m_pMainFrame->m_wndView.Dragging() && uTimeout > 0) {
@@ -586,7 +713,12 @@ void CMainFrameControls::UpdateToolbarsVisibility()
 
     if (!bCanHideDockedPanels) {
         for (const auto& pair : m_panels) {
-            if (pair.second->IsAutohidden()) {
+            if (pair.second->IsAutohidden()
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+                    && !(sizing && pair.first == Panel::PLAYLIST)
+                    && !emptyPlaylist(pair.first)
+#endif
+                    ) {
                 bRecalcLayout = true;
                 m_pMainFrame->ShowControlBar(pair.second, TRUE, TRUE);
                 pair.second->SetAutohidden(false);
@@ -609,6 +741,9 @@ void CMainFrameControls::UpdateToolbarsVisibility()
                 if (it != m_panelZones.end()) {
                     const auto& panels = it->second;
                     for (const auto panel : panels) {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+                        if (emptyPlaylist(panel)) continue;
+#endif
                         if (m_panels[panel]->IsAutohidden()) {
                             bRecalcLayout = true;
                             m_pMainFrame->ShowControlBar(m_panels[panel], TRUE, TRUE);
@@ -675,9 +810,10 @@ void CMainFrameControls::UpdateToolbarsVisibility()
             ASSERT(zone != DOCK_NONE);
             if (zone & mask.maskHide) {
                 auto it = m_panelZones.find(zone);
-                if (it != m_panelZones.end() && bCanHideDockedPanels) {
+                if (it != m_panelZones.end() && (bCanHideDockedPanels || sizing)) {
                     const auto panels = it->second; // copy
                     for (const auto panel : panels) {
+                        if (!bCanHideDockedPanels && panel != Panel::PLAYLIST) continue;
                         auto pBar = m_panels[panel];
                         if (!pBar->IsAutohidden() && !ToolbarInputActive(pBar) && !pBar->HasActivePopup()) {
                             bRecalcLayout = true;
@@ -702,6 +838,14 @@ void CMainFrameControls::UpdateToolbarsVisibility()
         autohideZone(DOCK_RIGHT);
     }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    auto playlist = m_panels[Panel::PLAYLIST];
+    if (emptyPlaylist(Panel::PLAYLIST) && playlist->IsWindowVisible()) {
+        m_pMainFrame->ShowControlBar(playlist, FALSE, TRUE);
+        playlist->SetAutohidden(true);
+        bRecalcLayout = true;
+    }
+#endif
     const bool bNeedTimer = !m_zoneHideTicks.empty();
     if (bNoTimer && bNeedTimer) {
         m_pMainFrame->m_timerHider.Subscribe(CMainFrame::TimerHiderSubscriber::TOOLBARS_HIDER,
@@ -714,9 +858,17 @@ void CMainFrameControls::UpdateToolbarsVisibility()
         m_pMainFrame->RecalcLayout();
     }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    m_pMainFrame->m_wndToolBar.UpdateVolumeFlyout();
+#endif
     st.bLastCanAutoHideToolbars = bCanAutoHide;
     st.bLastCanAutoHidePanels = bCanAutoHide && bCanHideDockedPanels;
     st.bLastHaveExclusiveSeekbar = bExclSeekbar;
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    // Decoration follows the native visibility decision, including unchanged
+    // layouts. It has no cursor policy, hide deadline, timer or polling loop.
+    m_pMainFrame->m_wndView.UpdateNativeDecoration();
+#endif
 }
 
 unsigned CMainFrameControls::GetVisibleToolbarsHeight() const
@@ -781,6 +933,9 @@ void CMainFrameControls::EnumPanelZones()
     m_panelDocks.clear();
 
     for (const auto& pair : m_panels) {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        if (pair.first == Panel::PLAYLIST && m_pMainFrame->m_wndPlaylistBar.UsesNativePopup()) continue;
+#endif
         auto& pBar = pair.second;
         if (IsWindow(pBar->m_hWnd) && (pBar->IsAutohidden() || pBar->IsWindowVisible())) {
             DockZone zone = GetPanelZone(pBar);

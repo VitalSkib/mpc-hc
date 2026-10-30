@@ -20,6 +20,7 @@
  */
 
 #include "stdafx.h"
+#include "NativePlaylistDiagnostic.h"
 #include <cmath>
 #include <afxinet.h>
 #include "mplayerc.h"
@@ -70,6 +71,28 @@ void CPlaylistListFrame::OnNcPaint()
 
 LRESULT CPlaylistListFrame::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (nativeSurface && (message == WM_PAINT || message == WM_NCPAINT)) {
+        auto popup = static_cast<CNativePlaylistPopup*>(GetParent());
+        if (popup && popup->MaterialActive()) {
+            // Composition owns the entire visible panel. This HWND supplies
+            // layout/input only; even a translucent GDI fill here creates a
+            // separate stationary rectangle when the panel moves away.
+            if (message == WM_PAINT) { CPaintDC dc(this); }
+            popup->QueueMaterialForeground();
+            return 0;
+        }
+    }
+    if (message == WM_ERASEBKGND && wParam && nativeSurface) {
+        // The native list is briefly hidden by WM_SETREDRAW during layout.
+        // Its container must clear to the same key, never an uninitialized black surface.
+        auto popup = static_cast<CNativePlaylistPopup*>(GetParent());
+        if (popup && popup->MaterialActive()) return TRUE;
+        CRect rect; GetClientRect(rect);
+        CDC::FromHandle(reinterpret_cast<HDC>(wParam))->FillSolidRect(rect, CNativePlaylistPopup::SurfaceColor());
+        return TRUE;
+    }
+#endif
     if (CWnd* pBar = GetParent()) {
         switch (message) {
         case WM_NOTIFY:
@@ -90,6 +113,14 @@ LRESULT CPlaylistListFrame::WindowProc(UINT message, WPARAM wParam, LPARAM lPara
 
 
 IMPLEMENT_DYNAMIC(CPlayerPlaylistBar, CMPCThemePlayerBar)
+
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+static void RefreshChromeHeader(CMainFrame* frame)
+{
+    if (const auto view = DYNAMIC_DOWNCAST(CChildView, frame->GetDescendantWindow(AFX_IDW_PANE_FIRST)))
+        view->UpdateNativeDecoration();
+}
+#endif
 CPlayerPlaylistBar::CPlayerPlaylistBar(CMainFrame* pMainFrame)
     : CMPCThemePlayerBar(pMainFrame)
     , m_pMainFrame(pMainFrame)
@@ -139,6 +170,9 @@ BOOL CPlayerPlaylistBar::Create(CWnd* pParentWnd, UINT defDockBarID)
         CRect(0, 0, 100, 100), &m_listFrame, IDC_PLAYLIST);
 
     m_list.SetExtendedStyle(m_list.GetExtendedStyle() | LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    ::SetWindowSubclass(m_list.m_hWnd, NativeListProcedure, reinterpret_cast<UINT_PTR>(this), reinterpret_cast<DWORD_PTR>(this));
+#endif
     SetListBkColor();
 
     // The column titles don't have to be translated since they aren't displayed anyway
@@ -169,15 +203,241 @@ BOOL CPlayerPlaylistBar::PreCreateWindow(CREATESTRUCT& cs)
     return TRUE;
 }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+#include "NativePlaylistPopupImpl.h"
+
+bool CPlayerPlaylistBar::PrepareNativePresentation(bool enabled, const CRect& band)
+{
+    if (!GetSafeHwnd()) return false;
+    const bool active = m_nativeDock.Update(*this, enabled);
+    const int dockId = GetParent() ? GetParent()->GetDlgCtrlID() : 0;
+    const bool side = active && (dockId == AFX_IDW_DOCKBAR_LEFT || dockId == AFX_IDW_DOCKBAR_RIGHT);
+    CRect bounds; GetWindowRect(bounds);
+    const int windowHeight = std::max(0, bounds.Height());
+    const int top = side ? std::clamp<int>(band.top - bounds.top, 0, windowHeight) : 0;
+    const int bottom = side ? std::clamp<int>(bounds.bottom - band.bottom, 0, windowHeight - top) : 0;
+    if (top != m_nativeTopInset || bottom != m_nativeBottomInset) {
+        m_nativeTopInset = top; m_nativeBottomInset = bottom;
+        // Recalculate native client/nonclient areas, without moving the docked bar
+        // or feeding a shorter outer size back into MFC's docking negotiation.
+        SetWindowPos(nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        ResizeListColumn();
+    }
+    CRect clip(0, top, bounds.Width(), windowHeight - bottom);
+    if (side) {
+        if (!m_nativeClipped || clip != m_nativeClip) {
+            HRGN region = ::CreateRectRgnIndirect(&clip);
+            if (region) {
+                if (::SetWindowRgn(m_hWnd, region, TRUE)) { m_nativeClip = clip; m_nativeClipped = true; }
+                else ::DeleteObject(region);
+            }
+        }
+    } else if (m_nativeClipped) {
+        ::SetWindowRgn(m_hWnd, nullptr, TRUE); m_nativeClip.SetRectEmpty(); m_nativeClipped = false;
+    }
+    if (active) m_nativeDock.ClipTo(GetNativePresentationRect());
+    UpdateNativeHover();
+    return active;
+}
+
+LRESULT CPlayerPlaylistBar::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
+{
+    if (UsesNativePopup() && message == WM_WINDOWPOSCHANGING) {
+        auto position = reinterpret_cast<WINDOWPOS*>(lParam);
+        if (position->flags & SWP_SHOWWINDOW) {
+            position->flags &= ~SWP_SHOWWINDOW;
+            position->flags |= SWP_HIDEWINDOW;
+        }
+    }
+    if (m_nativeDock.Active()) {
+        // The docked overlay is fixed; retain native list input, sizing and close.
+        if (message == WM_LBUTTONDOWN || message == WM_LBUTTONDBLCLK
+                || message == WM_NCLBUTTONDBLCLK) return 0;
+        if (message == WM_NCPAINT) {
+            CWindowDC dc(this);
+            CRect window, client; GetWindowRect(window); GetClientRect(client);
+            ClientToScreen(client); client.OffsetRect(-window.TopLeft());
+            window.OffsetRect(-window.TopLeft());
+            dc.ExcludeClipRect(client);
+            dc.FillSolidRect(window, CMPCTheme::ContentBGColor);
+            if (HasGripper()) paintHideButton(&dc, m_biHide);
+            return 0;
+        }
+    }
+    return __super::WindowProc(message, wParam, lParam);
+}
+
+CRect CPlayerPlaylistBar::GetNativePresentationRect() const
+{
+    CRect rect; GetWindowRect(rect);
+    if (m_nativeClipped) {
+        const CPoint origin = rect.TopLeft(); rect = m_nativeClip; rect.OffsetRect(origin);
+    }
+    return rect;
+}
+
+void CPlayerPlaylistBar::NcCalcClient(LPRECT rect, UINT dockId)
+{
+    __super::NcCalcClient(rect, dockId);
+    if (!m_nativeDock.Active()) return;
+    rect->top = std::min(rect->bottom, rect->top + m_nativeTopInset);
+    rect->bottom = std::max(rect->top, rect->bottom - m_nativeBottomInset);
+    if (m_nativeTopInset && HasGripper()) {
+        CRect close = m_biHide.GetRect(); close.OffsetRect(0, m_nativeTopInset);
+        m_biHide.Move(close.TopLeft());
+    }
+}
+
+void CPlayerPlaylistBar::UpdateNativeHover()
+{
+    if (!::IsWindow(m_list.GetSafeHwnd())) { m_nativeHotItem = -1; return; }
+    int hot = -1;
+    POINT cursor;
+    const bool visible = UsesNativePopup() ? m_nativePopup.IsWindowVisible() : IsWindowVisible();
+    CRect bounds;
+    if (UsesNativePopup()) m_nativePopup.GetWindowRect(bounds);
+    else bounds = GetNativePresentationRect();
+    if ((UsesNativePopup() || m_nativeDock.Active()) && visible && ::GetCursorPos(&cursor)
+            && bounds.PtInRect(cursor)) {
+        m_list.ScreenToClient(&cursor);
+        UINT flags = 0; hot = m_list.HitTest(cursor, &flags);
+        if (!(flags & LVHT_ONITEM)) hot = -1;
+    }
+    if (hot == m_nativeHotItem) return;
+    const int previous = m_nativeHotItem; m_nativeHotItem = hot;
+    if (previous >= 0 && previous < m_list.GetItemCount()) m_list.RedrawItems(previous, previous);
+    if (hot >= 0) m_list.RedrawItems(hot, hot);
+}
+
+LRESULT CALLBACK CPlayerPlaylistBar::NativeListProcedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam,
+    UINT_PTR id, DWORD_PTR data)
+{
+    auto bar = reinterpret_cast<CPlayerPlaylistBar*>(data);
+    if (bar->UsesNativePopup() && bar->m_nativePopup.MaterialActive()) {
+        switch (message) {
+        case WM_PAINT: case WM_NCPAINT: case WM_ERASEBKGND:
+        case WM_PRINT: case WM_PRINTCLIENT: case WM_SETREDRAW:
+        case WM_MOUSEWHEEL: case WM_VSCROLL: case WM_HSCROLL: case LVM_SCROLL:
+            PlaylistDiagnostic::Trace("list-message", window,
+                (message == WM_PRINT || message == WM_PRINTCLIENT || message == WM_ERASEBKGND)
+                    ? reinterpret_cast<HDC>(wparam) : nullptr, message, wparam);
+            break;
+        }
+    }
+    if (message == WM_NCDESTROY) ::RemoveWindowSubclass(window, NativeListProcedure, id);
+    else if ((message == WM_PAINT || message == WM_NCPAINT) && bar->UsesNativePopup()
+            && bar->m_nativePopup.MaterialActive()) {
+        if (bar->m_nativePopup.PaintMaterialList()) {
+            if (message == WM_PAINT) {
+                PAINTSTRUCT paint{};
+                ::BeginPaint(window, &paint); ::EndPaint(window, &paint);
+            }
+            return 0;
+        }
+    }
+    else if (message == WM_ERASEBKGND && bar->UsesNativePopup() && wparam) {
+        if (bar->m_nativePopup.MaterialActive()) return TRUE;
+        // The themed list's EraseBkgnd hardcodes ContentBGColor below the rows.
+        // Paint this popup's actual background/key instead, including the empty area.
+        RECT rect; ::GetClientRect(window, &rect);
+        HBRUSH brush = ::CreateSolidBrush(CNativePlaylistPopup::SurfaceColor());
+        ::FillRect(reinterpret_cast<HDC>(wparam), &rect, brush); ::DeleteObject(brush);
+        return TRUE;
+    } else if (message == WM_MOUSEMOVE || message == WM_MOUSELEAVE) {
+        bar->UpdateNativeHover();
+        if (bar->UsesNativePopup() && bar->nativePopupActivity) bar->nativePopupActivity();
+        if (message == WM_MOUSEMOVE && (bar->UsesNativePopup() || bar->m_nativeDock.Active())) {
+            TRACKMOUSEEVENT track = {sizeof(track), TME_LEAVE, window, 0}; ::TrackMouseEvent(&track);
+        }
+    }
+    // A native list can copy/paint pixels synchronously inside scrolling,
+    // without WM_PAINT. Batch that state change with the native redraw switch;
+    // the existing compositor snapshot remains the sole visible surface.
+    const bool scrollUpdate = message == WM_MOUSEWHEEL || message == WM_VSCROLL
+        || message == WM_HSCROLL || message == LVM_SCROLL || message == LVM_ENSUREVISIBLE;
+    const bool deferNativePaint = scrollUpdate && bar->UsesNativePopup()
+        && bar->m_nativePopup.MaterialActive() && ::IsWindowVisible(window);
+    if (deferNativePaint) ::SendMessage(window, WM_SETREDRAW, FALSE, 0);
+    const LRESULT result = ::DefSubclassProc(window, message, wparam, lparam);
+    if (deferNativePaint && ::IsWindow(window)) ::SendMessage(window, WM_SETREDRAW, TRUE, 0);
+    // Read-only native queries (including dialog navigation and item queries)
+    // must never enqueue a composition update. They also run while pumping it.
+    if (bar->UsesNativePopup() && bar->m_nativePopup.MaterialActive()) {
+        switch (message) {
+        case WM_MOUSEMOVE: case WM_MOUSELEAVE:
+        case WM_LBUTTONDOWN: case WM_LBUTTONUP: case WM_LBUTTONDBLCLK:
+        case WM_RBUTTONDOWN: case WM_RBUTTONUP:
+        case WM_KEYDOWN: case WM_KEYUP: case WM_CHAR:
+        case WM_MOUSEWHEEL: case WM_VSCROLL: case WM_HSCROLL:
+        case WM_SIZE: case WM_SETFOCUS: case WM_KILLFOCUS:
+        case LVM_SETITEMSTATE: case LVM_SETITEMCOUNT: case LVM_SETITEMTEXT:
+        case LVM_SETITEM: case LVM_INSERTITEM: case LVM_DELETEITEM:
+        case LVM_DELETEALLITEMS: case LVM_REDRAWITEMS: case LVM_ENSUREVISIBLE:
+        case LVM_SCROLL:
+            bar->m_nativePopup.QueueMaterialForeground(); break;
+        }
+    }
+    if (message == WM_MOUSEWHEEL || message == WM_VSCROLL || message == WM_HSCROLL) bar->UpdateNativeHover();
+    return result;
+}
+
+bool CPlayerPlaylistBar::RouteNativePresentationInput(MSG* message)
+{
+    // Only the legacy transparent dock needs geometry-based input routing.
+    if (!m_nativeDock.Active() || !IsWindowVisible() || ::GetCapture()
+            || message->hwnd == m_hWnd || ::IsChild(m_hWnd, message->hwnd)) return false;
+    const UINT event = message->message;
+    if (event != WM_MOUSEMOVE && event != WM_LBUTTONDOWN && event != WM_LBUTTONUP
+            && event != WM_LBUTTONDBLCLK && event != WM_RBUTTONDOWN && event != WM_RBUTTONUP
+            && event != WM_MOUSEWHEEL) return false;
+    CRect bounds;
+    bounds = GetNativePresentationRect();
+    if (!bounds.PtInRect(message->pt)) return false;
+    HWND target = m_hWnd;
+    while (true) {
+        POINT point = message->pt; ::ScreenToClient(target, &point);
+        RECT client; ::GetClientRect(target, &client);
+        if (!::PtInRect(&client, point)) break;
+        HWND child = ::ChildWindowFromPointEx(target, point, CWP_SKIPINVISIBLE | CWP_SKIPDISABLED);
+        if (!child || child == target) break;
+        target = child;
+    }
+    if (target == message->hwnd) return false;
+    const LRESULT hit = ::SendMessage(target, WM_NCHITTEST, 0, MAKELPARAM(message->pt.x, message->pt.y));
+    if (event == WM_MOUSEWHEEL) ::SendMessage(target, event, message->wParam, message->lParam);
+    else if (hit == HTCLIENT) {
+        POINT point = message->pt; ::ScreenToClient(target, &point);
+        ::SendMessage(target, event, message->wParam, MAKELPARAM(point.x, point.y));
+    } else {
+        UINT nonclient = event == WM_MOUSEMOVE ? WM_NCMOUSEMOVE : event == WM_LBUTTONDOWN ? WM_NCLBUTTONDOWN
+            : event == WM_LBUTTONUP ? WM_NCLBUTTONUP : event == WM_LBUTTONDBLCLK ? WM_NCLBUTTONDBLCLK
+            : event == WM_RBUTTONDOWN ? WM_NCRBUTTONDOWN : WM_NCRBUTTONUP;
+        ::SendMessage(target, nonclient, hit, MAKELPARAM(message->pt.x, message->pt.y));
+    }
+    return true;
+}
+#endif
+
 BOOL CPlayerPlaylistBar::PreTranslateMessage(MSG* pMsg)
 {
-    if (IsWindow(pMsg->hwnd) && IsVisible() && pMsg->message >= WM_KEYFIRST && pMsg->message <= WM_KEYLAST) {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (pMsg->message == WM_MOUSEMOVE || pMsg->message == WM_MOUSELEAVE) UpdateNativeHover();
+#endif
+    bool nativeVisible = IsVisible();
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    nativeVisible = nativeVisible || (UsesNativePopup() && m_nativePopup.IsWindowVisible());
+#endif
+    if (IsWindow(pMsg->hwnd) && nativeVisible && pMsg->message >= WM_KEYFIRST && pMsg->message <= WM_KEYLAST) {
         if (GetKeyState(VK_MENU) & 0x8000) {
             if (TranslateAccelerator(m_pMainFrame->GetSafeHwnd(), m_pMainFrame->GetDefaultAccelerator(), pMsg)) {
                 return TRUE;
             }
         }
-        if (IsDialogMessage(pMsg)) {
+        if (
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+            UsesNativePopup() ? m_nativePopup.IsDialogMessage(pMsg) :
+#endif
+            IsDialogMessage(pMsg)) {
             return TRUE;
         }
     }
@@ -192,6 +452,23 @@ void CPlayerPlaylistBar::ReloadTranslatableResources()
 
 void CPlayerPlaylistBar::LoadState(CFrameWnd* pParent)
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (m_nativePopup.Create(pParent, this)) {
+        CString section = _T("ToolBars\\") + m_strSettingName;
+        m_nativePopupSelected = !!AfxGetApp()->GetProfileInt(section, _T("Visible"), FALSE);
+        if (m_nativePopupSelected) m_nativePopup.RequestOpen();
+        SetAutohidden(false);
+        pParent->ShowControlBar(this, FALSE, TRUE);
+        m_listFrame.ModifyStyleEx(WS_EX_CLIENTEDGE | WS_EX_DLGMODALFRAME, 0, SWP_FRAMECHANGED);
+        m_listFrame.SetParent(&m_nativePopup);
+        m_nativePopup.ConfigureSurface();
+        ScaleFont();
+        SetListBkColor();
+        m_dropTarget.Revoke();
+        m_dropTarget.Register(&m_nativePopup);
+        return;
+    }
+#endif
     CString section = _T("ToolBars\\") + m_strSettingName;
 
     if (AfxGetApp()->GetProfileInt(section, _T("Visible"), FALSE)) {
@@ -203,6 +480,13 @@ void CPlayerPlaylistBar::LoadState(CFrameWnd* pParent)
 
 void CPlayerPlaylistBar::SaveState()
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (UsesNativePopup()) {
+        CString section = _T("ToolBars\\") + m_strSettingName;
+        AfxGetApp()->WriteProfileInt(section, _T("Visible"), m_nativePopupSelected);
+        return;
+    }
+#endif
     __super::SaveState();
 
     CString section = _T("ToolBars\\") + m_strSettingName;
@@ -218,6 +502,9 @@ bool CPlayerPlaylistBar::IsHiddenDueToFullscreen() const
 
 void CPlayerPlaylistBar::SetHiddenDueToFullscreen(bool bHiddenDueToFullscreen, bool returningFromFullScreen /* = false */)
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (UsesNativePopup()) { m_bHiddenDueToFullscreen = false; return; }
+#endif
     if (bHiddenDueToFullscreen) {
         SetAutohidden(false);
     } else if (returningFromFullScreen) { //it was already hidden, but now we will flag it as autohidden vs. hiddenDueToFullscreen
@@ -1007,6 +1294,35 @@ bool CPlayerPlaylistBar::ParseMPCPlayList(CString fn)
         }
     }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    // Optional sidecar is scoped to this local imported playlist and exact URL.
+    // Ordinary MPCPL parsing and all playlists without valid EPG stay unchanged.
+    m_programmeGuide.Clear();
+    m_autoProgrammeGuide = false;
+    m_programmeRowsKnown = false;
+    if (!PathUtils::IsURL(fn) && !idx.empty() && !pli[idx.front()].m_fns.IsEmpty()) {
+        CString source = pli[idx.front()].m_fns.GetHead();
+        bool sameSource = PathUtils::IsURL(source);
+        for (int i : idx) sameSource = sameSource && !pli[i].m_fns.IsEmpty() && pli[i].m_fns.GetHead() == source;
+        if (sameSource && m_programmeGuide.Load(std::wstring(fn.GetString()) + L".epg.json", source.GetString())) {
+            const auto remaining = m_programmeGuide.Remaining(CNativeProgrammeGuide::Now());
+            if (!remaining.empty()) {
+                pli.RemoveAll(); idx.clear();
+                pli[1].m_fns.AddTail(source);
+                pli[1].m_label = m_programmeGuide.channel.c_str(); idx.push_back(1);
+                int i = 2;
+                for (const auto& programme : remaining) {
+                    pli[i].m_fns.AddTail(source);
+                    pli[i].m_label = (CNativeProgrammeGuide::Clock(programme.start) + L" " + programme.title).c_str();
+                    idx.push_back(i++);
+                }
+                m_programmeRowsKey = m_programmeGuide.RemainingKey(CNativeProgrammeGuide::Now());
+                m_programmeRowsKnown = true;
+            }
+        }
+    }
+    m_programmeCaption.Empty();
+#endif
     std::sort(idx.begin(), idx.end());
     for (int i : idx) {
         if (pli[i].m_fns.GetCount() > 0) m_pl.AddTail(pli[i]);
@@ -1193,6 +1509,13 @@ void CPlayerPlaylistBar::PlayListChanged() {
 bool CPlayerPlaylistBar::Empty()
 {
     CAutoLock pledit(&m_plEditLock);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    m_streamEpg.Reset();
+    m_programmeRowsKnown = false;
+    m_autoProgrammeGuide = false;
+    m_programmeGuide.Clear();
+    m_programmeCaption.Empty();
+#endif
 
     bool bWasPlaying = m_pl.RemoveAll();
     m_list.SetItemCountEx(0);
@@ -1557,6 +1880,163 @@ CString CPlayerPlaylistBar::GetCurFileName(bool use_ydl_source)
     }
     return fn;
 }
+
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+bool CPlayerPlaylistBar::GetProgrammeCaption(const CString& source, CString& title, CString& tip) const
+{
+    const auto programme = m_programmeGuide.Current(source.GetString(), CNativeProgrammeGuide::Now());
+    if (!programme) return false;
+    title = programme->title.c_str(); tip = m_programmeGuide.Tooltip(*programme).c_str();
+    return true;
+}
+
+bool CPlayerPlaylistBar::GetStreamDisplayCaption(const CPlaylistItem& item, CString& title, CString& tip, bool current) const
+{
+    if (item.m_fns.IsEmpty()) return false;
+    const std::wstring source(item.m_fns.GetHead().GetString());
+    std::wstring label(item.m_label.GetString());
+    if (current && m_programmeGuide.rows.empty() && m_programmeGuide.HasChannelHeader(source, label)) {
+        // Imported label-only schedules keep the channel selected as the live
+        // URL. For captions use their first programme, not the channel heading.
+        // Never substitute a future row for a structured guide's Current().
+        POSITION pos = m_pl.GetHeadPosition();
+        while (pos) {
+            const CPlaylistItem& row = m_pl.GetNext(pos);
+            if (row.m_fns.IsEmpty() || row.m_fns.GetHead() != item.m_fns.GetHead()) continue;
+            const auto candidate = CNativeProgrammeGuide::Clean(row.m_label.GetString());
+            if (m_programmeGuide.HasChannelHeader(source, candidate)) continue;
+            if (CNativeProgrammeGuide::LabelTitle(candidate) != candidate) { label = candidate; break; }
+        }
+    }
+    std::wstring displayTitle, displayTip;
+    if (!m_programmeGuide.Caption(source, label,
+            CNativeProgrammeGuide::Now(), current, displayTitle, displayTip)) return false;
+    title = displayTitle.c_str(); tip = displayTip.c_str();
+    return true;
+}
+
+bool CPlayerPlaylistBar::GetDisplayCaption(const CPlaylistItem& item, CString& title,
+        CString& tip, bool current, CString* playlistText) const
+{
+    title.Empty(); tip.Empty();
+    if (item.m_fns.IsEmpty() || item.m_type != CPlaylistItem::file) return false;
+    CString source(item.m_fns.GetHead());
+    if (GetStreamDisplayCaption(item, title, tip, current)) {
+        if (playlistText) *playlistText = item.m_label;
+        if (!title.IsEmpty()) return true;
+        // A bare URL has no programme metadata. Its resource name is the only
+        // available title; never expose the query/authentication string.
+        CString clean(source); const int query = clean.FindOneOf(L"?#");
+        if (query >= 0) clean.Truncate(query);
+        title = PathUtils::StripPathOrUrl(clean);
+        const int dot = title.ReverseFind(L'.');
+        if (dot > 0) title.Truncate(dot);
+        tip = title;
+        if (playlistText) *playlistText = title;
+        return true;
+    }
+    // Preserve cue-track and extractor-provided labels. For ordinary disk
+    // files presentation uses the filename, not embedded tags/history labels.
+    if (PathUtils::IsURL(source) || item.m_cue || item.m_bYoutubeDL) return false;
+    title = PathUtils::StripPathOrUrl(source);
+    const int dot = title.ReverseFind(L'.');
+    if (dot > 0) title.Truncate(dot);
+    tip = title;
+    if (item.m_duration > 0) {
+        const REFERENCE_TIME seconds = (item.m_duration + 5000000) / 10000000;
+        CString duration; duration.Format(L"%02d:%02d:%02d", int(seconds / 3600),
+            int(seconds / 60 % 60), int(seconds % 60));
+        tip = duration + L" " + title;
+    }
+    if (playlistText) *playlistText = title;
+    return !title.IsEmpty();
+}
+
+void CPlayerPlaylistBar::UpdateStreamEpg()
+{
+    const CString source = GetCurFileName();
+    CString resource(source); resource.MakeLower();
+    const int query = resource.FindOneOf(L"?#");
+    if (query >= 0) resource.Truncate(query);
+    const bool hls = (resource.Left(7) == L"http://" || resource.Left(8) == L"https://")
+        && resource.Right(5) == L".m3u8";
+    if (!hls || m_pl.IsEmpty()) { m_streamEpg.Reset(); return; }
+    // A browser/imported guide keeps precedence. Ordinary mixed playlists and
+    // local files never become synthetic channel schedules.
+    if (m_programmeGuide.stream == source.GetString() && !m_autoProgrammeGuide) {
+        m_streamEpg.Remember(m_programmeGuide);
+        RefreshProgrammeRows();
+        return;
+    }
+    POSITION position = m_pl.GetHeadPosition();
+    while (position) {
+        const auto& item = m_pl.GetNext(position);
+        if (item.m_fns.GetCount() != 1 || item.m_fns.GetHead() != source || item.m_bYoutubeDL) {
+            m_streamEpg.Reset(); return;
+        }
+    }
+    CString hint;
+    if (m_streamEpg.NeedsRequest(source.GetString())) hint = m_pMainFrame->NativeStreamServiceName();
+    CNativeProgrammeGuide guide;
+    if (m_streamEpg.Poll(source.GetString(), hint.GetString(), guide)) {
+        if (GetCurFileName() != source || guide.stream != source.GetString()) return;
+        m_programmeGuide = std::move(guide);
+        m_autoProgrammeGuide = true;
+        m_programmeRowsKnown = false;
+        m_programmeCaption.Empty();
+    }
+    RefreshProgrammeRows();
+}
+
+void CPlayerPlaylistBar::RefreshProgrammeRows()
+{
+    const CString source = GetCurFileName();
+    if (m_programmeGuide.stream != source.GetString() || m_programmeGuide.channel.empty()) return;
+    // Undated imported labels stay intact: there is no reliable clock boundary.
+    if (m_programmeGuide.rows.empty() && !m_autoProgrammeGuide) return;
+    const auto now = CNativeProgrammeGuide::Now();
+    const auto key = m_programmeGuide.RemainingKey(now);
+    if (m_programmeRowsKnown && key == m_programmeRowsKey) return;
+    POSITION pos = m_pl.GetHeadPosition();
+    while (pos) {
+        const auto& item = m_pl.GetNext(pos);
+        if (item.m_fns.GetCount() != 1 || item.m_fns.GetHead() != source || item.m_bYoutubeDL) return;
+    }
+    const auto remaining = m_programmeGuide.Remaining(now);
+    CAutoLock lock(&m_plEditLock);
+    // Keep the original media item (URL, options, subtitles and duration).
+    // This only rebuilds its displayed schedule; it never reopens playback.
+    if (!GetCur()) return;
+    CPlaylistItem channel(*GetCur());
+    channel.m_label = m_programmeGuide.channel.c_str();
+    m_pl.RemoveAll();
+    const POSITION current = m_pl.AddTail(channel);
+    for (const auto& programme : remaining) {
+        CPlaylistItem item;
+        const UINT id = item.m_id;
+        item = channel;
+        item.m_id = id;
+        item.m_label = (CNativeProgrammeGuide::Clock(programme.start) + L" " + programme.title).c_str();
+        m_pl.AddTail(item);
+    }
+    m_pl.SetPos(current);
+    m_programmeRowsKey = key;
+    m_programmeRowsKnown = true;
+    Refresh();
+    m_SaveDelayed = true;
+}
+
+bool CPlayerPlaylistBar::UpdateProgrammeCaption()
+{
+    UpdateStreamEpg();
+    CString title, tip;
+    GetProgrammeCaption(GetCurFileName(), title, tip);
+    if (tip == m_programmeCaption) return false;
+    m_programmeCaption = tip;
+    if (m_list.GetSafeHwnd()) m_list.Invalidate(FALSE);
+    return true;
+}
+#endif
 
 CString CPlayerPlaylistBar::GetCurFileNameTitle()
 {
@@ -1981,6 +2461,9 @@ void CPlayerPlaylistBar::SavePlaylist(bool can_delay /* = false*/)
 
 void CPlayerPlaylistBar::SetListBkColor()
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (UsesNativePopup()) { m_list.SetBkColor(CNativePlaylistPopup::SurfaceColor()); return; }
+#endif
     if (AppIsThemeLoaded() && CMPCTheme::isWindows11Style) {
         m_list.SetBkColor(CMPCTheme::ContentBGColor); //the area below the items, which light mode leaves to the native list
     }
@@ -2024,11 +2507,24 @@ void CPlayerPlaylistBar::ScaleFont()
 {
     LOGFONT lf;
     m_pMainFrame->m_dpi.GetMessageFont(&lf);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (UsesNativePopup()) {
+        lf.lfHeight = -m_pMainFrame->m_dpi.ScaleY(14);
+        lf.lfWeight = FW_NORMAL; lf.lfQuality = CLEARTYPE_QUALITY;
+        wcscpy_s(lf.lfFaceName, L"Segoe UI");
+        m_numberFont.DeleteObject();
+        LOGFONT numberFont = lf; numberFont.lfWeight = FW_BOLD;
+        m_numberFont.CreateFontIndirect(&numberFont);
+    }
+#endif
     //lf.lfHeight = m_pMainFrame->m_dpi.ScaleSystemToOverrideY(lf.lfHeight);
 
     m_font.DeleteObject();
     if (m_font.CreateFontIndirect(&lf)) {
         m_list.SetFont(&m_font);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        if (UsesNativePopup()) m_list.ForceRowHeightRecalc();
+#endif
     }
 
     CDC* pDC = m_list.GetDC();
@@ -2063,13 +2559,25 @@ void CPlayerPlaylistBar::ResizeListColumn()
 {
     if (::IsWindow(m_list.m_hWnd)) {
         CRect r;
-        GetClientRect(r);
-        r.DeflateRect(2, 2);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        if (UsesNativePopup()) {
+            m_nativePopup.GetClientRect(r);
+            const int padding = m_pMainFrame->m_dpi.ScaleX(8);
+            r.DeflateRect(padding, padding);
+            r.top += m_pMainFrame->m_dpi.ScaleY(28);
+            r.bottom = std::max(r.top, r.bottom);
+        } else
+#endif
+        {
+            GetClientRect(r);
+            r.DeflateRect(2, 2);
+        }
         m_listFrame.MoveWindow(r, FALSE);
 
         CRect listR;
         m_listFrame.GetClientRect(&listR);
 
+        // Use the upstream transaction: suppress intermediate native column layouts.
         m_list.SetRedraw(FALSE);
         m_list.SetColumnWidth(COL_NAME, 0);
         m_list.MoveWindow(listR, FALSE);
@@ -2087,7 +2595,6 @@ void CPlayerPlaylistBar::ResizeListColumn()
         // time column to what is left, else the columns overflow into a horizontal scrollbar
         m_list.SetColumnWidth(COL_TIME, std::max(0, std::min(m_nTimeColWidth, width - m_list.GetColumnWidth(COL_NAME))));
         m_list.SetRedraw(TRUE);
-
         Invalidate();
         m_listFrame.RedrawWindow(nullptr, nullptr, RDW_FRAME | RDW_INVALIDATE | RDW_NOCHILDREN);
     }
@@ -2095,6 +2602,9 @@ void CPlayerPlaylistBar::ResizeListColumn()
 
 void CPlayerPlaylistBar::OnDestroy()
 {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    m_nativeDock.Reset();
+#endif
     m_dropTarget.Revoke();
     __super::OnDestroy();
 }
@@ -2190,6 +2700,9 @@ void CPlayerPlaylistBar::OnMeasureItem(int nIDCtl, LPMEASUREITEMSTRUCT lpMeasure
 {
     __super::OnMeasureItem(nIDCtl, lpMeasureItemStruct);
     lpMeasureItemStruct->itemHeight = m_pMainFrame->m_dpi.CalculateListCtrlItemHeight((CListCtrl*)&m_list);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (UsesNativePopup()) lpMeasureItemStruct->itemHeight = m_pMainFrame->m_dpi.ScaleY(35) + 2 * m_pMainFrame->m_dpi.ScaleY(2);
+#endif
 #if 0
     if (createdWindow) {
         //after creation, measureitem is called once for every window resize.  we will cache the default height before DPI scaling
@@ -2269,16 +2782,59 @@ void CPlayerPlaylistBar::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruc
     }
     bool itemPlaying = pos == m_pl.GetPos();
     bool itemSelected = !!m_list.GetItemState(nItem, LVIS_SELECTED);
+    bool rowHighlighted = itemSelected;
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (m_nativeDock.Active() || UsesNativePopup()) rowHighlighted = nItem == m_nativeHotItem;
+#endif
     CPlaylistItem& pli = m_pl.GetAt(pos);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (!pli.m_fns.IsEmpty()) {
+        const auto programme = m_programmeGuide.Current(GetCurFileName().GetString(), CNativeProgrammeGuide::Now());
+        if (programme && pli.m_fns.GetHead() == m_programmeGuide.stream.c_str()) {
+            const CString programmeLabel((CNativeProgrammeGuide::Clock(programme->start) + L" " + programme->title).c_str());
+            itemPlaying = pli.m_label == programmeLabel;
+        }
+    }
+#endif
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (UsesNativePopup() && m_nativePopup.MaterialActive())
+        PlaylistDiagnostic::Trace("owner-draw", m_list.m_hWnd, lpDrawItemStruct->hDC, WM_DRAWITEM, lpDrawItemStruct->itemID);
+#endif
     CDC* pDC = CDC::FromHandle(lpDrawItemStruct->hDC);
     int oldDC = pDC->SaveDC();
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (UsesNativePopup()) {
+        pDC->SetBkMode(TRANSPARENT);
+        // Native owner draw may supply a playing-item font; always use the configured Regular font.
+        if (m_font.GetSafeHandle()) pDC->SelectObject(&m_font);
+    }
+#endif
 
     CString fmt, file, num;
 
     fmt.Format(_T("[%%0%dd]"), (int)log10(0.1 + m_pl.GetCount()) + 1);
     num.Format(fmt, nItem + 1);
-    CSize numWidth = pDC->GetTextExtent(num) + pDC->GetTextExtent(L"w");
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    const CPlaylistItem& firstItem = m_pl.GetHead();
+    const bool hasChannelHeader = !firstItem.m_fns.IsEmpty()
+        && m_programmeGuide.HasChannelHeader(firstItem.m_fns.GetHead().GetString(), firstItem.m_label.GetString());
+    if (hasChannelHeader) {
+        if (nItem == 0) num.Empty();
+        else if (UsesNativePopup()) num.Format(L"%d.", nItem);
+        else num.Format(fmt, nItem);
+    } else if (UsesNativePopup()) num.Format(L"%d.", nItem + 1);
+    CFont* numberMeasureFont = nullptr;
+    if (UsesNativePopup() && m_numberFont.GetSafeHandle()) numberMeasureFont = pDC->SelectObject(&m_numberFont);
+#endif
+    CString numberColumn(num);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (UsesNativePopup()) numberColumn.Format(L"%d.", static_cast<int>(m_pl.GetCount()));
+#endif
+    CSize numWidth = pDC->GetTextExtent(numberColumn) + pDC->GetTextExtent(L"w");
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (numberMeasureFont) pDC->SelectObject(numberMeasureFont);
+#endif
 
     COLORREF bgColor, contentBGColor;
 
@@ -2287,6 +2843,9 @@ void CPlayerPlaylistBar::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruc
     bool themedList = AppNeedsThemedControls() || win11Style;
     if (themedList) {
         contentBGColor = CMPCTheme::ContentBGColor;
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        if (UsesNativePopup()) contentBGColor = CNativePlaylistPopup::SurfaceColor();
+#endif
     } else {
         contentBGColor = GetSysColor(COLOR_WINDOW);
     }
@@ -2300,9 +2859,49 @@ void CPlayerPlaylistBar::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruc
     inlineEditXpos = numWidth.cx - 2; //magic number 2 for accounting for border/padding of inline edit.  works at all dpi except 168, where it's off by 1px (shrug)
     seqRect.right = fileRect.left;
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (UsesNativePopup()) {
+        bgColor = (itemSelected || rowHighlighted) ? CNativePlaylistPopup::SelectionColor() : contentBGColor;
+        pDC->FillSolidRect(rcItem, contentBGColor);
+        if (itemSelected || rowHighlighted) {
+            CRect tile(rcItem); tile.DeflateRect(0, m_pMainFrame->m_dpi.ScaleY(2));
+            Gdiplus::Graphics graphics(pDC->GetSafeHdc());
+            graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+            const Gdiplus::REAL x = static_cast<Gdiplus::REAL>(tile.left);
+            const Gdiplus::REAL y = static_cast<Gdiplus::REAL>(tile.top);
+            const Gdiplus::REAL w = static_cast<Gdiplus::REAL>(tile.Width());
+            const Gdiplus::REAL h = static_cast<Gdiplus::REAL>(tile.Height());
+            const Gdiplus::REAL diameter = static_cast<Gdiplus::REAL>(m_pMainFrame->m_dpi.ScaleY(12));
+            Gdiplus::GraphicsPath path;
+            path.AddArc(x, y, diameter, diameter, 180.0f, 90.0f);
+            path.AddArc(x + w - diameter, y, diameter, diameter, 270.0f, 90.0f);
+            path.AddArc(x + w - diameter, y + h - diameter, diameter, diameter, 0.0f, 90.0f);
+            path.AddArc(x, y + h - diameter, diameter, diameter, 90.0f, 90.0f);
+            path.CloseFigure();
+            Gdiplus::SolidBrush fill(Gdiplus::Color(255, 56, 56, 56));
+            graphics.FillPath(&fill, &path);
+        }
+        if (itemSelected) {
+            const int pillWidth = m_pMainFrame->m_dpi.ScaleX(3), pillHeight = m_pMainFrame->m_dpi.ScaleY(15);
+            CRect pill(CPoint(rcItem.left, rcItem.CenterPoint().y - pillHeight/2), CSize(pillWidth, pillHeight));
+            Gdiplus::Graphics graphics(pDC->GetSafeHdc());
+            graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+            const Gdiplus::REAL x = static_cast<Gdiplus::REAL>(pill.left);
+            const Gdiplus::REAL y = static_cast<Gdiplus::REAL>(pill.top);
+            const Gdiplus::REAL w = static_cast<Gdiplus::REAL>(pill.Width());
+            const Gdiplus::REAL h = static_cast<Gdiplus::REAL>(pill.Height());
+            Gdiplus::GraphicsPath path;
+            path.AddArc(x, y, w, w, 180.0f, 180.0f);
+            path.AddArc(x, y + h - w, w, w, 0.0f, 180.0f);
+            path.CloseFigure();
+            Gdiplus::SolidBrush accent(Gdiplus::Color(255, 76, 194, 255));
+            graphics.FillPath(&accent, &path);
+        }
+    } else
+#endif
     if (win11Style) {
         //fluent list selection: a neutral fill across the whole row, with an accent indicator at the left edge
-        bgColor = itemSelected ? CMPCTheme::PlaylistSelectedColor : contentBGColor;
+        bgColor = rowHighlighted ? CMPCTheme::PlaylistSelectedColor : contentBGColor;
         FillRect(pDC->m_hDC, rcItem, CBrush(bgColor));
         if (itemSelected) {
             int pillWidth = m_pMainFrame->m_dpi.ScaleX(3);
@@ -2315,7 +2914,7 @@ void CPlayerPlaylistBar::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruc
             pDC->SelectObject(oldPen);
             pDC->SelectObject(oldBrush);
         }
-    } else if (itemSelected) {
+    } else if (rowHighlighted) {
         if (AppNeedsThemedControls()) {
             bgColor = CMPCTheme::ContentSelectedColor;
         } else {
@@ -2350,6 +2949,13 @@ void CPlayerPlaylistBar::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruc
         sequenceColor = textColor;
     }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if ((m_nativeDock.Active() || UsesNativePopup()) && !pli.m_fInvalid) {
+        textColor = sequenceColor = UsesNativePopup() ? RGB(255, 255, 255)
+            : itemSelected ? RGB(76, 194, 255) : RGB(255, 255, 255);
+    }
+#endif
+
     CString time = !pli.m_fInvalid ? pli.GetLabel(1) : CString(_T("Invalid"));
     CPoint timept(rcItem.right, 0);
     if (!time.IsEmpty()) {
@@ -2365,6 +2971,10 @@ void CPlayerPlaylistBar::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruc
     pli.inlineEditMaxWidth = std::max(0, (int)timept.x - dpi6 - inlineEditXpos); //leave the same gap before the time as the truncated filename
 
     file = pli.GetLabel(0);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    CString captionTitle, captionTip, captionRow;
+    if (GetDisplayCaption(pli, captionTitle, captionTip, false, &captionRow)) file = captionRow;
+#endif
     CSize filesize = pDC->GetTextExtent(file);
     while (dpi3 + numWidth.cx + filesize.cx + dpi6 > timept.x && file.GetLength() > 3) {
         file = file.Left(file.GetLength() - 4) + _T("...");
@@ -2383,6 +2993,9 @@ void CPlayerPlaylistBar::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruc
         pDC->SetTextColor(sequenceColor);
     }
     pDC->SetBkColor(win11Style ? bgColor : contentBGColor);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (UsesNativePopup() && m_numberFont.GetSafeHandle()) pDC->SelectObject(&m_numberFont);
+#endif
     pDC->TextOut(rcItem.left + dpi3 + numOffset, (rcItem.top + rcItem.bottom - filesize.cy) / 2, num);
 
 
@@ -2596,6 +3209,14 @@ BOOL CPlayerPlaylistBar::OnToolTipNotify(UINT id, NMHDR* pNMHDR, LRESULT* pResul
     strTipText.Empty();
 
     if (col == COL_NAME) {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        CString displayTitle, displayTip;
+        if (GetDisplayCaption(pli, displayTitle, displayTip, false)) {
+            strTipText = displayTip.IsEmpty() ? displayTitle : displayTip;
+            if (strTipText.IsEmpty()) return FALSE;
+        } else
+#endif
+        {
         POSITION pos = pli.m_fns.GetHeadPosition();
         while (pos) {
             strTipText += _T("\n") + pli.m_fns.GetNext(pos);
@@ -2614,6 +3235,7 @@ BOOL CPlayerPlaylistBar::OnToolTipNotify(UINT id, NMHDR* pNMHDR, LRESULT* pResul
             }
         }
 
+        }
         ::SendMessage(pNMHDR->hwndFrom, TTM_SETMAXTIPWIDTH, 0, 1000);
     } else if (col == COL_TIME) {
         return FALSE;
@@ -2657,7 +3279,13 @@ void CPlayerPlaylistBar::OnContextMenu(CWnd* /*pWnd*/, CPoint point)
         M_POSITION_TOP,
         M_POSITION_RIGHT,
         M_POSITION_BOTTOM,
-        M_POSITION_FLOAT
+        M_POSITION_FLOAT,
+        M_HEADER_TINT_0 = 100,
+        M_HEADER_TINT_10,
+        M_HEADER_TINT_20,
+        M_HEADER_TINT_30,
+        M_HEADER_TINT_40,
+        M_HEADER_TINT_50,
     };
 
     CAppSettings& s = AfxGetAppSettings();
@@ -2741,8 +3369,11 @@ void CPlayerPlaylistBar::OnContextMenu(CWnd* /*pWnd*/, CPoint point)
         m.AppendMenu(MF_STRING | MF_ENABLED | (s.bShufflePlaylistItems ? MF_CHECKED : MF_UNCHECKED), M_SHUFFLE, ResStr(IDS_PLAYLIST_SHUFFLE));
         m.AppendMenu(MF_SEPARATOR);
         m.AppendMenu(MF_STRING | MF_ENABLED | (s.bHidePlaylistFullScreen ? MF_CHECKED : MF_UNCHECKED), M_HIDEFULLSCREEN, ResStr(IDS_PLAYLIST_HIDEFS));
-        m.AppendMenu(MF_SEPARATOR);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        if (!UsesNativePopup())
+#endif
         {
+            m.AppendMenu(MF_SEPARATOR);
             const UINT dockBarID = GetParent()->GetDlgCtrlID();
             CMenu positionMenu;
             positionMenu.CreatePopupMenu();
@@ -2754,6 +3385,22 @@ void CPlayerPlaylistBar::OnContextMenu(CWnd* /*pWnd*/, CPoint point)
             m.AppendMenu(MF_STRING | MF_POPUP | MF_ENABLED, (UINT_PTR)positionMenu.GetSafeHmenu(), ResStr(IDS_PLAYLIST_POSITION));
             positionMenu.Detach();
         }
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        {
+            CMenu tintMenu;
+            tintMenu.CreatePopupMenu();
+            const int tint = std::clamp(int(AfxGetApp()->GetProfileInt(L"Settings", L"FluentHeaderAcrylicTint", 0)), 0, 50);
+            for (int i = 0; i < 6; ++i) {
+                CString label; label.Format(L"%d%%", i*10);
+                tintMenu.AppendMenu(MF_STRING, M_HEADER_TINT_0+i, label);
+            }
+            tintMenu.CheckMenuRadioItem(M_HEADER_TINT_0, M_HEADER_TINT_50,
+                M_HEADER_TINT_0+std::min(tint,50)/10, MF_BYCOMMAND);
+            m.AppendMenu(MF_SEPARATOR);
+            m.AppendMenu(MF_POPUP | MF_ENABLED, reinterpret_cast<UINT_PTR>(tintMenu.GetSafeHmenu()), L"Titlebar Acrylic tint (test)");
+            tintMenu.Detach(); // The themed parent owns submenu item data.
+        }
+#endif
         if (AppIsThemeLoaded()) {
             m.fulfillThemeReqs();
         }
@@ -2765,6 +3412,14 @@ void CPlayerPlaylistBar::OnContextMenu(CWnd* /*pWnd*/, CPoint point)
     int nID = (int)m.TrackPopupMenu(TPM_LEFTBUTTON | TPM_RETURNCMD, point.x, point.y, m_pMainFrame);
     SetHasActivePopup(false);
     m_list.SetFocus();
+
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (nID >= M_HEADER_TINT_0 && nID <= M_HEADER_TINT_50) {
+        AfxGetApp()->WriteProfileInt(L"Settings", L"FluentHeaderAcrylicTint", (nID-M_HEADER_TINT_0)*10);
+        RefreshChromeHeader(m_pMainFrame);
+        return;
+    }
+#endif
 
     //the lock is not held while the menu is up, so the playlist may have changed meanwhile.
     //find the clicked item again by its id and drop the command when it is gone.
@@ -3080,6 +3735,12 @@ void CPlayerPlaylistBar::OnLvnGetDispInfoList(NMHDR* pNMHDR, LRESULT* pResult)
 
     if (item.mask & LVIF_TEXT) {
         CString text = pli.GetLabel(item.iSubItem);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+        if (item.iSubItem == COL_NAME) {
+            CString title, tip, row;
+            if (GetDisplayCaption(pli, title, tip, false, &row)) text = row;
+        }
+#endif
         _tcsncpy_s(item.pszText, item.cchTextMax, text, _TRUNCATE);
     }
 
@@ -3120,6 +3781,9 @@ void CPlayerPlaylistBar::OnLvnEndlabeleditList(NMHDR* pNMHDR, LRESULT* pResult)
             text.Trim();
             m_pl.GetAt(pos).m_label = text;
             RefreshItem(pos);
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+            if (pos == m_pl.GetPos()) RefreshChromeHeader(m_pMainFrame);
+#endif
         }
     }
     *pResult = 0;

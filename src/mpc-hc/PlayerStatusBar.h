@@ -46,6 +46,9 @@ private:
     HICON m_hIcon;
 
     REFERENCE_TIME m_rtNow, m_rtDur;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    CString m_remainingTimer;
+#endif
 
     CRect m_time_rect;
     CMPCThemeMenu m_timerMenu;
@@ -79,6 +82,14 @@ public:
     REFERENCE_TIME GetTimerDuration();
 
     CString GetStatusTimer() const;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    CString GetRemainingTimer() const { return m_remainingTimer; }
+#endif
+    void ToggleTimerDisplay() { OnTimeDisplayClicked(); }
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    void GetOverlayTimeParts(CString& position, CString& duration) const;
+    void ToggleOverlayTime() { OnTimeDisplayClicked(); }
+#endif
     CString GetStatusMessage() const;
 
     CString PreparePathStatusMessage(CLongPath path);

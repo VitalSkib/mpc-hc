@@ -1,3 +1,5 @@
+> **MPC-HC Fluent fork**: [описание, обновления и автосборка](README-Fluent.md). Original MPC-HC information follows.
+
 # Media Player Classic - Home Cinema
 
 Media Player Classic - Home Cinema (MPC-HC) is a free and open-source video and audio player for Windows. It is famous and loved for its simple and effective user interface, providing an excellent user experience. It offers a huge amount of functionality. Being a DirectShow player, it also allows flexibility and extensibility through third party filters.

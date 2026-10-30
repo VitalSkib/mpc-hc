@@ -1,0 +1,50 @@
+name: Monitor official MPC-HC releases
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      channel:
+        type: choice
+        options: [stable, beta]
+        default: stable
+      force:
+        type: boolean
+        default: false
+permissions:
+  contents: write
+concurrency:
+  group: upstream-monitor-${{ inputs.channel || 'stable' }}
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.merge.outputs.changed }}
+      ref: ${{ steps.merge.outputs.ref }}
+      base: ${{ steps.merge.outputs.base }}
+      channel: ${{ steps.merge.outputs.channel }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+      - id: merge
+        name: Prepare official release without automatic conflict resolution
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ inputs.channel || 'stable' }}
+          FORCE: ${{ inputs.force || false }}
+        run: |
+          args=(--channel "$CHANNEL")
+          if [ "$FORCE" = "true" ]; then args+=(--force); fi
+          python tools/fluent/prepare_upstream.py "${args[@]}"
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.changed == 'true'
+    uses: ./.github/workflows/fluent-build.yml
+    with:
+      ref: ${{ needs.prepare.outputs.ref }}
+      publish: true
+      channel: ${{ needs.prepare.outputs.channel }}
+      promote_base: ${{ needs.prepare.outputs.base }}

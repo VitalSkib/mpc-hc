@@ -192,6 +192,10 @@ struct FileFavorite {
 class CMainFrame : public CFrameWnd, public CDropClient
 {
 public:
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    bool NativeSeekbarSelected() { return m_controls.ControlChecked(CMainFrameControls::Toolbar::SEEKBAR); }
+#endif
+
 
     DpiHelper m_dpi;
 
@@ -393,6 +397,12 @@ private:
     // windowing
 
     bool m_bDelaySetOutputRect;
+#ifdef MPC_EXPERIMENTAL_NATIVE_SEEKBAR
+    // Only native frame layout may extend the view underneath overlay toolbars.
+    bool m_nativeVideoLayout = false;
+    unsigned m_nativeToolbarOverlapHeight = 0;
+    CRect m_nativeDockOverlap = CRect(0, 0, 0, 0);
+#endif
 
     CRect m_lastWindowRect;
 
@@ -640,6 +650,20 @@ private:
     DROPEFFECT OnDropAccept(COleDataObject* pDataObject, DWORD dwKeyState, CPoint point) override;
 
 public:
+    bool CanHoverControls() { return IsWindowEnabled() && GetModalParent()->IsWindowEnabled(); }
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    bool m_nativeChromeSizing = false;
+    bool NativeChromeSizing() const { return m_nativeChromeSizing; }
+    bool NativeChromeHoverAt(CPoint point, bool* resizeBorder = nullptr);
+    void BeginNativeChromeSizing();
+    CString NativeStreamServiceName() const {
+        CComQIPtr<IPropertyBag> metadata = m_pFSF;
+        CComVariant value;
+        if (metadata && SUCCEEDED(metadata->Read(L"service_name", &value, nullptr))
+                && value.vt == VT_BSTR && value.bstrVal) return CString(value.bstrVal);
+        return CString();
+    }
+#endif
     void StartWebServer(int nPort);
     void StopWebServer();
 
@@ -1149,6 +1173,7 @@ public:
     afx_msg void OnPlaylistToggleShuffle();
     afx_msg void OnUpdateViewPlaylist(CCmdUI* pCmdUI);
     afx_msg void OnViewEditListEditor();
+    afx_msg void OnUpdateViewEditListEditor(CCmdUI* pCmdUI);
     afx_msg void OnEDLIn();
     afx_msg void OnUpdateEDLIn(CCmdUI* pCmdUI);
     afx_msg void OnEDLOut();

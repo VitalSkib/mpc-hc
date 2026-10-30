@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "NativePlaylistDiagnostic.h"
 #include "CMPCThemeScrollBarRenderer.h"
 #include "CMPCTheme.h"
 #include "CMPCThemeUtil.h"
@@ -233,7 +234,18 @@ bool CMPCThemeScrollBarRenderer::GetScrollBarCornerRect(HWND hWnd, CRect& corner
     return true;
 }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+static bool PlaylistScrollbarIsCompositionOnly(HWND window)
+{
+    return ::GetPropW(window, L"MPC.PlaylistCompositionOnly")
+        && !::GetPropW(window, L"MPC.PlaylistForegroundPrint");
+}
+#endif
+
 void CMPCThemeScrollBarRenderer::DrawScrollBarCorner(CDC* pDC, HWND hWnd, const CRect& cornerRect) {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (PlaylistScrollbarIsCompositionOnly(hWnd)) return;
+#endif
     if (cornerRect.IsRectEmpty()) {
         return;
     }
@@ -405,6 +417,13 @@ void CMPCThemeScrollBarRenderer::drawSBArrow(CDC& dc, COLORREF arrowClr, CRect a
 }
 
 void CMPCThemeScrollBarRenderer::DrawScrollBar(CDC* pDC, HWND hWnd, int nBar, const CRect& targetRect) {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (::GetPropW(hWnd, L"MPC.FluentPlaylistScroll"))
+        PlaylistDiagnostic::Trace("scrollbar-draw-attempt", hWnd, pDC ? pDC->GetSafeHdc() : nullptr, 0, nBar);
+#endif
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (PlaylistScrollbarIsCompositionOnly(hWnd)) return;
+#endif
     DpiHelper dpiWindow;
     dpiWindow.Override(hWnd);
     int nDPI = dpiWindow.DPIX();
@@ -415,6 +434,48 @@ void CMPCThemeScrollBarRenderer::DrawScrollBar(CDC* pDC, HWND hWnd, int nBar, co
     CRect rectTLArrow, rectBRArrow, rectThumb, rectTLChannel, rectBRChannel;
     bool bScrollBarEnabled = true;
     CalculateScrollBarRects(hWnd, nBar, targetRect, rectTLArrow, rectBRArrow, rectThumb, rectTLChannel, rectBRChannel, &bScrollBarEnabled);
+
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (::GetPropW(hWnd, L"MPC.FluentPlaylistScroll")) {
+        // Keep native scroll geometry, range and input; only this playlist uses
+        // a narrow thumb within the existing, accessible hit area.
+        pDC->FillSolidRect(targetRect, RGB(43, 43, 43));
+        const bool hot = state.bDragging || state.eMouseOverArea.eArea != eNone
+            || state.eMouseDownArea.eArea != eNone;
+        if (bScrollBarEnabled && !rectThumb.IsRectEmpty()) {
+            const int thickness = std::max(1, MulDiv(hot ? 6 : 4, nDPI, 96));
+            CRect thumb(rectThumb);
+            if (bHorizontal) {
+                thumb.top = targetRect.CenterPoint().y - thickness / 2;
+                thumb.bottom = thumb.top + thickness;
+            } else {
+                thumb.left = targetRect.CenterPoint().x - thickness / 2;
+                thumb.right = thumb.left + thickness;
+            }
+            Gdiplus::Graphics graphics(pDC->GetSafeHdc());
+            graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+            Gdiplus::SolidBrush brush(Gdiplus::Color(255, hot ? 195 : 155, hot ? 195 : 155, hot ? 195 : 155));
+            const Gdiplus::REAL x = static_cast<Gdiplus::REAL>(thumb.left);
+            const Gdiplus::REAL y = static_cast<Gdiplus::REAL>(thumb.top);
+            const Gdiplus::REAL w = static_cast<Gdiplus::REAL>(thumb.Width());
+            const Gdiplus::REAL h = static_cast<Gdiplus::REAL>(thumb.Height());
+            const Gdiplus::REAL diameter = std::min(w, h);
+            Gdiplus::GraphicsPath path;
+            path.AddArc(x, y, diameter, diameter, 180, 90);
+            path.AddArc(x+w-diameter, y, diameter, diameter, 270, 90);
+            path.AddArc(x+w-diameter, y+h-diameter, diameter, diameter, 0, 90);
+            path.AddArc(x, y+h-diameter, diameter, diameter, 90, 90);
+            path.CloseFigure(); graphics.FillPath(&brush, &path);
+        }
+        if (hot && bScrollBarEnabled) {
+            drawSBArrow(*pDC, RGB(195,195,195), rectTLArrow,
+                bHorizontal ? arrowLeft : arrowTop, nDPI);
+            drawSBArrow(*pDC, RGB(195,195,195), rectBRArrow,
+                bHorizontal ? arrowRight : arrowBottom, nDPI);
+        }
+        return;
+    }
+#endif
 
     int xOffset = targetRect.left;
     int yOffset = targetRect.top;
@@ -803,6 +864,9 @@ void CMPCThemeScrollBarRenderer::DrawThemedScrollBars(CDC* pDC, HWND hWnd, const
 }
 
 void CMPCThemeScrollBarRenderer::HandleNcPaint(HWND hWnd) {
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    if (PlaylistScrollbarIsCompositionOnly(hWnd)) return;
+#endif
     CWindowDC dc(CWnd::FromHandle(hWnd));
     int oldDC = dc.SaveDC();
 

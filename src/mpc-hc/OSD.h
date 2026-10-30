@@ -151,6 +151,9 @@ class COSD : public CWnd
     int SliderChapWidth    = 0;
 
 public:
+#ifdef MPC_EXPERIMENTAL_ALPHA_OVERLAY
+    std::function<bool(LPCWSTR, int)> overlayMessage;
+#endif
     COSD(CMainFrame* pMainFrame);
     ~COSD();
 
@@ -211,6 +214,17 @@ public:
     DECLARE_DYNAMIC(COSD)
 
 private:
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    // Presentation only: messages and expiration still belong to COSD.
+    bool m_chromeMessage = false;
+    ULONG_PTR m_chromeGraphics = 0;
+    CString m_chromeText;
+    CRect m_chromeArea = CRect(0, 0, 0, 0);
+    int m_chromeDpi = 0;
+    OSD_MESSAGEPOS m_chromePosition = OSD_NOMESSAGE;
+    void SetChromeMessageMode(bool enabled);
+    void DrawChromeMessage();
+#endif
     void UpdateBitmap();
     void CalcWndRects();
     void CalcSeekbar();
