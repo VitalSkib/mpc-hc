@@ -17,7 +17,7 @@ Download **MPC-HC-Fluent-...-x64-setup.exe** from [Releases](https://github.com/
 
 The installer uses MPC-HC x64's existing product identity, so it upgrades an existing x64 installation. Native profile storage and file-association behaviour are retained; default applications are not changed without user choice.
 
-**Use Fluent appearance** applies Minimal view, whole-window cursor-movement activation, a four-second hiding timeout and the Custom Fluent toolbar through native settings. The separate Reset settings task is unchecked by default. Upgrades preserve other preferences. The incomplete hover preset from the first full installer is repaired once; subsequent deliberate hover-policy changes are preserved.
+**Use Fluent appearance** is selected by default and applies Minimal view, whole-window cursor-movement activation, a four-second hiding timeout and the Custom Fluent toolbar through native settings. The separate Reset settings task is unchecked by default. Reapplying it preserves an already active Fluent profile, including its icon theme, button layout and other preferences. Incomplete hover defaults from early full installers are repaired once, independently of the selected icon theme; subsequent deliberate hover-policy changes are preserved.
 
 The offline package includes Microsoft-signed Windows App Runtime 1.8.12 for Acrylic. On supported Windows it is installed only if a compatible runtime cannot be activated. Other applications are not forcibly terminated. This shared component is retained when the player is uninstalled. Older unsupported Windows versions use the existing fallback background.
 

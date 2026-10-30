@@ -8,6 +8,27 @@ def module(name):
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
 
 class Releases(unittest.TestCase):
+    def test_cleanup_requires_published_replacement_and_preserves_new_branch_work(self):
+        m = module('prune_legacy')
+        deleted = []
+        def request(url, method=None):
+            if method == 'DELETE':
+                deleted.append(url)
+                return None
+            if '/releases/tags/' in url:
+                return {'id': 1, 'draft': False, 'prerelease': False,
+                        'assets': [{'name': 'player-x64-setup.exe'}, {'name': 'manifest.json'}]}
+            return {'object': {'sha': 'new-work'}}
+        with self.assertRaises(ValueError): m.prune(request, 'api', m.OBSOLETE[-1])
+        self.assertFalse(deleted)
+        m.prune(request, 'api', 'fluent-2.8.4.10010')
+        self.assertEqual(len(deleted), 8)
+        self.assertFalse(any('/heads/' in url for url in deleted))
+        def draft(url, method=None):
+            if method == 'DELETE': self.fail('Draft replacement must not permit deletion')
+            return {'draft': True, 'prerelease': False}
+        with self.assertRaises(ValueError): m.prune(draft, 'api', 'fluent-2.8.4.10010')
+
     def test_revisions_increase_across_workflow_counters(self):
         m = module('release_revision')
         self.assertEqual(m.next_revision(2,(2,8,4),'2.8.4.10010'),10011)
