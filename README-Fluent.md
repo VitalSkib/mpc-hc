@@ -1,74 +1,65 @@
-# MPC-HC Fluent
+# MPC-HC Fluent documentation
 
-Рабочий форк [MPC-HC](https://github.com/clsid2/mpc-hc) для Windows x64. Сохраняет штатные команды плеера и добавляет оформление панелей и потоковую программу передач.
+This Windows x64 fork retains native MPC-HC playback and commands while adding a Fluent video interface and live TV programme information.
 
-## Что сохраняем
+## Features
 
-- Анимированные верхняя и нижняя панели поверх видео, иконки, подсказки с сочетаниями клавиш.
-- Штатные Status/Statistics с общим оформлением; перетаскивание и ресайз окна.
-- Плавающий Acrylic-плейлист, корректная прокрутка, нумерация передач без номера у названия канала.
-- Скрытие панелей при ресайзе, адаптивное меню дополнительных кнопок и компактный вид маленького окна.
-- Программа из браузерного скрипта имеет приоритет. Для отдельных HLS-ссылок используются метаданные потока, XMLTV и подтверждённые сохранённые соответствия; произвольный поток без идентификации может остаться без названия.
-- Локальные файлы не превращаются в потоковую программу передач. Имя, время и подсказки формируются по существующему контракту.
-- Контекстные меню остаются штатными. Неудачный WinUI-эксперимент исключён из рабочей ветки.
+- Animated titlebar and playback controls over video, custom artwork and shortcut tooltips.
+- Native Status/Statistics rendering, window dragging and resizing.
+- An Acrylic playlist with coordinated animation and scrolling. Channel headings are unnumbered; programme rows start at 1.
+- Controls hide during resizing and adapt to small windows.
+- Imported programme guides take priority. Bare HLS links can use stream metadata, XMLTV and confirmed cached identities. Unidentifiable streams may remain unnamed.
+- Local files keep normal filename-based labels. Native context menus are retained.
 
-## Обновление
+## Windows installation and updates
 
-Готовые пакеты: [Releases](https://github.com/VitalSkib/mpc-hc/releases/latest).
+Download **MPC-HC-Fluent-...-x64-setup.exe** from [Releases](https://github.com/VitalSkib/mpc-hc/releases/latest), close MPC-HC and run setup. No original installation is required. The package includes the full player, LAV Filters, MediaInfo, MPC Video Renderer, languages and Fluent artwork. Use the normal Start menu shortcut after installation; uninstall through Windows Installed apps.
 
-### Обычная установка в Windows
+The installer uses MPC-HC x64's existing product identity, so it upgrades an existing x64 installation. Native profile storage and file-association behaviour are retained; default applications are not changed without user choice.
 
-Скачайте **MPC-HC-Fluent-…-x64-setup.exe**, закройте MPC-HC и запустите установщик. Предварительно устанавливать оригинал не нужно. В пакет входят плеер, встроенные LAV Filters, MediaInfo, MPC Video Renderer, языки и наше оформление. После установки используйте обычный ярлык; удаление доступно в списке установленных приложений Windows.
+**Use Fluent appearance** applies Minimal view, whole-window cursor-movement activation, a four-second hiding timeout and the Custom Fluent toolbar through native settings. The separate Reset settings task is unchecked by default. Upgrades preserve other preferences. The incomplete hover preset from the first full installer is repaired once; subsequent deliberate hover-policy changes are preserved.
 
-Для системных эффектов Acrylic в пакет также включён подписанный Microsoft Windows App Runtime 1.8.12. На поддерживаемой Windows он устанавливается только при отсутствии совместимого runtime; скачивание во время установки не требуется. Принудительное завершение других приложений не используется. Это общий системный компонент: удаление плеера его не удаляет. На старых Windows, не поддерживающих этот компонент, сохраняется резервный фон.
+The offline package includes Microsoft-signed Windows App Runtime 1.8.12 for Acrylic. On supported Windows it is installed only if a compatible runtime cannot be activated. Other applications are not forcibly terminated. This shared component is retained when the player is uninstalled. Older unsupported Windows versions use the existing fallback background.
 
-Используется штатный установщик MPC-HC с тем же идентификатором продукта x64: если оригинальный MPC-HC x64 уже установлен, форк обновляет эту установку. Папка, профиль и стандартное поведение ассоциаций сохраняются. Установщик сам не назначает форк новым приложением по умолчанию без выбора пользователя.
+Installed EPG data is stored in `%LOCALAPPDATA%\MPC-HC\EpgCache`; writes to Program Files are unnecessary. Personal INI files, history, browser routing helpers and stream credentials are not included. Setup does not reconfigure browser scripts.
 
-Пункт **Use Fluent appearance** включает Minimal, скрытие контролов по наведению и тему Custom Fluent через штатные настройки. Он предлагается при первой установке; при последующих обновлениях отмечать его снова не требуется. Остальные настройки не сбрасываются. Если хотите полностью сохранить прежнее оформление оригинала, снимите этот пункт. Задача Reset settings остаётся отдельной и выключена по умолчанию.
+The native update checker points to this fork. Stable and beta builds read separate `updates-stable/version.txt` and `updates-beta/version.txt` feeds. Installation remains manual.
 
-Кэш потоковой программы установленной версии: `%LOCALAPPDATA%\MPC-HC\EpgCache`. Запись в Program Files не требуется. Личные INI, история, тестовые маршрутизаторы браузера и ссылки на потоки в установщик не включаются. Установщик не перенастраивает рабочие браузерные скрипты.
+## Release notifications
 
-### Дополнительное обновление существующей portable-папки
+Enable **Watch > Custom > Releases** on GitHub and email delivery in your GitHub notification settings. The project does not store your email address or change account preferences. The native update checker is another way to find new releases.
 
-ZIP с суффиксом `-update.zip` оставлен для существующих portable-папок. Для обычной установки и последующих обновлений используйте EXE выше.
+## Stable and beta channels
 
-1. Скачайте ZIP и при желании сверьте его SHA256 с `SHA256SUMS.txt`.
-2. Закройте плеер. Распакуйте ZIP в отдельную папку.
-3. Запустите PowerShell в распакованной папке:
+The scheduled monitor follows stable `clsid2/mpc-hc` releases. Beta builds require a manual run of **Monitor official MPC-HC releases** with channel `beta`. They are published as prereleases and do not replace the stable branch or feed.
 
-   ```powershell
-   .\Update-Fluent.ps1 -TargetDirectory "C:\путь\к\portable-плееру"
-   ```
+## Automated builds
 
-EXE заменяется атомарно. INI, иконки, DLL, кеш EPG и привязки файлов сохраняются; обновляется только контрольная сумма уже существующего тестового маршрутизатора Firefox. Хранятся три последние копии EXE в `.fluent-backups`. Плеер не закрывается принудительно и не запускается установщиком. При ошибке маршрутизатора выполняется возврат предыдущего EXE. После аварийного прерывания установщика проверьте процесс и резервную копию перед ручным удалением оставшегося `.fluent-update.lock`.
+`fluent-upstream.yml` runs every six hours from `develop`:
 
-Штатная команда проверки обновлений в новых сборках направлена на **этот форк**, а не на оригинальный MPC-HC. Ничего автоматически не устанавливается. Стабильные сборки читают `updates-stable/version.txt`, бета-сборки — `updates-beta/version.txt`.
+1. Compare the latest official release with the last published fork release.
+2. Fetch the exact upstream tag and prepare a separate `auto/...` branch.
+3. Perform a normal merge. Conflicts stop the workflow for manual review.
+4. Run the retained tests, full x64 build, languages and native Inno Setup. A disposable runner verifies fresh installation, codec loading, runtime activation, profile-preserving upgrades and uninstall.
+5. Publish the complete EXE, optional portable update ZIP, SHA256 sums and a source/dependency manifest. Stable promotion requires the base branch to remain unchanged during the build.
+6. Update the player feed only after the files are public. Incomplete drafts are not offered as updates.
 
-## Уведомления
+An unchanged upstream release does not trigger compilation. Published version numbers are never overwritten. The fourth version component is the fork build revision; it increases across direct and reusable workflow runs. Automation uses the scoped GitHub Actions token, not a personal access token.
 
-На странице репозитория включите **Watch → Custom → Releases** и доставку уведомлений GitHub по электронной почте в настройках своего аккаунта. Это одноразовая пользовательская настройка; репозиторий не хранит вашу почту и не меняет настройки уведомлений аккаунта. Альтернатива — штатная проверка обновлений в плеере.
+## Optional update for an existing portable folder
 
-## Стабильные версии и беты
+The `-update.zip` is supplementary. Use the EXE installer for normal Windows installations and upgrades.
 
-Расписание отслеживает только стабильные релизы `clsid2/mpc-hc`. Беты доступны отдельным ручным запуском `Monitor official MPC-HC releases` с каналом `beta`, помечаются prerelease и не заменяют стабильную ветку или её ленту. Включать беты не требуется. После проверки они могут использоваться добровольно.
+1. Download and extract the update ZIP; optionally verify it against `SHA256SUMS.txt`.
+2. Close the player and open PowerShell in the extracted folder.
+3. Run `./Update-Fluent.ps1 -TargetDirectory "C:\path\to\portable-player"`.
 
-## Автосборка
+The EXE is replaced atomically. Settings, icons, libraries, EPG and associations are preserved. Only the integrity hash of an existing test browser router is updated. Three EXE backups are retained in `.fluent-backups`. No player is killed or launched. Routing-write failures restore the previous EXE. After an interrupted update, check the process and backup before manually removing a leftover `.fluent-update.lock`.
 
-`fluent-upstream.yml` работает каждые шесть часов из основной ветки `develop`:
+## Source, dependencies and validation
 
-1. Сравнивает последний опубликованный релиз оригинала с последним **опубликованным** обновлением форка.
-2. Получает точный тег оригинала и создаёт отдельную ветку `auto/...`.
-3. Выполняет обычное слияние. Конфликты не разрешаются наугад — задача останавливается для ручного разбора.
-4. Через reusable workflow `fluent-build.yml` запускает тесты, полную сборку x64, языки и штатный Inno Setup. На одноразовом runner проверяются чистая установка, загрузка встроенных декодеров, обновление с сохранением профиля и удаление.
-5. Публикует полный установщик EXE, дополнительный ZIP, SHA256 и манифест исходников/компонентов. Стабильный кандидат продвигается только если основная ветка за время сборки не изменилась.
-6. Обновляет ленту проверки обновлений после публикации файлов. При сбое неполный draft не предлагается плееру.
+Each manifest identifies the exact source commit and upstream tag. Clone that commit recursively for corresponding sources; see [Compilation](docs/Compilation.md) and the pinned workflow dependencies. Released codecs and additional libraries come from the matching official MPC-HC package. `dependencies.json` and the release manifest record URLs, SHA256 hashes and source references. The stock EXE used for installer syntax checks is replaced by our full build; packaging rejects an incorrect build revision. Inno Setup 6.7.3 is used only as a build tool.
 
-При отсутствии обновления компиляция не запускается. Повторная публикация уже выпущенного номера запрещена: для новой сборки нужен новый запуск, а не перезапись готового релиза. Четвёртое число версии — номер сборки форка, отдельно от номера оригинала. Автоматические действия используют ограниченный `GITHUB_TOKEN`, персональный токен не требуется.
+The accepted UI baseline is `d7ef4ad82d0340386bab0f8a905ebeb9ee6aa1ef`. The [UI contract](docs/FluentUIContract.md) and [audit](docs/FluentAudit-2026-10-30.md) document retained behaviour and validation limits. CI does not prove the absence of every visual issue or leak. Visual confirmation remains a user test.
 
-## Исходники и сборка
-
-В каждом манифесте указан точный commit и исходный тег оригинала. Для соответствующих исходников клонируйте этот commit с подмодулями; инструкции оригинала — [Compilation](docs/Compilation.md). Закреплённые параметры форка и зависимости находятся в workflow. Windows App SDK 1.8 нужен для системного материала; при недоступности поддерживаемого материала используется предусмотренный Solid/alpha-путь. Новых WinUI/XAML-меню в рабочей сборке нет.
-
-Принятая UI-база: `d7ef4ad82d0340386bab0f8a905ebeb9ee6aa1ef`. [Контракт оформления](docs/FluentUIContract.md) и [аудит](docs/FluentAudit-2026-10-30.md) фиксируют ограничения и границы проверок. CI не доказывает отсутствие всех визуальных ошибок или утечек при любых сценариях.
-
-Код оригинального MPC-HC и изменения форка распространяются по GPLv3+; сохранены авторские сведения и [COPYING.txt](COPYING.txt). Авторство оригинала остаётся за его разработчиками. Готовые декодеры и дополнительные библиотеки берутся из соответствующего официального релиза MPC-HC; URL, SHA256 и ссылка на соответствующие исходники записываются в `dependencies.json` и манифест выпуска. Оригинальный EXE из того архива не распространяется вместо нашего. Inno Setup 6.7.3 закреплён по SHA256 и используется только для сборки.
+MPC-HC and fork modifications are distributed under [GPLv3 or later](COPYING.txt). Upstream authorship and attribution are retained.
