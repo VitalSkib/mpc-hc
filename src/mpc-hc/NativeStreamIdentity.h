@@ -4,8 +4,10 @@
 #include "rapidjson/include/rapidjson/writer.h"
 #include "rapidjson/include/rapidjson/stringbuffer.h"
 #include <wincrypt.h>
+#include <shlobj.h>
 #include <map>
 #pragma comment(lib,"crypt32.lib")
+#pragma comment(lib,"shell32.lib")
 
 namespace StreamIdentity {
 inline std::wstring Lower(std::wstring s) {
@@ -74,9 +76,29 @@ inline std::string ProviderKey(const std::wstring& input) {
     auto key=L"tvcdnpotok-v1|"+scheme+L"|"+host+L"|"+parts[1]+L"|"+(queryAt==url.npos?L"":url.substr(queryAt));
     return "p:"+Hash(key);
 }
+inline std::wstring CacheDirectory(const std::wstring& executable,const std::wstring& localAppData,bool portable) {
+    const auto slash=executable.find_last_of(L"\\/");
+    if(portable&&slash!=executable.npos)return executable.substr(0,slash+1)+L"EpgCache";
+    return localAppData.empty()?L"":localAppData+L"\\MPC-HC\\EpgCache";
+}
 inline std::wstring Folder() {
     wchar_t path[32768];DWORD n=GetModuleFileNameW(nullptr,path,32768);if(!n||n>=32768)return {};
-    std::wstring result(path,n);result.erase(result.find_last_of(L"\\/")+1);result+=L"EpgCache";CreateDirectoryW(result.c_str(),nullptr);return result;
+    const std::wstring executable(path,n);
+    const auto dot=executable.find_last_of(L'.');
+    const auto ini=dot==executable.npos?executable+L".ini":executable.substr(0,dot)+L".ini";
+    const DWORD attributes=GetFileAttributesW(ini.c_str());
+    if(attributes!=INVALID_FILE_ATTRIBUTES&&!(attributes&FILE_ATTRIBUTE_DIRECTORY)) {
+        auto portable=CacheDirectory(executable,{},true);
+        if(!portable.empty()&&(CreateDirectoryW(portable.c_str(),nullptr)||GetLastError()==ERROR_ALREADY_EXISTS))return portable;
+    }
+    // Installed applications never write caches beside the executable in Program Files.
+    wchar_t local[MAX_PATH];
+    if(FAILED(SHGetFolderPathW(nullptr,CSIDL_LOCAL_APPDATA,nullptr,SHGFP_TYPE_CURRENT,local)))return {};
+    const std::wstring parent=std::wstring(local)+L"\\MPC-HC";
+    if(!CreateDirectoryW(parent.c_str(),nullptr)&&GetLastError()!=ERROR_ALREADY_EXISTS)return {};
+    auto result=CacheDirectory(executable,local,false);
+    if(!CreateDirectoryW(result.c_str(),nullptr)&&GetLastError()!=ERROR_ALREADY_EXISTS)return {};
+    return result;
 }
 struct Binding {
     std::wstring channel,id;std::vector<CNativeProgrammeGuide::Programme> rows;

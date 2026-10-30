@@ -8,6 +8,14 @@ def module(name):
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
 
 class Releases(unittest.TestCase):
+    def test_revisions_increase_across_workflow_counters(self):
+        m = module('release_revision')
+        self.assertEqual(m.next_revision(2,(2,8,4),'2.8.4.10010'),10011)
+        self.assertEqual(m.next_revision(20,(2,8,4),'2.8.4.10010'),10020)
+        self.assertEqual(m.next_revision(2,(2,8,5),'2.8.4.10010'),10002)
+        self.assertEqual(m.next_revision(2,(2,8,4)),10002)
+        with self.assertRaises(ValueError): m.next_revision(2,(2,8,4),'2.8.4.65535')
+        with self.assertRaises(ValueError): m.next_revision(2,(2,8,4),'bad')
     def test_feed_uses_published_release_url(self):
         m = module('publish_release')
         calls = []
@@ -27,13 +35,20 @@ class Releases(unittest.TestCase):
                 os.chdir(temporary)
                 root = Path('fluent-release'); root.mkdir()
                 (root/'update.zip').write_bytes(b'fixture')
-                (root/'SHA256SUMS.txt').write_text(hashlib.sha256(b'fixture').hexdigest()+' update.zip')
+                (root/'setup.exe').write_bytes(b'MZfixture')
+                setup_hash=hashlib.sha256(b'MZfixture').hexdigest()
+                (root/'SHA256SUMS.txt').write_text(hashlib.sha256(b'fixture').hexdigest()+' update.zip\n'+setup_hash+' setup.exe')
                 (root/'manifest.json').write_text(json.dumps({'product':'MPC-HC-Fluent',
                     'channel':'stable', 'version':'2.8.4.10001', 'source_commit':'source',
-                    'upstream_tag':'2.8.4', 'source_url':'https://github.com/test/source'}))
+                    'upstream_tag':'2.8.4', 'source_url':'https://github.com/test/source',
+                    'installer_name':'setup.exe','installer_sha256':setup_hash}))
                 with patch.object(m, 'request', side_effect=request), patch.dict(os.environ,
                         {'PROMOTE_BASE':'', 'CANDIDATE_REF':'', 'GITHUB_STEP_SUMMARY':'summary.txt'}):
                     m.main()
+                    count=len(calls)
+                    (root/'setup.exe').write_bytes(b'MZtampered')
+                    with self.assertRaises(ValueError): m.main()
+                    self.assertEqual(len(calls),count,'Damaged installer must not create a release')
                 feeds = [json.loads(data['content']) for url,data,method in calls
                          if url.endswith('/git/blobs') and 'release_url' in data['content']]
                 self.assertEqual(feeds[0]['release_url'],

@@ -7,6 +7,9 @@ static int checks=0;
 static void check(bool value,const char* message){++checks;if(!value){std::cerr<<"FAIL "<<message<<"\n";std::exit(1);}}
 int main(){
     using namespace StreamIdentity;
+    check(CacheDirectory(L"C:\\Program Files\\MPC-HC\\mpc-hc64.exe",L"C:\\Users\\Test\\AppData\\Local",false)==L"C:\\Users\\Test\\AppData\\Local\\MPC-HC\\EpgCache","installed cache is per-user outside Program Files");
+    check(CacheDirectory(L"D:\\Player\\mpc-hc64.exe",L"C:\\Local",true)==L"D:\\Player\\EpgCache","portable INI retains adjacent cache");
+    check(CacheDirectory(L"C:\\Program Files\\MPC-HC\\mpc-hc64.exe",{},false).empty(),"missing user cache root does not fall back to protected directory");
     const std::wstring a=L"https://tvcdnpotok.com/abcdefgh_X/570/1793037301/index.m3u8";
     const std::wstring b=L"https://tvcdnpotok.com/newtoken-abc/570/1793137301/index.m3u8";
     check(!ProviderKey(a).empty()&&ProviderKey(a)==ProviderKey(b),"rotating signed path preserves provider channel");
