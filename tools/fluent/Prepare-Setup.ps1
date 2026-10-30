@@ -27,6 +27,11 @@ Copy-Item -LiteralPath "$source/LAVFilters64" -Destination $destination -Recurse
 Copy-Item -LiteralPath "$source/MediaInfo.dll" -Destination 'distrib/x64/MediaInfo.dll'
 New-Item -ItemType Directory -Path 'distrib/mpcvr' -Force | Out-Null
 Copy-Item -LiteralPath "$source/MPCVR/MpcVideoRenderer64.ax" -Destination 'distrib/mpcvr/'
+# Build the original full solution, using matching released codecs instead of compiling FFmpeg again.
+$solution=[IO.File]::ReadAllText((Join-Path (Get-Location) 'mpc-hc.sln'))
+$codecBuild='(?m)^\s*\{ED257874-E12E-4143-AF0A-0676DA3BB18C\}\.Release\|x64\.Build\.0 = Release\|x64\r?$'
+if([regex]::Matches($solution,$codecBuild).Count -ne 1){throw 'Review required: upstream codec project configuration changed'}
+[IO.File]::WriteAllText((Join-Path (Get-Location) 'mpc-hc.sln'),[regex]::Replace($solution,$codecBuild,''))
 foreach($name in 'LAVAudio.ax','LAVSplitter.ax','LAVVideo.ax','LAVFilters.Dependencies.manifest') {
   if(-not (Test-Path -LiteralPath "$destination/LAVFilters64/$name" -PathType Leaf)){throw "Missing codec: $name"}
 }

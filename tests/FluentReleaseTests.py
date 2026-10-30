@@ -8,6 +8,14 @@ def module(name):
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
 
 class Releases(unittest.TestCase):
+    def test_revisions_increase_across_workflow_counters(self):
+        m = module('release_revision')
+        self.assertEqual(m.next_revision(2,(2,8,4),'2.8.4.10010'),10011)
+        self.assertEqual(m.next_revision(20,(2,8,4),'2.8.4.10010'),10020)
+        self.assertEqual(m.next_revision(2,(2,8,5),'2.8.4.10010'),10002)
+        self.assertEqual(m.next_revision(2,(2,8,4)),10002)
+        with self.assertRaises(ValueError): m.next_revision(2,(2,8,4),'2.8.4.65535')
+        with self.assertRaises(ValueError): m.next_revision(2,(2,8,4),'bad')
     def test_feed_uses_published_release_url(self):
         m = module('publish_release')
         calls = []
