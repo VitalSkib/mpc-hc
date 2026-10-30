@@ -281,3 +281,7 @@ jobs:
           PROMOTE_BASE: ${{ inputs.promote_base }}
           CANDIDATE_REF: ${{ inputs.ref }}
         run: python tools/fluent/publish_release.py
+      - name: Remove superseded fork releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/fluent/prune_legacy.py

@@ -55,6 +55,9 @@ Set-ItemProperty "$profile/Settings" -Name HideFullscreenControlsPolicy -Type DW
 Set-ItemProperty "$profile/Settings" -Name HideFullscreenControlsDelay -Type DWord -Value 0
 Install-Player ''
 if((Get-ItemProperty "$profile/Settings").HideFullscreenControlsPolicy -ne 1){throw 'Upgrade overwrote a later explicit hover preference'}
+Set-ItemProperty "$profile/Settings" -Name ControlState -Type DWord -Value 15
+Install-Player 'fluent_style'
+if((Get-ItemProperty "$profile/Settings").ControlState -ne 15 -or (Get-ItemProperty "$profile/Settings").HideFullscreenControlsPolicy -ne 1 -or (Get-ItemProperty "$profile/Toolbars/PlayerToolBar").ToolbarName -ne 'Fluent Soft'){throw 'Reapplying the checked Fluent task reset an active profile'}
 Add-Type @'
 using System;
 using System.Runtime.InteropServices;

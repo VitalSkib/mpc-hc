@@ -2,6 +2,20 @@
 // Never import a user's INI, history, paths or stream credentials.
 var
   FluentHoverMigrationNeeded: Boolean;
+  FluentTasksInitialized: Boolean;
+
+procedure CurPageChanged(CurPageID: Integer);
+var
+  I: Integer;
+begin
+  if (CurPageID <> wpSelectTasks) or FluentTasksInitialized or WizardSilent then Exit;
+  FluentTasksInitialized := True;
+  // Respect explicit unattended task selections, without resetting other tasks.
+  for I := 1 to ParamCount do
+    if (Pos('/TASKS=', Uppercase(ParamStr(I))) = 1) or
+       (Pos('/MERGETASKS=', Uppercase(ParamStr(I))) = 1) then Exit;
+  WizardSelectTasks('fluent_style');
+end;
 
 procedure CaptureFluentHoverMigration();
 var
@@ -93,6 +107,10 @@ var
   Bytes: AnsiString;
   I: Integer;
 begin
+  // Updating an active Fluent profile must preserve its artwork and layout.
+  if (FluentProfileIntValue('Settings', 'HideCaptionMenu', 0) = 3) and
+      (FluentProfileIntValue('Settings', 'HideWindowedControls', 0) = 1) and
+      (FluentProfileIntValue('Settings', 'MPCTheme', 0) = 1) then Exit;
   FluentProfileInt('Settings', 'HideCaptionMenu', 3);
   FluentProfileInt('Settings', 'ControlState', 3);
   FluentProfileInt('Settings', 'HideWindowedControls', 1);
