@@ -4,6 +4,8 @@ A Windows x64 fork of [MPC-HC](https://github.com/clsid2/mpc-hc) with a video-fi
 
 **[Download for Windows](https://github.com/VitalSkib/mpc-hc/releases/latest)**
 
+![MPC-HC Fluent playback interface](docs/images/player.png)
+
 - Animated, translucent playback controls and titlebar over the video.
 - An Acrylic playlist with smooth transitions.
 - Adaptive controls for small windows, with native window dragging and resizing.

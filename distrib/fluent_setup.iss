@@ -62,7 +62,7 @@ end;
 function FluentProfileIntValue(Section, Name: String; Default: Cardinal): Cardinal;
 begin
   if FileExists(ExpandConstant('{app}\{#mpchc_ini}')) then
-    Result := GetIniInt(Section, Name, Default, ExpandConstant('{app}\{#mpchc_ini}'))
+    Result := GetIniInt(Section, Name, Default, 0, $7FFFFFFF, ExpandConstant('{app}\{#mpchc_ini}'))
   else if not RegQueryDWordValue(HKCU, 'Software\MPC-HC\MPC-HC\' + Section, Name, Result) then
     Result := Default;
 end;
