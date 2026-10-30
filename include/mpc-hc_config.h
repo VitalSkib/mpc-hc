@@ -32,6 +32,9 @@
 #endif
 
 #define WEBSITE_URL  _T("https://github.com/VitalSkib/mpc-hc/releases/latest")
+#ifndef MPC_FLUENT_BETA
+#define MPC_FLUENT_BETA 0
+#endif
 #if defined(MPC_FLUENT_BETA) && MPC_FLUENT_BETA
 #define DOWNLOAD_URL _T("https://github.com/VitalSkib/mpc-hc/releases")
 #define UPDATE_URL _T("https://raw.githubusercontent.com/VitalSkib/mpc-hc/updates-beta/version.txt")
