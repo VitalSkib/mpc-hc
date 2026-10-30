@@ -29,15 +29,25 @@ function Assert-WindowHover {
 }
 Assert-WindowHover
 $uninstallKey='HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{2ACBF1FA-F5C3-4B19-A774-B22A31F231B9}_is1'
-function Simulate-LegacySetupMarker {
+function Simulate-LegacySetupMarker([string]$LegacyVersion='2.8.4.10006',[string]$Marker='') {
   $names=@((Get-ItemProperty -LiteralPath $uninstallKey).PSObject.Properties.Name|Where-Object {$_ -like '*FluentHoverDefaultsVersion*'})
   if($names.Count -ne 1){throw 'Native installer migration marker missing'}
-  Remove-ItemProperty -LiteralPath $uninstallKey -Name $names[0]
-  Set-ItemProperty -LiteralPath $uninstallKey -Name DisplayVersion -Value '2.8.4.10006'
+  if($Marker){Set-ItemProperty -LiteralPath $uninstallKey -Name $names[0] -Value $Marker}
+  else{Remove-ItemProperty -LiteralPath $uninstallKey -Name $names[0]}
+  Set-ItemProperty -LiteralPath $uninstallKey -Name DisplayVersion -Value $LegacyVersion
 }
+Set-ItemProperty "$profile/Toolbars/PlayerToolBar" -Name ToolbarName -Value 'Fluent Soft'
+Set-ItemProperty "$profile/Toolbars/PlayerToolBar" -Name ToolbarType -Type DWord -Value 1
 Set-ItemProperty "$profile/Settings" -Name HideFullscreenControlsPolicy -Type DWord -Value 1
 Set-ItemProperty "$profile/Settings" -Name HideFullscreenControlsDelay -Type DWord -Value 0
 Simulate-LegacySetupMarker
+Install-Player ''
+Assert-WindowHover
+if((Get-ItemProperty "$profile/Toolbars/PlayerToolBar").ToolbarName -ne 'Fluent Soft' -or (Get-ItemProperty "$profile/Toolbars/PlayerToolBar").ToolbarType -ne 1){throw 'Hover repair changed the selected artwork'}
+# The first migration marker must not exclude profiles using another icon theme.
+Set-ItemProperty "$profile/Settings" -Name HideFullscreenControlsPolicy -Type DWord -Value 1
+Set-ItemProperty "$profile/Settings" -Name HideFullscreenControlsDelay -Type DWord -Value 0
+Simulate-LegacySetupMarker -LegacyVersion '2.8.4.10008' -Marker '1'
 Install-Player ''
 Assert-WindowHover
 # The migration is one-time; an intentional later change must survive upgrades.
@@ -60,7 +70,7 @@ foreach($name in 'LAVFilters64/LAVSplitter.ax','LAVFilters64/LAVAudio.ax','LAVFi
   [void][CodecProbe]::FreeLibrary($module)
 }
 Set-ItemProperty "$profile/Settings" -Name ControlState -Type DWord -Value 15
-@('[Settings]','ControlState=11','SetupPreservationSentinel=keep','HideCaptionMenu=3','HideWindowedControls=1','HideFullscreenControlsPolicy=1','HideFullscreenControlsDelay=0','[Toolbars\PlayerToolBar]','ToolbarName=Custom Fluent') | Set-Content -LiteralPath "$folder/mpc-hc64.ini" -Encoding unicode
+@('[Settings]','ControlState=11','SetupPreservationSentinel=keep','HideCaptionMenu=3','HideWindowedControls=1','HideFullscreenControlsPolicy=1','HideFullscreenControlsDelay=0','[Toolbars\PlayerToolBar]','ToolbarName=Fluent Soft','ToolbarType=1') | Set-Content -LiteralPath "$folder/mpc-hc64.ini" -Encoding unicode
 Simulate-LegacySetupMarker
 $cache=Join-Path $env:LOCALAPPDATA 'MPC-HC/EpgCache'
 New-Item -ItemType Directory -Path $cache -Force | Out-Null
@@ -70,6 +80,7 @@ if((Get-ItemProperty "$profile/Settings").ControlState -ne 15){throw 'Upgrade re
 $ini=Get-Content -LiteralPath "$folder/mpc-hc64.ini" -Raw
 if($ini -notmatch 'ControlState=11' -or $ini -notmatch 'SetupPreservationSentinel=keep'){throw 'Upgrade reset existing INI'}
 if($ini -notmatch 'HideFullscreenControlsPolicy=2' -or $ini -notmatch 'HideFullscreenControlsDelay=4000'){throw 'Legacy INI hover preset was not repaired'}
+if($ini -notmatch 'ToolbarName=Fluent Soft' -or $ini -notmatch 'ToolbarType=1'){throw 'INI hover migration changed the selected artwork'}
 if((Get-Content -LiteralPath "$cache/setup-test.txt").Trim() -ne 'keep'){throw 'Upgrade changed EPG cache'}
 $uninstall=Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{2ACBF1FA-F5C3-4B19-A774-B22A31F231B9}_is1'
 if($uninstall.DisplayName -notlike '*Fluent*' -or $uninstall.DisplayVersion -ne $Version){throw 'Native uninstall registration missing'}
