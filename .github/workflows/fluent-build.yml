@@ -82,6 +82,8 @@ jobs:
           Invoke-WebRequest 'https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/win64/nasm-2.16.03-win64.zip' -OutFile "$env:RUNNER_TEMP\nasm.zip"
           Expand-Archive "$env:RUNNER_TEMP\nasm.zip" "$env:RUNNER_TEMP\nasm"
           (Get-ChildItem "$env:RUNNER_TEMP\nasm" -Filter nasm.exe -Recurse | Select-Object -First 1).DirectoryName >> $env:GITHUB_PATH
+      - name: Prepare native translation tooling
+        run: python -m pip install --disable-pip-version-check polib==1.2.0
       - name: Test source-bound programme guide
         shell: cmd
         run: |
@@ -198,6 +200,10 @@ jobs:
           if errorlevel 1 exit /b 1
           call build.bat Build x64 Resources Release
           if errorlevel 1 exit /b 1
+          call build.user.bat
+          call "%MPCHC_VS_PATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+          cl /nologo /EHsc /MT tools\fluent\RuntimeCheck.cpp /Fe:distrib\FluentRuntime\FluentRuntimeCheck.exe
+          if errorlevel 1 exit /b 1
       - name: Compile and test native complete installer
         id: setup
         shell: pwsh
@@ -214,6 +220,8 @@ jobs:
           $setup="bin/fluent-setup/$name.exe"
           if(-not(Test-Path -LiteralPath $setup)){throw 'Installer was not produced'}
           ./tests/FluentSetupTests.ps1 -Setup $setup -Version $version
+          & './distrib/FluentRuntime/FluentRuntimeCheck.exe' (Join-Path (Get-Location) 'distrib/FluentRuntime/Microsoft.WindowsAppRuntime.Bootstrap.dll')
+          if($LASTEXITCODE -ne 0){throw 'Installed Acrylic runtime could not activate'}
           "path=$setup" >> $env:GITHUB_OUTPUT
       - name: Package complete installer and optional portable update
         id: package

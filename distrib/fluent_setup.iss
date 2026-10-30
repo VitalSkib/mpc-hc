@@ -1,5 +1,35 @@
-; Apply the selected appearance through MPC-HC's existing profile keys.
-; Never import a user's INI, history, paths or stream credentials.
+// Apply the selected appearance through MPC-HC's existing profile keys.
+// Never import a user's INI, history, paths or stream credentials.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Version: TWindowsVersion;
+  Code: Integer;
+  Probe, Bootstrap: String;
+begin
+  Result := '';
+  GetWindowsVersionEx(Version);
+  if (Version.Major < 10) or ((Version.Major = 10) and (Version.Build < 17763)) then Exit;
+  ExtractTemporaryFile('FluentRuntimeCheck.exe');
+  ExtractTemporaryFile('Microsoft.WindowsAppRuntime.Bootstrap.dll');
+  Probe := ExpandConstant('{tmp}\FluentRuntimeCheck.exe');
+  Bootstrap := '"' + ExpandConstant('{tmp}\Microsoft.WindowsAppRuntime.Bootstrap.dll') + '"';
+  if Exec(Probe, Bootstrap, '', SW_HIDE, ewWaitUntilTerminated, Code) and (Code = 0) then Exit;
+  // Install the shared Microsoft prerequisite only when a compatible runtime is missing.
+  // Never use --force: other Windows App SDK applications must not be terminated.
+  ExtractTemporaryFile('WindowsAppRuntimeInstall-x64.exe');
+  if not Exec(ExpandConstant('{tmp}\WindowsAppRuntimeInstall-x64.exe'), '--quiet', '', SW_HIDE, ewWaitUntilTerminated, Code) then begin
+    Result := 'Could not start Windows App Runtime setup.';
+    Exit;
+  end;
+  if Code = 3010 then NeedsRestart := True
+  else if Code <> 0 then begin
+    Result := 'Windows App Runtime setup failed (' + IntToStr(Code) + '). Close applications and run setup again.';
+    Exit;
+  end;
+  if not Exec(Probe, Bootstrap, '', SW_HIDE, ewWaitUntilTerminated, Code) or (Code <> 0) then
+    Result := 'Windows App Runtime 1.8 could not be activated. Restart Windows and run setup again.';
+end;
+
 procedure FluentProfileInt(Section, Name: String; Value: Cardinal);
 begin
   if FileExists(ExpandConstant('{app}\{#mpchc_ini}')) then

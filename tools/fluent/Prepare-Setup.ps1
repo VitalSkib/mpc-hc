@@ -42,6 +42,15 @@ $inno=Join-Path $temporary 'compiler'
 $process=Start-Process -FilePath "$temporary/inno.exe" -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-',"/DIR=`"$inno`"") -WindowStyle Hidden -PassThru -Wait
 if($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath "$inno/ISCC.exe")){throw 'Inno compiler preparation failed'}
 "iscc=$inno/ISCC.exe" >> $env:GITHUB_OUTPUT
+$runtimeUrl='https://aka.ms/windowsappsdk/1.8/1.8.260921001/windowsappruntimeinstall-x64.exe'
+$runtimeHash='7c092e85fc1e3e7cb2bd7d549aaab03caf924131f15d9b20b1855457a98205aa'
+New-Item -ItemType Directory -Path 'distrib/FluentRuntime' -Force | Out-Null
+Get-CheckedFile $runtimeUrl 'distrib/FluentRuntime/WindowsAppRuntimeInstall-x64.exe' $runtimeHash
+$signature=Get-AuthenticodeSignature -LiteralPath 'distrib/FluentRuntime/WindowsAppRuntimeInstall-x64.exe'
+if($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch '^CN=Microsoft Corporation,'){throw 'Invalid Microsoft runtime signature'}
+Copy-Item -LiteralPath 'src/mpc-hc/wasdk-probe/foundation/runtimes/win-x64/native/Microsoft.WindowsAppRuntime.Bootstrap.dll' -Destination 'distrib/FluentRuntime/'
 @{upstream_package=$asset.browser_download_url; upstream_sha256=$asset.digest.Substring(7);
   upstream_source="https://github.com/clsid2/mpc-hc/tree/$($config.upstream_commit)";
+  windows_app_runtime=$runtimeUrl; windows_app_runtime_sha256=$runtimeHash;
+  windows_app_runtime_source='https://github.com/microsoft/WindowsAppSDK/tree/v1.8.12';
   inno_setup=$innoUrl; inno_sha256=$innoHash} | ConvertTo-Json | Set-Content -LiteralPath 'tools/fluent/dependencies.json' -Encoding utf8

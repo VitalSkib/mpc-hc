@@ -290,6 +290,9 @@ Source: ..\COPYING.txt;                            DestDir: {app};              
 #ifdef FluentBuild
 Source: ..\README-Fluent.md;                       DestDir: {app};                  Components: main;         Flags: ignoreversion
 Source: ..\tools\fluent\dependencies.json;         DestDir: {app};                  Components: main;         Flags: ignoreversion
+Source: ..\distrib\FluentRuntime\WindowsAppRuntimeInstall-x64.exe; Flags: dontcopy
+Source: ..\distrib\FluentRuntime\Microsoft.WindowsAppRuntime.Bootstrap.dll; Flags: dontcopy
+Source: ..\distrib\FluentRuntime\FluentRuntimeCheck.exe; Flags: dontcopy
 #endif
 Source: ..\docs\Authors.txt;                       DestDir: {app};                  Components: main;         Flags: ignoreversion
 	#if USE_DRDUMP_CRASH_REPORTER
