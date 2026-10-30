@@ -11615,6 +11615,10 @@ void CMainFrame::OnPlayVolumeBoost(UINT nID)
 
 void CMainFrame::SetVolumeBoost(UINT nAudioBoost)
 {
+    if (!IsStateLoaded()) {
+        return;
+    }
+
     if (CComQIPtr<IAudioSwitcherFilter> pASF = FindFilter(__uuidof(CAudioSwitcherFilter), m_pGB)) {
         bool fNormalize, fNormalizeRecover;
         UINT nMaxNormFactor, nBoost;
@@ -13616,8 +13620,10 @@ void CMainFrame::ToggleFullscreen(bool fToNearest, bool fSwitchScreenResWhenHasT
         }
 
         ModifyStyle(dwRemove, dwAdd, SWP_NOZORDER);
+        restoringWindowRect = true; //do not adjust for DPI if moving to a monitor with a different DPI
         SetWindowPos(pInsertAfter, windowRect.left, windowRect.top, windowRect.Width(), windowRect.Height(),
             SWP_NOSENDCHANGING | SWP_FRAMECHANGED);
+        restoringWindowRect = false;
 
         // If MPC-HC wasn't previously set "on top" by an external tool,
         // we restore the current internal on top state. (2/2)
@@ -21757,7 +21763,7 @@ void CMainFrame::CloseMediaInternal(bool bNextIsQueued/* = false*/, bool bPendin
                             processmsg = false;
                             #if !defined(_DEBUG) && USE_DRDUMP_CRASH_REPORTER && (MPC_VERSION_REV > 10)
                             if (extendedwait && CrashReporter::IsEnabled()) {
-                                if (IDYES == AfxMessageBox(L"It looks like the filter graph might be deadlocked.\n\nClick YES to submit a crash report.\nClick NO to terminate the player process.", MB_ICONEXCLAMATION | MB_YESNO, 0)) {
+                                if (IDYES == AfxMessageBox(L"It looks like the filter graph might be deadlocked.\n\nClick YES to submit a crash report.\nClick NO to terminate the player process.\n\nIf you can reproduce this problem with a specific file, then please share details with the developers.", MB_ICONEXCLAMATION | MB_YESNO, 0)) {
                                     throw 0xdead;
                                 }
                             }
@@ -21767,7 +21773,7 @@ void CMainFrame::CloseMediaInternal(bool bNextIsQueued/* = false*/, bool bPendin
                             if (s.iDSVideoRendererType == VIDRNDT_DS_MADVR) {
                                 timeoutmsg = L"Timeout while aborting filter graph creation.\n\nIf files load slowly with MadVR, you should change dithering in Madvr settings (Error Diffusion is broken on AMD GPU).\n\nClick YES to terminate player process. Click NO to wait longer (up to 15 seconds).";
                             } else {
-                                timeoutmsg = L"Timeout while aborting filter graph creation.\n\nClick YES to terminate player process. Click NO to wait longer (up to 15 seconds).";
+                                timeoutmsg = L"Timeout while aborting filter graph creation.\n\nClick YES to terminate player process. Click NO to wait longer (up to 15 seconds).\n\nIf you can reproduce this problem with a specific file, then please share details with the developers.";
                             }
                             if (USE_LOGGER(s)) {
                                 PLAYER_LOG(_T("CMainFrame::CloseMedia - Timeout when aborting filter graph creation"));
@@ -21956,7 +21962,7 @@ void CMainFrame::CloseMediaInternal(bool bNextIsQueued/* = false*/, bool bPendin
                     if (extendedwait || m_fFullScreen || s.hMasterWnd || hibernating || app_closing || m_OnClose_queued) {
                         #if !defined(_DEBUG) && USE_DRDUMP_CRASH_REPORTER && (MPC_VERSION_REV > 10)
                         if (extendedwait && CrashReporter::IsEnabled()) {
-                            if (IDYES == AfxMessageBox(L"It looks like the filter graph might be deadlocked.\n\nClick YES to submit a crash report.\nClick NO to terminate the player process.", MB_ICONEXCLAMATION | MB_YESNO, 0)) {
+                            if (IDYES == AfxMessageBox(L"It looks like the filter graph might be deadlocked.\n\nClick YES to submit a crash report.\nClick NO to terminate the player process.\n\nIf you can reproduce this problem with a specific file, then please share details with the developers.", MB_ICONEXCLAMATION | MB_YESNO, 0)) {
                                 throw 0xdead;
                             }
                         }
@@ -21970,7 +21976,7 @@ void CMainFrame::CloseMediaInternal(bool bNextIsQueued/* = false*/, bool bPendin
                             continue;
                         }
 
-                        CString timeoutmsg = L"Timeout when closing filter graph.\n\nClick YES to terminate player process. Click NO to wait longer (up to 15 seconds).";
+                        CString timeoutmsg = L"Timeout when closing filter graph.\n\nClick YES to terminate player process. Click NO to wait longer (up to 15 seconds).\n\nIf you can reproduce this problem with a specific file, then please share details with the developers.";
                         if (USE_LOGGER(s)) {
                             PLAYER_LOG(_T("CMainFrame::CloseMedia - Timeout when closing filter graph"));
                         }

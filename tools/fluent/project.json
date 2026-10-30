@@ -1,0 +1,12 @@
+{
+  "repository": "VitalSkib/mpc-hc",
+  "upstream": "clsid2/mpc-hc",
+  "upstream_tag": "2.8.4",
+  "upstream_commit": "a19e22c0a6cbb623a52938f6304a600c0853d371",
+  "accepted_ui_base": "d7ef4ad82d0340386bab0f8a905ebeb9ee6aa1ef",
+  "channels": {
+    "stable": "automatic",
+    "beta": "manual_opt_in"
+  },
+  "auto_install": false
+}

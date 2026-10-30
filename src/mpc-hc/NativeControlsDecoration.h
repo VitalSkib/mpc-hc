@@ -7,6 +7,7 @@
 #include "CMPCThemeToolTipCtrl.h"
 #include "NativePlaylistMaterial.h"
 #include "NativeHeaderInput.h"
+#include "NativePaintResources.h"
 #ifdef MPC_EXPERIMENTAL_GEOMETRY_DIAGNOSTICS
 #include "../DSUtil/GeometryDiagnostics.h"
 #endif
@@ -93,6 +94,7 @@ class CNativeControlsDecoration final : public CWnd
         HDC memory = ::CreateCompatibleDC(nullptr);
         if (!memory) { ::DeleteObject(bitmap); return false; }
         const HGDIOBJ previous = ::SelectObject(memory, bitmap);
+        NativePaintResources::DibSelection dib(memory, bitmap, previous);
         {
             Gdiplus::Bitmap surface(width, height, width * 4, PixelFormat32bppPARGB,
                 static_cast<BYTE*>(pixels));
@@ -172,7 +174,6 @@ class CNativeControlsDecoration final : public CWnd
         GeometryDiagnostics::Record(m_header ? "decor.header-draw" : "decor.backdrop-draw",
             m_hWnd, nullptr, nullptr, m_lastDraw);
 #endif
-        ::SelectObject(memory, previous); ::DeleteDC(memory); ::DeleteObject(bitmap);
         return success;
     }
 

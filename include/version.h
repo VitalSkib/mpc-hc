@@ -44,13 +44,19 @@
 #define MPC_VERSION_REV 0
 #else
 #include "../build/version_rev.h"
+#ifdef MPC_FLUENT_REVISION
+#undef MPC_VERSION_REV
+#define MPC_VERSION_REV MPC_FLUENT_REVISION
+#endif
 #endif
 
 #define MPC_VERSION_MAJOR       2
 #define MPC_VERSION_MINOR       8
-#define MPC_VERSION_PATCH       3
+#define MPC_VERSION_PATCH       4
 
-#if MPC_VERSION_REV > 0
+#if defined(MPC_FLUENT_REVISION) && (!defined(MPC_FLUENT_BETA) || !MPC_FLUENT_BETA)
+#define MPC_NIGHTLY_RELEASE     0
+#elif MPC_VERSION_REV > 0
 #define MPC_NIGHTLY_RELEASE     1
 #else
 #define MPC_NIGHTLY_RELEASE     0

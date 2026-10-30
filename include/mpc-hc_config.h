@@ -31,12 +31,18 @@
 #endif
 #endif
 
-#define WEBSITE_URL  _T("https://github.com/clsid2/mpc-hc/releases")
-#define DOWNLOAD_URL _T("https://github.com/clsid2/mpc-hc/releases")
-#define UPDATE_URL   _T("https://github.com/clsid2/mpc-hc/raw/develop/version.txt")
-#define BACKUP_UPDATE_URL   _T("https://cdn.jsdelivr.net/gh/clsid2/mpc-hc@develop/version.txt")
-#define TRAC_URL     _T("https://github.com/clsid2/mpc-hc/issues")
-#define BUGS_URL     _T("https://github.com/clsid2/mpc-hc/issues")
+#define WEBSITE_URL  _T("https://github.com/VitalSkib/mpc-hc/releases/latest")
+#if defined(MPC_FLUENT_BETA) && MPC_FLUENT_BETA
+#define DOWNLOAD_URL _T("https://github.com/VitalSkib/mpc-hc/releases")
+#define UPDATE_URL _T("https://raw.githubusercontent.com/VitalSkib/mpc-hc/updates-beta/version.txt")
+#define BACKUP_UPDATE_URL UPDATE_URL
+#else
+#define DOWNLOAD_URL _T("https://github.com/VitalSkib/mpc-hc/releases/latest")
+#define UPDATE_URL   _T("https://raw.githubusercontent.com/VitalSkib/mpc-hc/updates-stable/version.txt")
+#define BACKUP_UPDATE_URL   _T("https://raw.githubusercontent.com/VitalSkib/mpc-hc/updates-stable/version.txt")
+#endif
+#define TRAC_URL     _T("https://github.com/VitalSkib/mpc-hc/issues")
+#define BUGS_URL     _T("https://github.com/VitalSkib/mpc-hc/issues")
 
 #define USE_STATIC_UNRAR 1
 

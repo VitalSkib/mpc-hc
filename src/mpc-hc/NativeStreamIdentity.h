@@ -141,7 +141,8 @@ class Store {
         w.EndArray();w.EndObject();if(buffer.GetSize()>2097152)return false;
         auto temp=file+L".tmp."+std::to_wstring(GetCurrentProcessId())+L"."+std::to_wstring(GetCurrentThreadId());
         std::ofstream f(temp.c_str(),std::ios::binary);if(!f.write(buffer.GetString(),buffer.GetSize())){f.close();DeleteFileW(temp.c_str());return false;}
-        f.close();if(MoveFileExW(temp.c_str(),file.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH))return true;
+        f.flush();bool complete=bool(f);f.close();complete=complete&&!f.fail();
+        if(complete&&MoveFileExW(temp.c_str(),file.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH))return true;
         DeleteFileW(temp.c_str());return false;
     }
 public:

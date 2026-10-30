@@ -288,7 +288,8 @@ inline std::vector<unsigned char> LoadGuideCache(const std::wstring& file,const 
     auto temporary=file+L".tmp."+std::to_wstring(GetCurrentProcessId())+L"."+std::to_wstring(GetCurrentThreadId());
     std::ofstream f(temporary.c_str(),std::ios::binary);
     if(f.write(reinterpret_cast<const char*>(bytes.data()),bytes.size())){
-        f.close();if(cancel->load()||!MoveFileExW(temporary.c_str(),file.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH))DeleteFileW(temporary.c_str());
+        f.flush();bool complete=bool(f);f.close();complete=complete&&!f.fail();
+        if(!complete||cancel->load()||!MoveFileExW(temporary.c_str(),file.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH))DeleteFileW(temporary.c_str());
     }else{f.close();DeleteFileW(temporary.c_str());}
     return cancel->load()?std::vector<unsigned char>{}:bytes;
 }

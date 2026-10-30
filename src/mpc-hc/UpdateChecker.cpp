@@ -29,6 +29,18 @@
 #include "AppSettings.h"
 
 #include <afxinet.h>
+#include <memory>
+
+namespace {
+struct InternetFileCloser {
+    void operator()(CHttpFile* file) const noexcept {
+        if (!file) return;
+        try { file->Close(); } catch (CInternetException* error) { error->Delete(); }
+        delete file;
+    }
+};
+}
+
 
 const Version UpdateChecker::MPC_HC_VERSION = {
     VersionInfo::GetMajorNumber(),
@@ -104,11 +116,11 @@ Update_Status UpdateChecker::IsUpdateAvailable(const Version& currentVersion, bo
         if (useBackupURL) fileURL = BACKUP_UPDATE_URL;
         else fileURL = versionFileURL;
 
-        CHttpFile* versionFile = (CHttpFile*) internet.OpenURL(fileURL,
+        std::unique_ptr<CHttpFile, InternetFileCloser> versionFile(static_cast<CHttpFile*>(internet.OpenURL(fileURL,
                                                                1,
                                                                INTERNET_FLAG_TRANSFER_ASCII | INTERNET_FLAG_DONT_CACHE | INTERNET_FLAG_RELOAD,
                                                                headers,
-                                                               DWORD(-1));
+                                                               DWORD(-1))));
 
         if (versionFile) {
             CString latestVersionStr;
@@ -118,6 +130,7 @@ Update_Status UpdateChecker::IsUpdateAvailable(const Version& currentVersion, bo
             while ((br = versionFile->Read(buffer, 50)) > 0) {
                 buffer[br] = '\0';
                 latestVersionStr += buffer;
+                if (latestVersionStr.GetLength() > 128) { return UPDATER_ERROR; }
             }
 
             if (!ParseVersion(latestVersionStr, latestVersion)) {
@@ -143,8 +156,7 @@ Update_Status UpdateChecker::IsUpdateAvailable(const Version& currentVersion, bo
                 }
             }
 
-            versionFile->Close(); // Close() isn't called by the destructor
-            delete versionFile;
+            versionFile.reset();
         } else {
             updateAvailable = UPDATER_ERROR;
         }
@@ -259,6 +271,10 @@ bool UpdateChecker::IsTimeToAutoUpdate()
 
 static UINT RunCheckForUpdateThread(LPVOID pParam)
 {
+    struct CheckingReset {
+        bool& checking; CCritSec& mutex;
+        ~CheckingReset() { CAutoLock lock(&mutex); checking = false; }
+    } reset{UpdateChecker::bIsCheckingForUpdate, UpdateChecker::csIsCheckingForUpdate};
     bool autoCheck = !!pParam;
 
     if (!autoCheck || UpdateChecker::IsTimeToAutoUpdate()) {
@@ -279,8 +295,6 @@ static UINT RunCheckForUpdateThread(LPVOID pParam)
         }
     }
 
-    UpdateChecker::bIsCheckingForUpdate = false;
-
     return 0;
 }
 
@@ -290,6 +304,6 @@ void UpdateChecker::CheckForUpdate(bool autoCheck /*= false*/)
 
     if (!bIsCheckingForUpdate) {
         bIsCheckingForUpdate = true;
-        AfxBeginThread(RunCheckForUpdateThread, (LPVOID)autoCheck);
+        if (!AfxBeginThread(RunCheckForUpdateThread, (LPVOID)autoCheck)) bIsCheckingForUpdate = false;
     }
 }

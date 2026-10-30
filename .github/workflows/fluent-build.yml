@@ -1,0 +1,242 @@
+name: MPC-HC Fluent x64
+
+on:
+  push:
+    branches: [fluent-stable]
+  workflow_dispatch:
+    inputs:
+      publish:
+        type: boolean
+        default: false
+      channel:
+        type: choice
+        options: [stable, beta]
+        default: stable
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        default: ''
+      publish:
+        type: boolean
+        default: false
+      channel:
+        type: string
+        default: stable
+      promote_base:
+        type: string
+        default: ''
+
+concurrency:
+  group: fluent-release-${{ inputs.channel || 'stable' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 0
+          submodules: recursive
+      - name: Validate retained fork contract
+        run: python tools/fluent/check_contract.py
+      - name: Release revision
+        id: metadata
+        shell: pwsh
+        env:
+          CHANNEL: ${{ inputs.channel || 'stable' }}
+        run: |
+          if($env:CHANNEL -notin @('stable','beta')){throw 'Invalid release channel'}
+          $revision=10000+[int]$env:GITHUB_RUN_NUMBER
+          if($revision -gt 65535){throw 'Release revision requires a versioning review'}
+          "revision=$revision" >> $env:GITHUB_OUTPUT
+          "beta=$([int]($env:CHANNEL -eq 'beta'))" >> $env:GITHUB_OUTPUT
+      - name: Configure Visual Studio and Windows SDK
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.ATLMFC -property installationPath
+          if (-not $vs) { throw 'Visual C++ ATL/MFC is missing from this runner.' }
+          $mfcToolbarSource = Get-ChildItem "$vs/VC/Tools/MSVC/*/atlmfc/src/mfc/bartool.cpp" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($mfcToolbarSource) {
+            $mfcLines = Get-Content -LiteralPath $mfcToolbarSource.FullName
+            $mfcRectAccessor = $mfcLines | Select-String '^void CToolBar::GetItemRect\('
+            if ($mfcRectAccessor) {
+              Write-Output 'Native MFC rectangle accessor (deferred-layout verification):'
+              $mfcLines | Select-Object -Skip ($mfcRectAccessor[0].LineNumber - 1) -First 16
+            }
+          }
+          $sdk = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Include" -Directory |
+            Where-Object Name -Match '^10\.0\.\d+\.0$' |
+            Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
+          if (-not $sdk) { throw 'Windows SDK not found.' }
+          @('@echo off', ('set "MPCHC_VS_PATH=' + $vs + '"'), ('set "MPCHC_WINSDK_VER=' + $sdk.Name + '"')) |
+            Set-Content build.user.bat -Encoding ascii
+          Invoke-WebRequest 'https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/win64/nasm-2.16.03-win64.zip' -OutFile "$env:RUNNER_TEMP\nasm.zip"
+          Expand-Archive "$env:RUNNER_TEMP\nasm.zip" "$env:RUNNER_TEMP\nasm"
+          (Get-ChildItem "$env:RUNNER_TEMP\nasm" -Filter nasm.exe -Recurse | Select-Object -First 1).DirectoryName >> $env:GITHUB_PATH
+      - name: Test source-bound programme guide
+        shell: cmd
+        run: |
+          call build.user.bat
+          call "%MPCHC_VS_PATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+          cl /nologo /EHsc /std:c++17 /utf-8 /I"src\mpc-hc" /I"src\thirdparty" tests\NativeProgrammeGuideTests.cpp /Fe:"programme-guide-tests.exe"
+          if errorlevel 1 exit /b 1
+          programme-guide-tests.exe
+          if errorlevel 1 exit /b 1
+      - name: Test bare-stream service and XMLTV parsing
+        shell: cmd
+        run: |
+          call build.user.bat
+          call "%MPCHC_VS_PATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+          cl /nologo /c /TC /I"src\thirdparty\zlib" src\thirdparty\zlib\adler32.c src\thirdparty\zlib\crc32.c src\thirdparty\zlib\inflate.c src\thirdparty\zlib\inftrees.c src\thirdparty\zlib\inffast.c src\thirdparty\zlib\zutil.c
+          if errorlevel 1 exit /b 1
+          cl /nologo /EHsc /std:c++17 /utf-8 /I"src\mpc-hc" /I"src\thirdparty" tests\NativeStreamEpgTests.cpp adler32.obj crc32.obj inflate.obj inftrees.obj inffast.obj zutil.obj /Fe:"stream-epg-tests.exe" /link ole32.lib
+          if errorlevel 1 exit /b 1
+          stream-epg-tests.exe
+          if errorlevel 1 exit /b 1
+      - name: Test EPG cancellation resources cache and rollover
+        shell: cmd
+        run: |
+          call build.user.bat
+          call "%MPCHC_VS_PATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+          cl /nologo /EHsc /std:c++17 /utf-8 /I"src\mpc-hc" /I"src\thirdparty" tests\NativeEpgLifecycleTests.cpp adler32.obj crc32.obj inflate.obj inftrees.obj inffast.obj zutil.obj /Fe:"epg-lifecycle-tests.exe" /link ole32.lib
+          if errorlevel 1 exit /b 1
+          epg-lifecycle-tests.exe
+          if errorlevel 1 exit /b 1
+      - name: Test persistent stream identity boundaries
+        shell: cmd
+        run: |
+          call build.user.bat
+          call "%MPCHC_VS_PATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+          cl /nologo /EHsc /std:c++17 /utf-8 /I"src\mpc-hc" /I"src\thirdparty" tests\NativeStreamIdentityTests.cpp /Fe:"stream-identity-tests.exe"
+          if errorlevel 1 exit /b 1
+          stream-identity-tests.exe
+          if errorlevel 1 exit /b 1
+      - name: Test native playlist scrolling without intermediate painting
+        shell: cmd
+        run: |
+          call build.user.bat
+          call "%MPCHC_VS_PATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+          cl /nologo /EHsc /std:c++17 /utf-8 tests\NativePlaylistScrollTests.cpp /Fe:"playlist-scroll-tests.exe" /link user32.lib gdi32.lib comctl32.lib
+          if errorlevel 1 exit /b 1
+          playlist-scroll-tests.exe
+          if errorlevel 1 exit /b 1
+          cl /nologo /EHsc /std:c++17 /I"src\mpc-hc" tests\NativeHeaderInputTests.cpp /Fe:"header-input-tests.exe" /link user32.lib comctl32.lib
+          if errorlevel 1 exit /b 1
+          header-input-tests.exe
+          if errorlevel 1 exit /b 1
+      - name: Test exception-safe paint resources and update installer
+        shell: cmd
+        run: |
+          call build.user.bat
+          call "%MPCHC_VS_PATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+          cl /nologo /EHsc /std:c++17 /I"src\mpc-hc" tests\NativePaintResourcesTests.cpp /Fe:paint-resource-tests.exe /link user32.lib gdi32.lib
+          if errorlevel 1 exit /b 1
+          paint-resource-tests.exe
+          if errorlevel 1 exit /b 1
+          pwsh -NoProfile -File tests\FluentUpdateInstallerTests.ps1
+          if errorlevel 1 exit /b 1
+          python -m unittest discover -s tests -p FluentReleaseTests.py
+          if errorlevel 1 exit /b 1
+      - name: Prepare official Windows App SDK controller headers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $probe = Join-Path $env:GITHUB_WORKSPACE 'src/mpc-hc/wasdk-probe'
+          New-Item -ItemType Directory -Force $probe | Out-Null
+          $packages = @(
+            @('microsoft.windowsappsdk.foundation', '1.8.250906002', 'foundation', '77acb164613b71b55924e22f60da7c94f78ab9ebd426395f49e79ca3a0bea77c'),
+            @('microsoft.windowsappsdk.interactiveexperiences', '1.8.250906004', 'interactive', '454b682994bbbcf3f5029f42fa1aebff72b0bb29dde1ca6e1e99cae264c74451')
+          )
+          foreach ($package in $packages) {
+            $id, $version, $folder, $digest = $package
+            Invoke-WebRequest "https://api.nuget.org/v3-flatcontainer/$id/$version/$id.$version.nupkg" -OutFile "$probe/$folder.zip"
+            if ((Get-FileHash "$probe/$folder.zip" -Algorithm SHA256).Hash.ToLowerInvariant() -ne $digest) { throw "SDK package digest mismatch: $id" }
+            Expand-Archive "$probe/$folder.zip" "$probe/$folder"
+          }
+          $sdkRoot = "${env:ProgramFiles(x86)}/Windows Kits/10"
+          $sdk = Get-ChildItem "$sdkRoot/Include" -Directory | Where-Object Name -Match '^10\.0\.\d+\.0$' | Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
+          $cppwinrt = "$sdkRoot/bin/$($sdk.Name)/x64/cppwinrt.exe"
+          & $cppwinrt -input "$probe/interactive/metadata/10.0.18362.0" -reference "$sdkRoot/UnionMetadata/$($sdk.Name)/Windows.winmd" -output "$probe/generated"
+          if ($LASTEXITCODE -ne 0) { throw 'C++/WinRT projection generation failed.' }
+          $bytes = [IO.File]::ReadAllBytes("$probe/foundation/runtimes/win-x64/native/Microsoft.WindowsAppRuntime.Bootstrap.dll")
+          $text = [Text.StringBuilder]::new('static const unsigned char kPlaylistBootstrap[] = {')
+          for ($i = 0; $i -lt $bytes.Length; $i++) {
+            if (($i % 64) -eq 0) { [void]$text.AppendLine() }
+            [void]$text.Append($bytes[$i]).Append(',')
+          }
+          [void]$text.AppendLine('};')
+          [IO.File]::WriteAllText("$probe/bootstrap-bytes.h", $text.ToString(), [Text.Encoding]::ASCII)
+      - name: Compile controller integration preflight
+        shell: cmd
+        run: |
+          call build.user.bat
+          call "%MPCHC_VS_PATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+          cl /nologo /c /EHsc /std:c++17 /DMPC_EXPERIMENTAL_NATIVE_DECORATION /DMPC_MATERIAL_STANDALONE /I"src\mpc-hc\wasdk-probe\generated" src\mpc-hc\NativePlaylistMaterial.cpp /Fo"src\mpc-hc\wasdk-probe\preflight.obj"
+      - name: Build native-controls x64 probe
+        shell: cmd
+        env:
+          MPC_FLUENT_REVISION: ${{ steps.metadata.outputs.revision }}
+          MPC_FLUENT_BETA: ${{ steps.metadata.outputs.beta }}
+          CL: /DMPC_EXPERIMENTAL_NATIVE_SEEKBAR /DMPC_EXPERIMENTAL_NO_BACKDROP /DMPC_EXPERIMENTAL_NATIVE_DECORATION
+        run: build.bat Build x64 Main Release Lite
+      - name: Package verified portable update
+        id: package
+        shell: pwsh
+        env:
+          CHANNEL: ${{ inputs.channel || 'stable' }}
+        run: |
+          $exe='bin/mpc-hc_x64 Lite/mpc-hc64.exe'
+          $v=(Get-Item $exe).VersionInfo
+          $version="$($v.FileMajorPart).$($v.FileMinorPart).$($v.FileBuildPart).$($v.FilePrivatePart)"
+          python tools/fluent/package_release.py --exe $exe --version $version --channel $env:CHANNEL --revision ${{ steps.metadata.outputs.revision }}
+          if($LASTEXITCODE -ne 0){throw 'Release packaging failed'}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Fluent-x64-${{ github.run_id }}-${{ github.run_attempt }}
+          path: fluent-release/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-diagnostics
+          path: |
+            bin/logs/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+  publish:
+    needs: build
+    if: github.event_name == 'push' || inputs.publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: Fluent-x64-${{ github.run_id }}-${{ github.run_attempt }}
+          path: fluent-release
+      - name: Publish release and matching updater feed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROMOTE_BASE: ${{ inputs.promote_base }}
+          CANDIDATE_REF: ${{ inputs.ref }}
+        run: python tools/fluent/publish_release.py

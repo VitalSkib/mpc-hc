@@ -3,6 +3,7 @@
 #include <dwmapi.h>
 #include "MouseTouch.h"
 #include "NativePlaylistDiagnostic.h"
+#include "NativePaintResources.h"
 
 #include <gdiplus.h>
 #include <cmath>
@@ -22,7 +23,10 @@ bool CNativePlaylistPopup::Create(CWnd* owner, CPlayerPlaylistBar* bar, bool com
     // adding/removing it later (ERROR_INVALID_PARAMETER).
     const DWORD extended = WS_EX_TOOLWINDOW | (composition ? WS_EX_NOREDIRECTIONBITMAP : 0);
     if (!CreateEx(extended, AfxRegisterWndClass(CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW, ::LoadCursor(nullptr, IDC_ARROW), background),
-            L"Playlist", WS_POPUP | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, CRect(0, 0, 320, 200), owner, 0)) return false;
+            L"Playlist", WS_POPUP | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, CRect(0, 0, 320, 200), owner, 0)) {
+        if (m_bufferedPaintReady) { ::BufferedPaintUnInit(); m_bufferedPaintReady = false; }
+        return false;
+    }
     Gdiplus::GdiplusStartupInput graphicsStartup;
     Gdiplus::GdiplusStartup(&m_graphicsToken, &graphicsStartup, nullptr);
     const DWORD corners = 2; const BOOL dark = TRUE;
@@ -136,11 +140,13 @@ bool CNativePlaylistPopup::PaintMaterialBuffer(HDC target, const RECT& rect,
     params.dwFlags = BPPF_ERASE;
     HDC buffer = nullptr;
     HPAINTBUFFER paint = BeginBufferedPaint(target, &rect, BPBF_TOPDOWNDIB, &params, &buffer);
-    if (!paint || !buffer) return false;
+    if (!paint) return false;
+    struct PaintScope { HPAINTBUFFER paint; ~PaintScope() { if (paint) EndBufferedPaint(paint, FALSE); } } scope{paint};
+    if (!buffer) return false;
     draw(buffer);
     RGBQUAD* pixels = nullptr; int stride = 0;
     if (FAILED(GetBufferedPaintBits(paint, &pixels, &stride)) || !pixels) {
-        EndBufferedPaint(paint, FALSE); return false;
+        return false;
     }
     GdiFlush();
     for (int y = 0; y < rect.bottom - rect.top; ++y) {
@@ -156,7 +162,8 @@ bool CNativePlaylistPopup::PaintMaterialBuffer(HDC target, const RECT& rect,
             px.rgbReserved = alpha;
         }
     }
-    return SUCCEEDED(EndBufferedPaint(paint, TRUE));
+    const HRESULT result = EndBufferedPaint(paint, TRUE); scope.paint = nullptr;
+    return SUCCEEDED(result);
 }
 
 void CNativePlaylistPopup::QueueMaterialForeground()
@@ -188,8 +195,9 @@ void CNativePlaylistPopup::UpdateMaterialForeground()
         return;
     }
     HGDIOBJ old = ::SelectObject(memory, bitmap);
+    NativePaintResources::DibSelection dib(memory, bitmap, old);
     CDC* dc = CDC::FromHandle(memory);
-    m_materialPainting = true;
+    NativePaintResources::PaintingFlag painting(m_materialPainting);
 
     PaintSurface(*dc);
     // Print only the native list, at its exact final location. Do not ask the
@@ -199,6 +207,7 @@ void CNativePlaylistPopup::UpdateMaterialForeground()
     const int saved = dc->SaveDC();
     dc->SetViewportOrg(list.TopLeft());
     dc->IntersectClipRect(0, 0, list.Width(), list.Height());
+    NativePaintResources::WindowProperty printed(m_bar->m_list.m_hWnd, L"MPC.PlaylistForegroundPrint");
     ::SetPropW(m_bar->m_list.m_hWnd, L"MPC.PlaylistForegroundPrint", reinterpret_cast<HANDLE>(1));
     m_bar->m_list.SendMessage(WM_PRINT, reinterpret_cast<WPARAM>(memory),
         PRF_CLIENT | PRF_NONCLIENT | PRF_ERASEBKGND | PRF_CHILDREN);
@@ -245,7 +254,6 @@ void CNativePlaylistPopup::UpdateMaterialForeground()
         m_foregroundPixels.assign(pixels, pixels + count);
         m_foregroundWidth = width; m_foregroundHeight = height;
     }
-    ::SelectObject(memory, old); ::DeleteObject(bitmap); ::DeleteDC(memory);
     m_materialPainting = false;
     if (!updated) {
         // An unsupported/device-lost foreground must leave a readable Solid UI.
