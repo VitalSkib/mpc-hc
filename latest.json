@@ -1,26 +1,26 @@
 {
   "product": "MPC-HC-Fluent",
-  "version": "2.8.4.10009",
+  "version": "2.8.4.10010",
   "channel": "stable",
-  "source_commit": "f51e9b23a0b5fb4d9cf71724a8106809f005932d",
+  "source_commit": "d01449db372abbef2a9741e4b5112966689bcd96",
   "upstream_tag": "2.8.4",
   "upstream_commit": "a19e22c0a6cbb623a52938f6304a600c0853d371",
-  "exe_sha256": "fcff84428c30274c19f3f9d361515a8a9b6156f6d39c20b3c49d7e825f2702be",
-  "source_url": "https://github.com/VitalSkib/mpc-hc/tree/f51e9b23a0b5fb4d9cf71724a8106809f005932d",
-  "build_run": "41134158020",
-  "installer_name": "MPC-HC-Fluent-2.8.4.10009-x64-setup.exe",
-  "installer_sha256": "8133d69d43a027491ded7c5808e62bcb8d763c014445b8021fcd79e95d229c17",
+  "exe_sha256": "64ef91ec75b068875a1a340c9062102b64f1d9894506bb6f9c56b3e779aa6f95",
+  "source_url": "https://github.com/VitalSkib/mpc-hc/tree/d01449db372abbef2a9741e4b5112966689bcd96",
+  "build_run": "41136031865",
+  "installer_name": "MPC-HC-Fluent-2.8.4.10010-x64-setup.exe",
+  "installer_sha256": "b61c7ce83249b4cbee9596df938f40897121e0115f945af1911196acad45c432",
   "dependencies": {
-    "upstream_package": "https://github.com/clsid2/mpc-hc/releases/download/2.8.4/MPC-HC.2.8.4.x64.zip",
-    "windows_app_runtime": "https://aka.ms/windowsappsdk/1.8/1.8.260921001/windowsappruntimeinstall-x64.exe",
     "upstream_sha256": "9feb91e27407ec048d7fe3722db0f5f06debf9841d7879bd920ab787f9b098ae",
-    "windows_app_runtime_sha256": "7c092e85fc1e3e7cb2bd7d549aaab03caf924131f15d9b20b1855457a98205aa",
     "inno_setup": "https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe",
-    "upstream_source": "https://github.com/clsid2/mpc-hc/tree/a19e22c0a6cbb623a52938f6304a600c0853d371",
+    "windows_app_runtime_sha256": "7c092e85fc1e3e7cb2bd7d549aaab03caf924131f15d9b20b1855457a98205aa",
     "windows_app_runtime_source": "https://github.com/microsoft/WindowsAppSDK/tree/v1.8.12",
-    "inno_sha256": "9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732"
+    "windows_app_runtime": "https://aka.ms/windowsappsdk/1.8/1.8.260921001/windowsappruntimeinstall-x64.exe",
+    "inno_sha256": "9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732",
+    "upstream_package": "https://github.com/clsid2/mpc-hc/releases/download/2.8.4/MPC-HC.2.8.4.x64.zip",
+    "upstream_source": "https://github.com/clsid2/mpc-hc/tree/a19e22c0a6cbb623a52938f6304a600c0853d371"
   },
-  "release_url": "https://github.com/VitalSkib/mpc-hc/releases/tag/fluent-2.8.4.10009",
-  "archive_sha256": "1ef1127ddcdeb0f5cb4b79a40893339525df2bb996d3f591664c50bbe2c88b40",
-  "installer_url": "https://github.com/VitalSkib/mpc-hc/releases/download/fluent-2.8.4.10009/MPC-HC-Fluent-2.8.4.10009-x64-setup.exe"
+  "release_url": "https://github.com/VitalSkib/mpc-hc/releases/tag/fluent-2.8.4.10010",
+  "archive_sha256": "1c54a4398a510c19a3ba8366925f5fea1e265bc0a8ce9793ee12762ebed0f901",
+  "installer_url": "https://github.com/VitalSkib/mpc-hc/releases/download/fluent-2.8.4.10010/MPC-HC-Fluent-2.8.4.10010-x64-setup.exe"
 }
