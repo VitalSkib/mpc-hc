@@ -1,0 +1,13 @@
+{
+  "product": "MPC-HC-Fluent",
+  "version": "2.8.4.10001",
+  "channel": "stable",
+  "source_commit": "8fefd569fa81f484fe979c66c4a550ac03c5d648",
+  "upstream_tag": "2.8.4",
+  "upstream_commit": "a19e22c0a6cbb623a52938f6304a600c0853d371",
+  "exe_sha256": "d05c75b617e5a7361bbfac7636e15e9fa62fe0fa7d81ff6c95bc8cfbb52a1fee",
+  "source_url": "https://github.com/VitalSkib/mpc-hc/tree/8fefd569fa81f484fe979c66c4a550ac03c5d648",
+  "build_run": "41111312696",
+  "release_url": "https://github.com/VitalSkib/mpc-hc/releases/tag/untagged-15e0fe9d81bc999630a3",
+  "archive_sha256": "7d1d393f839cd34a5758bdf2e9383fb082c623d0b65b73b5a51bd75b953f4be8"
+}
