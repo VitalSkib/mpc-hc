@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <appmodel.h>
 #include <roapi.h>
+#include <winstring.h>
 #include <activation.h>
 #include <cstdio>
 #pragma comment(lib,"runtimeobject.lib")

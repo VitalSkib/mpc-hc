@@ -23,6 +23,10 @@ if($player.Count -ne 1){throw 'Ambiguous upstream package layout'}
 $source=$player[0].Directory.FullName
 $destination='bin/mpc-hc_x64'
 New-Item -ItemType Directory -Path $destination -Force | Out-Null
+# Stock binaries are syntax-check inputs only. The full build overwrites them,
+# and packaging rejects an EXE whose four-part version differs from our revision.
+Copy-Item -LiteralPath "$source/mpc-hc64.exe","$source/mpciconlib.dll" -Destination $destination
+Copy-Item -LiteralPath "$source/Lang" -Destination $destination -Recurse
 Copy-Item -LiteralPath "$source/LAVFilters64" -Destination $destination -Recurse
 Copy-Item -LiteralPath "$source/MediaInfo.dll" -Destination 'distrib/x64/MediaInfo.dll'
 New-Item -ItemType Directory -Path 'distrib/mpcvr' -Force | Out-Null
