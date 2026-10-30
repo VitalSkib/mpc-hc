@@ -1,5 +1,18 @@
 // Apply the selected appearance through MPC-HC's existing profile keys.
 // Never import a user's INI, history, paths or stream credentials.
+var
+  FluentHoverMigrationNeeded: Boolean;
+
+procedure CaptureFluentHoverMigration();
+var
+  PreviousVersion: String;
+begin
+  FluentHoverMigrationNeeded :=
+    (GetPreviousData('FluentHoverDefaultsVersion', '') = '') and
+    RegQueryStringValue(HKLM, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{2ACBF1FA-F5C3-4B19-A774-B22A31F231B9}_is1', 'DisplayVersion', PreviousVersion) and
+    (PreviousVersion = '2.8.4.10006');
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   Version: TWindowsVersion;
@@ -46,6 +59,41 @@ begin
     RegWriteStringValue(HKCU, 'Software\MPC-HC\MPC-HC\' + Section, Name, Value);
 end;
 
+function FluentProfileIntValue(Section, Name: String; Default: Cardinal): Cardinal;
+begin
+  if FileExists(ExpandConstant('{app}\{#mpchc_ini}')) then
+    Result := GetIniInt(Section, Name, Default, 0, $7FFFFFFF, ExpandConstant('{app}\{#mpchc_ini}'))
+  else if not RegQueryDWordValue(HKCU, 'Software\MPC-HC\MPC-HC\' + Section, Name, Result) then
+    Result := Default;
+end;
+
+procedure RepairFluentHoverDefaults();
+var
+  Theme: String;
+begin
+  if not FluentHoverMigrationNeeded then Exit;
+  if FileExists(ExpandConstant('{app}\{#mpchc_ini}')) then
+    Theme := GetIniString('Toolbars\PlayerToolBar', 'ToolbarName', '', ExpandConstant('{app}\{#mpchc_ini}'))
+  else
+    RegQueryStringValue(HKCU, 'Software\MPC-HC\MPC-HC\Toolbars\PlayerToolBar', 'ToolbarName', Theme);
+  // Repair only the incomplete preset shipped in the first full installer.
+  // Preserve other profiles and subsequent explicit edge-only preferences.
+  if (Theme = 'Custom Fluent') and
+      (FluentProfileIntValue('Settings', 'HideCaptionMenu', 0) = 3) and
+      (FluentProfileIntValue('Settings', 'HideWindowedControls', 0) = 1) and
+      (FluentProfileIntValue('Settings', 'HideFullscreenControlsPolicy', 1) = 1) and
+      (FluentProfileIntValue('Settings', 'HideFullscreenControlsDelay', 0) = 0) then begin
+    FluentProfileInt('Settings', 'HideFullscreenControls', 1);
+    FluentProfileInt('Settings', 'HideFullscreenControlsPolicy', 2);
+    FluentProfileInt('Settings', 'HideFullscreenControlsDelay', 4000);
+  end;
+end;
+
+procedure RegisterPreviousData(PreviousDataKey: Integer);
+begin
+  SetPreviousData(PreviousDataKey, 'FluentHoverDefaultsVersion', '1');
+end;
+
 procedure ApplyFluentStyle();
 var
   Encoded, Section: String;
@@ -55,6 +103,9 @@ begin
   FluentProfileInt('Settings', 'HideCaptionMenu', 3);
   FluentProfileInt('Settings', 'ControlState', 3);
   FluentProfileInt('Settings', 'HideWindowedControls', 1);
+  FluentProfileInt('Settings', 'HideFullscreenControls', 1);
+  FluentProfileInt('Settings', 'HideFullscreenControlsPolicy', 2);
+  FluentProfileInt('Settings', 'HideFullscreenControlsDelay', 4000);
   FluentProfileInt('Settings', 'MPCTheme', 1);
   FluentProfileInt('Settings', 'ModernThemeMode', 0);
   FluentProfileInt('Settings', 'ModernThemeStyle', 2);

@@ -538,6 +538,9 @@ end;
 
 procedure InitializeWizard();
 begin
+#ifdef FluentBuild
+  CaptureFluentHoverMigration();
+#endif
   WizardForm.LicenseAcceptedRadio.Checked := True;
 end;
 
@@ -554,6 +557,7 @@ begin
 
 #ifdef FluentBuild
     if IsTaskSelected('fluent_style') then ApplyFluentStyle();
+    RepairFluentHoverDefaults();
 #endif
 
     iLanguage := StrToInt(ExpandConstant('{cm:langid}'));
