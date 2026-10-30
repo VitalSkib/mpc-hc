@@ -24,9 +24,14 @@ def main():
         raise ValueError('Invalid release manifest')
     archives = list(root.glob('*.zip'))
     if len(archives) != 1: raise ValueError('Expected one update archive')
-    digest, name = (root/'SHA256SUMS.txt').read_text().split()
-    if name != archives[0].name or hashlib.sha256(archives[0].read_bytes()).hexdigest() != digest:
-        raise ValueError('Release archive digest mismatch')
+    checksums = dict(line.split()[::-1] for line in (root/'SHA256SUMS.txt').read_text().splitlines() if line.strip())
+    setup = root/m['installer_name']
+    if setup.name != m['installer_name'] or setup.suffix != '.exe': raise ValueError('Invalid installer name')
+    for path in (archives[0], setup):
+        if checksums.get(path.name) != hashlib.sha256(path.read_bytes()).hexdigest():
+            raise ValueError('Release file digest mismatch')
+    digest = checksums[archives[0].name]
+    if checksums[setup.name] != m['installer_sha256']: raise ValueError('Installer manifest digest mismatch')
     beta = m['channel'] == 'beta'
     tag = 'fluent-' + m['version'] + ('-beta' if beta else '')
     release = request(API+'/releases', {
@@ -34,13 +39,15 @@ def main():
         'name': 'MPC-HC Fluent '+m['version']+(' beta' if beta else ''),
         'draft': True, 'prerelease': beta,
         'body': f"Based on official MPC-HC {m['upstream_tag']}.\n\n"
-                'EXE-only portable update; settings, icons and EPG are preserved. '
-                'Close the player and run Update-Fluent.ps1 from the extracted package. '
+                f"Download **{setup.name}** for a complete Windows x64 installation, including codecs, languages and Fluent artwork. "
+                'No original installation is required. Close MPC-HC and run the installer. '
+                'It also upgrades existing MPC-HC x64 installations through the native setup logic. '
                 'No automatic installation.\n\n'
+                'The optional update ZIP is only for an existing portable folder.\n\n'
                 f"[Source and build scripts]({m['source_url']}) · GPLv3+\n\n"
                 'See README-Fluent.md for preserved UI behavior, installation and audit limits.'})
     upload = release['upload_url'].split('{')[0]
-    for path in (archives[0], root/'SHA256SUMS.txt', root/'manifest.json'):
+    for path in (setup, archives[0], root/'SHA256SUMS.txt', root/'manifest.json'):
         request(upload+'?name='+urllib.parse.quote(path.name), path.read_bytes(), 'POST', True)
     # A stable automatic merge is promoted only if the reviewed base has not moved.
     expected = os.environ.get('PROMOTE_BASE', '')
@@ -54,7 +61,8 @@ def main():
     except urllib.error.HTTPError as e:
         if e.code != 404: raise
         parent = None
-    latest = dict(m, release_url=release['html_url'], archive_sha256=digest)
+    latest = dict(m, release_url=release['html_url'], archive_sha256=digest,
+        installer_url=f"https://github.com/{REPO}/releases/download/{tag}/{urllib.parse.quote(setup.name)}")
     entries=[]
     for path, content in {'version.txt':m['version']+'\n', 'latest.json':json.dumps(latest,indent=2)+'\n'}.items():
         blob = request(API+'/git/blobs', {'content':content,'encoding':'utf-8'})

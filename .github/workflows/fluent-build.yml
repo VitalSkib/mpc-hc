@@ -185,23 +185,55 @@ jobs:
           call build.user.bat
           call "%MPCHC_VS_PATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
           cl /nologo /c /EHsc /std:c++17 /DMPC_EXPERIMENTAL_NATIVE_DECORATION /DMPC_MATERIAL_STANDALONE /I"src\mpc-hc\wasdk-probe\generated" src\mpc-hc\NativePlaylistMaterial.cpp /Fo"src\mpc-hc\wasdk-probe\preflight.obj"
-      - name: Build native-controls x64 probe
+      - name: Prepare complete installer dependencies
+        id: setup_tools
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./tools/fluent/Prepare-Setup.ps1
+      - name: Build full native x64 application and resources
         shell: cmd
         env:
           MPC_FLUENT_REVISION: ${{ steps.metadata.outputs.revision }}
           MPC_FLUENT_BETA: ${{ steps.metadata.outputs.beta }}
-          CL: /DMPC_EXPERIMENTAL_NATIVE_SEEKBAR /DMPC_EXPERIMENTAL_NO_BACKDROP /DMPC_EXPERIMENTAL_NATIVE_DECORATION
-        run: build.bat Build x64 Main Release Lite
+          CL: /DMPC_EXPERIMENTAL_NATIVE_SEEKBAR /DMPC_EXPERIMENTAL_NO_BACKDROP /DMPC_EXPERIMENTAL_NATIVE_DECORATION /DMPC_FLUENT_REVISION=${{ steps.metadata.outputs.revision }} /DMPC_FLUENT_BETA=${{ steps.metadata.outputs.beta }}
+        run: |
+          call build.user.bat
+          call "%MPCHC_VS_PATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+          call update_version.bat
+          if errorlevel 1 exit /b 1
+          rem Build the native application target; codec binaries come from the matching official release.
+          msbuild mpc-hc.sln /m /t:mpc-hc /p:Configuration=Release;Platform=x64 /v:minimal /flp:LogFile=bin\logs\fluent-full-build.log
+          if errorlevel 1 exit /b 1
+          call build.bat Build x64 Resources Release
+          if errorlevel 1 exit /b 1
+      - name: Compile and test native complete installer
+        id: setup
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe='bin/mpc-hc_x64/mpc-hc64.exe'
+          $v=(Get-Item $exe).VersionInfo
+          $version="$($v.FileMajorPart).$($v.FileMinorPart).$($v.FileBuildPart).$($v.FilePrivatePart)"
+          $name="MPC-HC-Fluent-$version-x64-setup"
+          New-Item -ItemType Directory -Path 'bin/fluent-setup' -Force | Out-Null
+          $output=Join-Path (Get-Location) 'bin/fluent-setup'
+          & '${{ steps.setup_tools.outputs.iscc }}' /Q /Dx64Build /DFluentBuild "/O$output" "/F$name" 'distrib/mpc-hc_setup.iss'
+          if($LASTEXITCODE -ne 0){throw 'Native setup compilation failed'}
+          $setup="bin/fluent-setup/$name.exe"
+          if(-not(Test-Path -LiteralPath $setup)){throw 'Installer was not produced'}
+          ./tests/FluentSetupTests.ps1 -Setup $setup -Version $version
+          "path=$setup" >> $env:GITHUB_OUTPUT
       - name: Package verified portable update
         id: package
         shell: pwsh
         env:
           CHANNEL: ${{ inputs.channel || 'stable' }}
         run: |
-          $exe='bin/mpc-hc_x64 Lite/mpc-hc64.exe'
+          $exe='bin/mpc-hc_x64/mpc-hc64.exe'
           $v=(Get-Item $exe).VersionInfo
           $version="$($v.FileMajorPart).$($v.FileMinorPart).$($v.FileBuildPart).$($v.FilePrivatePart)"
-          python tools/fluent/package_release.py --exe $exe --version $version --channel $env:CHANNEL --revision ${{ steps.metadata.outputs.revision }}
+          python tools/fluent/package_release.py --exe $exe --setup '${{ steps.setup.outputs.path }}' --version $version --channel $env:CHANNEL --revision ${{ steps.metadata.outputs.revision }}
           if($LASTEXITCODE -ne 0){throw 'Release packaging failed'}
       - uses: actions/upload-artifact@v4
         with:

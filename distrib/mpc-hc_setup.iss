@@ -60,6 +60,12 @@
 #endif
 
 #define app_vername     = app_name + " " + app_ver
+#ifdef FluentBuild
+  #undef app_ver
+  #define app_ver       str(MPC_VERSION_MAJOR) + "." + str(MPC_VERSION_MINOR) + "." + str(MPC_VERSION_PATCH) + "." + str(MPC_VERSION_REV)
+  #undef app_vername
+  #define app_vername   "MPC-HC Fluent " + app_ver
+#endif
 #define quick_launch    "{userappdata}\Microsoft\Internet Explorer\Quick Launch"
 
 #define base_bindir     = "..\bin"
@@ -106,6 +112,11 @@
   #define FullAppNameVer = app_vername
 #endif
 
+#ifdef FluentBuild
+  #undef OutFilename
+  #define OutFilename = "MPC-HC-Fluent-" + app_ver + "-" + platform + "-setup"
+#endif
+
 #if MPC_NIGHTLY_RELEASE
   #define FullAppNameVer = FullAppNameVer + " " + str(MPC_VERSION_NIGHTLY)
 #endif
@@ -116,7 +127,7 @@
   #define FullAppNameVer = FullAppNameVer + " " + "(64-bit)"
 #endif
 
-#ifexist "..\distrib\mpcvr\MpcVideoRenderer.ax"
+#ifexist "..\distrib\mpcvr\" + mpcvr_ax
 #define INCLUDE_MPCVR = true
 #else
 #define INCLUDE_MPCVR = false
@@ -147,7 +158,11 @@ DefaultGroupName          = {#app_name}
 AppName                   = {#app_name}
 AppVersion                = {#app_ver}
 AppVerName                = {#app_vername}
+#ifdef FluentBuild
+AppPublisher              = MPC-HC contributors / VitalSkib (Fluent fork)
+#else
 AppPublisher              = MPC-HC Team
+#endif
 AppPublisherURL           = {#WEBSITE_URL}
 AppCopyright              = {#copyright_str}
 VersionInfoVersion        = {#app_ver}
@@ -243,6 +258,9 @@ Name: desktopicon\user;   Description: {cm:tsk_CurrentUser};       GroupDescript
 Name: desktopicon\common; Description: {cm:tsk_AllUsers};          GroupDescription: {cm:AdditionalIcons}; Flags: unchecked exclusive
 Name: quicklaunchicon;    Description: {cm:CreateQuickLaunchIcon}; GroupDescription: {cm:AdditionalIcons}; Flags: unchecked;             OnlyBelowVersion: 6.01
 Name: reset_settings;     Description: {cm:tsk_ResetSettings};     GroupDescription: {cm:tsk_Other};       Flags: checkedonce unchecked; Check: SettingsExist()
+#ifdef FluentBuild
+Name: fluent_style;       Description: Use Fluent appearance (Minimal view and hover controls); GroupDescription: MPC-HC Fluent; Flags: checkedonce
+#endif
 
 
 [Files]
@@ -269,6 +287,10 @@ Source: ..\src\mpc-hc\res\shaders\dx9\*.hlsl;      DestDir: {app}\Shaders;      
 Source: ..\src\mpc-hc\res\shaders\dx11\*.hlsl;     DestDir: {app}\Shaders11;        Components: main;         Flags: onlyifdoesntexist
 Source: ..\distrib\Toolbars\*.*;                   DestDir: {app}\Toolbars;         Components: main;         Flags: onlyifdoesntexist recursesubdirs
 Source: ..\COPYING.txt;                            DestDir: {app};                  Components: main;         Flags: ignoreversion
+#ifdef FluentBuild
+Source: ..\README-Fluent.md;                       DestDir: {app};                  Components: main;         Flags: ignoreversion
+Source: ..\tools\fluent\dependencies.json;         DestDir: {app};                  Components: main;         Flags: ignoreversion
+#endif
 Source: ..\docs\Authors.txt;                       DestDir: {app};                  Components: main;         Flags: ignoreversion
 	#if USE_DRDUMP_CRASH_REPORTER
 Source: {#platform}\crashrpt.dll;                  DestDir: {app}\CrashReporter;    Components: main;         Flags: ignoreversion
@@ -507,6 +529,10 @@ begin
 end;
 
 
+#ifdef FluentBuild
+#include "fluent_setup.iss"
+#endif
+
 procedure InitializeWizard();
 begin
   WizardForm.LicenseAcceptedRadio.Checked := True;
@@ -522,6 +548,10 @@ begin
       CleanUpSettingsAndFiles();
       RegWriteStringValue(HKCU, 'Software\MPC-HC\MPC-HC', 'ExePath', ExpandConstant('{app}\{#mpchc_exe}'));
     end;
+
+#ifdef FluentBuild
+    if IsTaskSelected('fluent_style') then ApplyFluentStyle();
+#endif
 
     iLanguage := StrToInt(ExpandConstant('{cm:langid}'));
     if IsComponentSelected('mpcresources') then begin
