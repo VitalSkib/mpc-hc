@@ -1,5 +1,7 @@
 name: Monitor official MPC-HC releases
 on:
+  push:
+    branches: [develop]
   schedule:
     - cron: '17 */6 * * *'
   workflow_dispatch:

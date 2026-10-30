@@ -1,4 +1,5 @@
-import importlib.util, unittest
+import importlib.util, unittest, tempfile, os, json, hashlib
+from unittest.mock import patch
 from pathlib import Path
 
 def module(name):
@@ -7,6 +8,37 @@ def module(name):
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
 
 class Releases(unittest.TestCase):
+    def test_feed_uses_published_release_url(self):
+        m = module('publish_release')
+        calls = []
+        def request(url, data=None, method=None, binary=False):
+            calls.append((url, data, method))
+            if url.endswith('/releases'):
+                return {'id':1, 'upload_url':'https://uploads.github.com/test{?name}',
+                        'html_url':'https://github.com/test/untagged-draft'}
+            if url.endswith('/releases/1'):
+                return {'html_url':'https://github.com/test/releases/tag/fluent-2.8.4.10001'}
+            if '/git/ref/heads/' in url: return {'object':{'sha':'parent'}}
+            if '/git/commits/parent' in url: return {'tree':{'sha':'tree'}}
+            return {'sha':'object'}
+        with tempfile.TemporaryDirectory() as temporary:
+            previous = os.getcwd()
+            try:
+                os.chdir(temporary)
+                root = Path('fluent-release'); root.mkdir()
+                (root/'update.zip').write_bytes(b'fixture')
+                (root/'SHA256SUMS.txt').write_text(hashlib.sha256(b'fixture').hexdigest()+' update.zip')
+                (root/'manifest.json').write_text(json.dumps({'product':'MPC-HC-Fluent',
+                    'channel':'stable', 'version':'2.8.4.10001', 'source_commit':'source',
+                    'upstream_tag':'2.8.4', 'source_url':'https://github.com/test/source'}))
+                with patch.object(m, 'request', side_effect=request), patch.dict(os.environ,
+                        {'PROMOTE_BASE':'', 'CANDIDATE_REF':'', 'GITHUB_STEP_SUMMARY':'summary.txt'}):
+                    m.main()
+                feeds = [json.loads(data['content']) for url,data,method in calls
+                         if url.endswith('/git/blobs') and 'release_url' in data['content']]
+                self.assertEqual(feeds[0]['release_url'],
+                    'https://github.com/test/releases/tag/fluent-2.8.4.10001')
+            finally: os.chdir(previous)
     def test_channels_do_not_cross(self):
         m = module('prepare_upstream')
         rows = [{'tag_name':'9.0.0','draft':True,'prerelease':False},

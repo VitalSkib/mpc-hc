@@ -48,7 +48,7 @@ def main():
         current = request(API+'/git/ref/heads/develop')['object']['sha']
         if current != expected: raise RuntimeError('Stable base changed during build; release remains draft')
         request(API+'/git/refs/heads/develop', {'sha':m['source_commit'], 'force':False}, 'PATCH')
-    request(API+'/releases/'+str(release['id']), {'draft':False, 'make_latest':'false' if beta else 'true'}, 'PATCH')
+    release = request(API+'/releases/'+str(release['id']), {'draft':False, 'make_latest':'false' if beta else 'true'}, 'PATCH')
     feed = 'updates-' + m['channel']
     try: parent = request(API+'/git/ref/heads/'+feed)['object']['sha']
     except urllib.error.HTTPError as e:
