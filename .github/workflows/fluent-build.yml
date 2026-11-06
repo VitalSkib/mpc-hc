@@ -146,7 +146,7 @@ jobs:
           if errorlevel 1 exit /b 1
           pwsh -NoProfile -File tools\fluent\tests\FluentUpdateInstallerTests.ps1
           if errorlevel 1 exit /b 1
-          python -m unittest discover -s tests -p FluentReleaseTests.py
+          python -m unittest discover -s tools\fluent\tests -p FluentReleaseTests.py
           if errorlevel 1 exit /b 1
       - name: Prepare official Windows App SDK controller headers
         shell: pwsh
