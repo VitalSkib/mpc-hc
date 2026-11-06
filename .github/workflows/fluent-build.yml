@@ -2,7 +2,7 @@ name: MPC-HC Fluent x64
 
 on:
   push:
-    branches: [fluent-stable]
+    branches: [fluent-stable, 'codex/**']
   workflow_dispatch:
     inputs:
       publish:
@@ -262,7 +262,7 @@ jobs:
 
   publish:
     needs: build
-    if: github.event_name == 'push' || inputs.publish
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/fluent-stable') || inputs.publish
     runs-on: ubuntu-latest
     permissions:
       contents: write
