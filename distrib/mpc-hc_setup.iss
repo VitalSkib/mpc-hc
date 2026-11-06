@@ -259,7 +259,7 @@ Name: desktopicon\common; Description: {cm:tsk_AllUsers};          GroupDescript
 Name: quicklaunchicon;    Description: {cm:CreateQuickLaunchIcon}; GroupDescription: {cm:AdditionalIcons}; Flags: unchecked;             OnlyBelowVersion: 6.01
 Name: reset_settings;     Description: {cm:tsk_ResetSettings};     GroupDescription: {cm:tsk_Other};       Flags: checkedonce unchecked; Check: SettingsExist()
 #ifdef FluentBuild
-Name: fluent_style;       Description: Use Fluent appearance (Minimal view and hover controls); GroupDescription: MPC-HC Fluent; Flags: checkedonce
+Name: fluent_style;       Description: Use Fluent appearance (Minimal view and hover controls); GroupDescription: MPC-HC Fluent
 #endif
 
 
