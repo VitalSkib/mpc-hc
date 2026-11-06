@@ -25,13 +25,25 @@ def prune(request, api, current):
         except urllib.error.HTTPError as error:
             if error.code != 404:
                 raise
+            error.close()
             return None
 
     for tag in OBSOLETE:
         release = optional(api + '/releases/tags/' + tag)
         if release:
             optional(api + '/releases/' + str(release['id']), 'DELETE')
-        optional(api + '/git/refs/tags/' + tag, 'DELETE')
+        # GitHub returns 422 (rather than 404) when DELETE targets an absent ref.
+        # Check first so rerunning cleanup after a partial success is harmless.
+        ref_url = api + '/git/ref/tags/' + tag
+        if optional(ref_url):
+            try:
+                request(api + '/git/refs/tags/' + tag, method='DELETE')
+            except urllib.error.HTTPError as error:
+                if error.code != 422:
+                    raise
+                error.close()
+                if optional(ref_url) is not None:
+                    raise error
     ref = optional(api + '/git/ref/heads/fluent-hover-ui')
     if ref and ref['object']['sha'] == EXPERIMENT:
         optional(api + '/git/refs/heads/fluent-hover-ui', 'DELETE')
