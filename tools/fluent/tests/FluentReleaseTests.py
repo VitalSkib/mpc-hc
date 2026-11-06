@@ -3,7 +3,8 @@ from unittest.mock import patch
 from pathlib import Path
 
 def module(name):
-    p = Path(__file__).resolve().parents[1]/'tools/fluent'/f'{name}.py'
+    root = next(parent for parent in Path(__file__).resolve().parents if (parent/'tools'/'fluent'/'project.json').is_file())
+    p = root/'tools'/'fluent'/f'{name}.py'
     spec = importlib.util.spec_from_file_location(name, p)
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
 
