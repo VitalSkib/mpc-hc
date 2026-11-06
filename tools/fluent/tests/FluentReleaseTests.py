@@ -1,4 +1,5 @@
 import importlib.util, unittest, tempfile, os, json, hashlib
+import urllib.error
 from unittest.mock import patch
 from pathlib import Path
 
@@ -29,6 +30,15 @@ class Releases(unittest.TestCase):
             if method == 'DELETE': self.fail('Draft replacement must not permit deletion')
             return {'draft': True, 'prerelease': False}
         with self.assertRaises(ValueError): m.prune(draft, 'api', 'fluent-2.8.4.10010')
+
+    def test_cleanup_is_idempotent_when_legacy_releases_and_refs_are_absent(self):
+        m = module('prune_legacy')
+        def request(url, method=None):
+            if '/releases/tags/fluent-2.8.5.10024' in url:
+                return {'draft': False, 'prerelease': False,
+                        'assets': [{'name': 'player-x64-setup.exe'}, {'name': 'manifest.json'}]}
+            raise urllib.error.HTTPError(url, 404, 'Not Found', {}, None)
+        m.prune(request, 'api', 'fluent-2.8.5.10024')
 
     def test_revisions_increase_across_workflow_counters(self):
         m = module('release_revision')
