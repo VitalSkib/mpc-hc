@@ -1231,6 +1231,42 @@ bool CPlayerPlaylistBar::ParseM3UPlayList(CString fn, bool* lav_fallback, std::v
     return success;
 }
 
+#ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+// Keep optional EPG sidecar handling separate from MPCPL's native parser.
+// This minimizes overlap when upstream changes playlist parsing.
+void CPlayerPlaylistBar::ApplyProgrammeGuideToImportedPlaylist(CString fn,
+        CAtlMap<int, CPlaylistItem>& pli, std::vector<int>& idx)
+{
+    // Optional sidecar is scoped to this local imported playlist and exact URL.
+    // Ordinary MPCPL parsing and all playlists without valid EPG stay unchanged.
+    m_programmeGuide.Clear();
+    m_autoProgrammeGuide = false;
+    m_programmeRowsKnown = false;
+    if (!PathUtils::IsURL(fn) && !idx.empty() && !pli[idx.front()].m_fns.IsEmpty()) {
+        CString source = pli[idx.front()].m_fns.GetHead();
+        bool sameSource = PathUtils::IsURL(source);
+        for (int i : idx) sameSource = sameSource && !pli[i].m_fns.IsEmpty() && pli[i].m_fns.GetHead() == source;
+        if (sameSource && m_programmeGuide.Load(std::wstring(fn.GetString()) + L".epg.json", source.GetString())) {
+            const auto remaining = m_programmeGuide.Remaining(CNativeProgrammeGuide::Now());
+            if (!remaining.empty()) {
+                pli.RemoveAll(); idx.clear();
+                pli[1].m_fns.AddTail(source);
+                pli[1].m_label = m_programmeGuide.channel.c_str(); idx.push_back(1);
+                int i = 2;
+                for (const auto& programme : remaining) {
+                    pli[i].m_fns.AddTail(source);
+                    pli[i].m_label = (CNativeProgrammeGuide::Clock(programme.start) + L" " + programme.title).c_str();
+                    idx.push_back(i++);
+                }
+                m_programmeRowsKey = m_programmeGuide.RemainingKey(CNativeProgrammeGuide::Now());
+                m_programmeRowsKnown = true;
+            }
+        }
+    }
+    m_programmeCaption.Empty();
+}
+#endif
+
 bool CPlayerPlaylistBar::ParseMPCPlayList(CString fn)
 {
     CString str;
@@ -1321,33 +1357,7 @@ bool CPlayerPlaylistBar::ParseMPCPlayList(CString fn)
     }
 
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
-    // Optional sidecar is scoped to this local imported playlist and exact URL.
-    // Ordinary MPCPL parsing and all playlists without valid EPG stay unchanged.
-    m_programmeGuide.Clear();
-    m_autoProgrammeGuide = false;
-    m_programmeRowsKnown = false;
-    if (!PathUtils::IsURL(fn) && !idx.empty() && !pli[idx.front()].m_fns.IsEmpty()) {
-        CString source = pli[idx.front()].m_fns.GetHead();
-        bool sameSource = PathUtils::IsURL(source);
-        for (int i : idx) sameSource = sameSource && !pli[i].m_fns.IsEmpty() && pli[i].m_fns.GetHead() == source;
-        if (sameSource && m_programmeGuide.Load(std::wstring(fn.GetString()) + L".epg.json", source.GetString())) {
-            const auto remaining = m_programmeGuide.Remaining(CNativeProgrammeGuide::Now());
-            if (!remaining.empty()) {
-                pli.RemoveAll(); idx.clear();
-                pli[1].m_fns.AddTail(source);
-                pli[1].m_label = m_programmeGuide.channel.c_str(); idx.push_back(1);
-                int i = 2;
-                for (const auto& programme : remaining) {
-                    pli[i].m_fns.AddTail(source);
-                    pli[i].m_label = (CNativeProgrammeGuide::Clock(programme.start) + L" " + programme.title).c_str();
-                    idx.push_back(i++);
-                }
-                m_programmeRowsKey = m_programmeGuide.RemainingKey(CNativeProgrammeGuide::Now());
-                m_programmeRowsKnown = true;
-            }
-        }
-    }
-    m_programmeCaption.Empty();
+    ApplyProgrammeGuideToImportedPlaylist(fn, pli, idx);
 #endif
     std::sort(idx.begin(), idx.end());
     bool added = false;

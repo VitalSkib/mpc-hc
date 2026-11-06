@@ -88,6 +88,7 @@ private:
     CPlaylistListFrame m_listFrame;
     CPlayerListCtrl m_list;
 #ifdef MPC_EXPERIMENTAL_NATIVE_DECORATION
+    void ApplyProgrammeGuideToImportedPlaylist(CString fn, CAtlMap<int, CPlaylistItem>& items, std::vector<int>& indexes);
     friend class CNativePlaylistPopup;
     CNativePlaylistPopup m_nativePopup;
     bool m_nativePopupSelected = false;
