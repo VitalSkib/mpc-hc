@@ -50,9 +50,19 @@ def main():
     git('switch', '-c', branch)
     try:
         git('merge', '--no-ff', '--no-edit', upstream)
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as error:
+        conflicts = git('diff', '--name-only', '--diff-filter=U').splitlines()
         git('merge', '--abort')
-        raise RuntimeError(f'Upstream {tag} conflicts with the fork. Manual review required; no build/release.')
+        if conflicts:
+            paths = '\\n  - '.join(conflicts)
+            raise RuntimeError(
+                f'Upstream {tag} conflicts with the fork in:\\n  - {paths}\\n'
+                'Manual review required; no build/release.'
+            ) from error
+        raise RuntimeError(
+            f'Git merge for upstream {tag} failed with exit code {error.returncode} '
+            'without unresolved conflict paths. Review the Git output above; no build/release.'
+        ) from error
     config.update(upstream_tag=tag, upstream_commit=upstream)
     Path('tools/fluent/project.json').write_text(json.dumps(config, indent=2) + '\n')
     git('add', 'tools/fluent/project.json')
