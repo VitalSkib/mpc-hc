@@ -54,9 +54,9 @@ def main():
         conflicts = git('diff', '--name-only', '--diff-filter=U').splitlines()
         git('merge', '--abort')
         if conflicts:
-            paths = '\\n  - '.join(conflicts)
+            paths = '\n  - '.join(conflicts)
             raise RuntimeError(
-                f'Upstream {tag} conflicts with the fork in:\\n  - {paths}\\n'
+                f'Upstream {tag} conflicts with the fork in:\n  - {paths}\n'
                 'Manual review required; no build/release.'
             ) from error
         raise RuntimeError(
