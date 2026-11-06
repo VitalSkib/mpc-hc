@@ -12,11 +12,18 @@ function Install-Player([string]$Tasks) {
   if($process.ExitCode -ne 0){throw "Setup failed: $($process.ExitCode)"}
 }
 Install-Player 'fluent_style'
-foreach($name in 'mpc-hc64.exe','mpciconlib.dll','d3dcompiler_47.dll','d3dx9_43.dll','MediaInfo.dll',
+foreach($name in 'mpc-hc64.exe','mpciconlib.dll','d3dx9_43.dll','MediaInfo.dll',
     'LAVFilters64/LAVAudio.ax','LAVFilters64/LAVVideo.ax','LAVFilters64/LAVSplitter.ax',
     'LAVFilters64/LAVFilters.Dependencies.manifest','MPCVR/MpcVideoRenderer64.ax',
     'Lang/mpcresources.ru.dll','Toolbars/Custom Fluent/buttons32.svg','unins000.exe') {
   if(-not(Test-Path -LiteralPath (Join-Path $folder $name) -PathType Leaf)){throw "Missing installed component: $name"}
+}
+# The native installer bundles D3DCompiler only when Windows does not already
+# provide it. Accept either location so the test matches the installer's
+# conditional component instead of requiring a redundant app-local copy.
+if(-not(Test-Path -LiteralPath (Join-Path $folder 'd3dcompiler_47.dll') -PathType Leaf) -and
+   -not(Test-Path -LiteralPath (Join-Path $env:WINDIR 'System32/d3dcompiler_47.dll') -PathType Leaf)) {
+  throw 'D3DCompiler 47 is missing both from the installation and Windows System32'
 }
 $v=(Get-Item -LiteralPath "$folder/mpc-hc64.exe").VersionInfo
 if("$($v.FileMajorPart).$($v.FileMinorPart).$($v.FileBuildPart).$($v.FilePrivatePart)" -ne $Version){throw 'Installed player version mismatch'}
