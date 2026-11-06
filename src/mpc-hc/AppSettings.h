@@ -290,7 +290,7 @@ struct AutoChangeFullscreenMode {
     unsigned                    uDelay = 0u;
 };
 
-#define ACCEL_LIST_SIZE 206
+#define ACCEL_LIST_SIZE 207
 
 struct wmcmd_base : public ACCEL {
     BYTE mouse;
@@ -841,6 +841,7 @@ public:
 
     // Default Style
     STSStyle        subtitlesDefStyle;
+    bool            bSubtitleRoundedOpaqueBox;
 
     // Misc
     bool            bPreferDefaultForcedSubtitles;
@@ -977,6 +978,8 @@ public:
 
     int             DebugLogMask;
 
+    bool            HasD3DCompiler47() const;
+
     bool            IsD3DFullscreen() const;
     CString         SelectedAudioRenderer() const;
     bool            IsISRAutoLoadEnabled() const;
@@ -1041,6 +1044,7 @@ public:
     bool bUseFreeType;
     bool bUseMediainfoLoadFileDuration;
     bool bPauseWhileDraggingSeekbar;
+    bool bPauseWhenMinimized;
     CStringA strOpenTypeLangHint;
 
     CStringW lastQuickOpenPath;

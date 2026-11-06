@@ -65,6 +65,7 @@
 #include "KeyProvider.h"
 #include "Translations.h"
 #include "UpdateChecker.h"
+#include "UpdateCheckerDlg.h"
 #include "WebServer.h"
 #include <ISOLang.h>
 #include <PathUtils.h>
@@ -120,7 +121,7 @@
 #include "MPCFolderPickerDialog.h"
 
 #include "stb/stb_image.h"
-#include "stb/stb_image_resize2.h"
+#include "stb/deprecated/stb_image_resize2.h"
 #include "stb/stb_image_write.h"
 
 #include  "Logger.h"
@@ -337,6 +338,8 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_MESSAGE(WM_POSTOPEN, OnFilePostOpenmedia)
     ON_MESSAGE(WM_OPENFAILED, OnOpenMediaFailed)
     ON_MESSAGE(WM_MPC_RUN_DEFERRED, OnRunDeferredActions)
+    ON_MESSAGE(WM_MPC_UPDATE_CHECK_DONE, OnUpdateCheckDone)
+    ON_MESSAGE(WM_MPC_UI_REQUEST, OnUIRequest)
     ON_MESSAGE(WM_TUNER_NEW_CHANNEL, OnHeadlessScanNewChannel)
     ON_MESSAGE(WM_TUNER_SCAN_END, OnHeadlessScanEnd)
     ON_MESSAGE(WM_DVB_EIT_DATA_READY, OnCurrentChannelInfoUpdated)
@@ -680,7 +683,7 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
 END_MESSAGE_MAP()
 
 //#ifdef _DEBUG
-const TCHAR* GetEventString(LONG evCode)
+CString GetEventString(LONG evCode)
 {
 #define UNPACK_VALUE(VALUE) case VALUE: return _T(#VALUE);
     switch (evCode) {
@@ -893,6 +896,7 @@ CMainFrame::CMainFrame()
     , m_bFirstPlay(false)
     , m_bOpeningInAutochangedMonitorMode(false)
     , m_bPausedForAutochangeMonitorMode(false)
+    , m_bPausedByMinimize(false)
     , m_bThemeChangePending(false)
     , m_fAudioOnly(true)
     , m_iDVDDomain(DVD_DOMAIN_Stop)
@@ -954,8 +958,8 @@ CMainFrame::CMainFrame()
     , m_bHasBDMeta(false)
     , delayingFullScreen(false)
     , restoringWindowRect(false)
-    , mediaTypesErrorDlg(nullptr)
-    , rarEntrySelectorDlg(nullptr)
+    , openingModalDlg(nullptr)
+    , openingModalDlgThread(0)
     , m_iStreamPosPollerInterval(100)
     , currentAudioLang(_T(""))
     , currentSubLang(_T(""))
@@ -1035,6 +1039,10 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpCreateStruct)
     }
 
     CMPCThemeUtil::enableWindows10DarkFrame(this);
+
+    // keep DWM rendering the frame, or uxtheme paints a basic frame while the style changes for fullscreen
+    DWMNCRENDERINGPOLICY policy = DWMNCRP_ENABLED;
+    ::DwmSetWindowAttribute(m_hWnd, DWMWA_NCRENDERING_POLICY, &policy, sizeof(policy));
 
     if (IsWindows8Point1OrGreater()) {
         m_dpi.Override(m_hWnd);
@@ -1287,6 +1295,10 @@ void CMainFrame::OnDestroy()
         VERIFY(m_pHistoryDlg->DestroyWindow());
     }
 
+    if (m_pUpdateCheckerDlg && IsWindow(m_pUpdateCheckerDlg->m_hWnd)) {
+        VERIFY(m_pUpdateCheckerDlg->DestroyWindow());
+    }
+
     if (m_pGraphThread && m_pGraphThread->m_hThread) {
         CAMMsgEvent e;
         if (!m_pGraphThread->PostThreadMessage(CGraphThread::TM_EXIT, (WPARAM)0, (LPARAM)&e) || !e.Wait(2000)) {
@@ -1429,6 +1441,18 @@ bool CMainFrame::DeferIfNested(DeferredActionType type, std::function<void()> ac
     return true;
 }
 
+// A sent message is dispatched wherever this thread next retrieves one, which
+// includes the waits on the graph thread while a file opens or closes; the
+// builders only read the lists while the load state is LOADED, and that state
+// changes on this thread, so nothing is read while the graph thread rewrites it.
+LRESULT CMainFrame::OnUIRequest(WPARAM wParam, LPARAM lParam)
+{
+    auto pRequest = reinterpret_cast<UIRequest*>(lParam);
+    pRequest->build(this, pRequest->body);
+    pRequest->Release();
+    return 0;
+}
+
 void CMainFrame::OnClose()
 {
     CAppSettings& s = AfxGetAppSettings();
@@ -1499,7 +1523,7 @@ void CMainFrame::OnClose()
     m_wndPlaylistBar.SavePlaylist();
     m_wndPlaylistBar.ClearExternalPlaylistIfInvalid();
 
-    if (GetLoadState() == MLS::LOADED || GetLoadState() == MLS::LOADING) {
+    if (GetLoadState() == MLS::LOADED || GetLoadState() == MLS::LOADING || GetLoadState() == MLS::FAILING) {
         CloseMediaInternal();
     }
 
@@ -2000,6 +2024,24 @@ void CMainFrame::OnSize(UINT nType, int cx, int cy)
 {
     NativeResizeTiming::Scope timing(NativeResizeTiming::FrameSize);
     timing.Bounds(cx,cy);
+    if (nType == SIZE_MINIMIZED) {
+        // Like locking the session (see OnSessionChange): video that nobody can see is paused,
+        // audio keeps playing, since minimizing is how people listen in the background.
+        if (AfxGetAppSettings().bPauseWhenMinimized && !m_bPausedByMinimize && GetLoadState() == MLS::LOADED
+                && !m_fAudioOnly && GetMediaStateDirect() == State_Running) {
+            SendMessage(WM_COMMAND, ID_PLAY_PAUSE);
+            // set after the pause, which clears it like any other play, pause or stop
+            m_bPausedByMinimize = true;
+        }
+    } else if (m_bPausedByMinimize && (nType == SIZE_RESTORED || nType == SIZE_MAXIMIZED)) {
+        m_bPausedByMinimize = false;
+        // still set means nothing has played, paused, stopped or closed since the pause
+        // above, so resume, unless that pause did not take (it can be disabled, e.g. for live streams)
+        if (GetLoadState() == MLS::LOADED && GetMediaStateDirect() == State_Paused) {
+            SendMessage(WM_COMMAND, ID_PLAY_PLAY);
+        }
+    }
+
     if (m_bTrayIcon && nType == SIZE_MINIMIZED) {
         ShowWindow(SW_HIDE);
     } else {
@@ -3488,11 +3530,11 @@ LRESULT CMainFrame::OnGraphNotify(WPARAM wParam, LPARAM lParam)
         m_ActiveGraphNotifyEvCode = evCode;
 #ifdef _DEBUG
         if (evCode != EC_DVD_CURRENT_HMSF_TIME) {
-            TRACE(_T("--> CMainFrame::OnGraphNotify (thread %lu)(graph %u)(loadstate %d) event: %ws\n"), GetCurrentThreadId(), (unsigned int)(lParam & 0xffff), loadstate, GetEventString(evCode));
+            TRACE(_T("--> CMainFrame::OnGraphNotify (thread %lu)(graph %u)(loadstate %d) event: %ws\n"), GetCurrentThreadId(), (unsigned int)(lParam & 0xffff), loadstate, GetEventString(evCode).GetString());
         }
 #else
         if (evCode != EC_DVD_CURRENT_HMSF_TIME && USE_LOGGER(AfxGetAppSettings())) {
-            PLAYER_LOG(_T("CMainFrame::OnGraphNotify (thread %lu)(graph %u)(loadstate %d) event: %ws"), GetCurrentThreadId(), (unsigned int)(lParam & 0xffff), loadstate, GetEventString(evCode));
+            PLAYER_LOG(_T("CMainFrame::OnGraphNotify (thread %lu)(graph %u)(loadstate %d) event: %ws"), GetCurrentThreadId(), (unsigned int)(lParam & 0xffff), loadstate, GetEventString(evCode).GetString());
         }
 #endif
 
@@ -3537,7 +3579,7 @@ LRESULT CMainFrame::OnGraphNotify(WPARAM wParam, LPARAM lParam)
                     // Device lost
                     if (GetPlaybackMode() == PM_ANALOG_CAPTURE) {
                         CComQIPtr<IBaseFilter> pBF = (IUnknown*)evParam1;
-                        if (!m_pVidCap && m_pVidCap == pBF || !m_pAudCap && m_pAudCap == pBF) {
+                        if ((m_pVidCap && m_pVidCap == pBF) || (m_pAudCap && m_pAudCap == pBF)) {
                             PostMessage(WM_COMMAND, ID_FILE_CLOSE_AND_RESTORE);
                         }
                     } else if (GetPlaybackMode() == PM_DIGITAL_CAPTURE) {
@@ -5034,7 +5076,9 @@ void CMainFrame::OnFilePostClosemedia(bool bNextIsQueued/* = false*/)
         OpenSetupWindowTitle(true);
     //}
 
-    SetAlwaysOnTop(s.iOnTop);
+    if (!m_OnClose_called) {
+        SetAlwaysOnTop(s.iOnTop);
+    }
 
     // try to release external objects
     UnloadUnusedExternalObjects();
@@ -5422,7 +5466,7 @@ void CMainFrame::OnFileOpenmedia()
         dlg.SetForegroundWindow();
         return;
     }
-    if (dlg.DoModal() != IDOK || dlg.GetFileNames().IsEmpty()) {
+    if (dlg.DoModal() != IDOK || dlg.GetFileNames().IsEmpty() || AfxGetMyApp()->m_fClosingState) {
         return;
     }
 
@@ -5539,13 +5583,15 @@ BOOL CMainFrame::OnCopyData(CWnd* pWnd, COPYDATASTRUCT* pCDS)
 
     DWORD len = *((DWORD*)pCDS->lpData);
     TCHAR* pBuff = (TCHAR*)((DWORD*)pCDS->lpData + 1);
-    TCHAR* pBuffEnd = (TCHAR*)((BYTE*)pBuff + pCDS->cbData - sizeof(DWORD));
+    TCHAR* pBuffEnd = pBuff + (pCDS->cbData - sizeof(DWORD)) / sizeof(TCHAR);
 
     CAtlList<CString> cmdln;
 
     while (len-- > 0 && pBuff < pBuffEnd) {
-        CString str(pBuff);
-        pBuff += str.GetLength() + 1;
+        // the sender is another process, so do not trust it to terminate the last string
+        size_t n = wcsnlen(pBuff, pBuffEnd - pBuff);
+        CString str(pBuff, (int)n);
+        pBuff += n + 1;
 
         cmdln.AddTail(str);
     }
@@ -6492,6 +6538,10 @@ static void stbi_write_to_vector(void* context, void* data, int size) {
 
 BYTE* CMainFrame::ConvertDIBTo24bppRGB(BYTE* pData, long size, int& outWidth, int& outHeight, int& outPitch)
 {
+    if (!pData || size < (long)sizeof(BITMAPINFOHEADER)) {
+        return nullptr;
+    }
+
     PBITMAPINFO bi = reinterpret_cast<PBITMAPINFO>(pData);
     PBITMAPINFOHEADER bih = &bi->bmiHeader;
     int bpp = bih->biBitCount;
@@ -6504,6 +6554,11 @@ BYTE* CMainFrame::ConvertDIBTo24bppRGB(BYTE* pData, long size, int& outWidth, in
     int w = bih->biWidth;
     int h = abs(bih->biHeight);
     int srcpitch = w * (bpp >> 3);
+
+    // biSizeImage may be 0 or too small for BI_RGB, so the pixels the copy below reads must fit in what we were given
+    if (w <= 0 || h <= 0 || (LONGLONG)sizeof(BITMAPINFOHEADER) + (LONGLONG)w * (bpp >> 3) * h > size) {
+        return nullptr;
+    }
     int dstpitch = (w * 3 + 3) / 4 * 4; // round w * 3 to next multiple of 4
 
     BYTE* p = DEBUG_NEW BYTE[dstpitch * h];
@@ -6744,6 +6799,8 @@ HRESULT CMainFrame::GetDisplayedImage(std::vector<BYTE>& dib, CString& errmsg) {
 			dib.resize(sizeof(BITMAPINFOHEADER) + bih->biSizeImage);
 			memcpy(dib.data(), dibImage, sizeof(BITMAPINFOHEADER) + bih->biSizeImage);
 			LocalFree(dibImage);
+		} else if (S_OK == hr) {
+			hr = E_FAIL;
 		}
 	}
 	else if (m_pMFVDC) {
@@ -6910,7 +6967,7 @@ void CMainFrame::SaveImage(LPCWSTR fn, bool displayed, bool includeSubtitles) {
         }
     }
 
-    if (hr == S_OK) {
+    if (hr == S_OK && !dib.empty()) {
         SaveDIB(fn, dib.data(), (long)dib.size());
         m_OSD.DisplayMessage(OSD_TOPLEFT, ResStr(IDS_OSD_IMAGE_SAVED), 3000);
     } else {
@@ -8455,7 +8512,7 @@ void CMainFrame::OnViewSynchronizeVideo()
         r.m_AdvRendSets.bVMR9AlterativeVSync = false;
     }
     m_OSD.DisplayMessage(OSD_TOPRIGHT, ResStr(r.m_AdvRendSets.bSynchronizeVideo
-                                              ? IDS_OSD_RS_SYNC_TO_DISPLAY_ON : IDS_OSD_RS_SYNC_TO_DISPLAY_ON));
+                                              ? IDS_OSD_RS_SYNC_TO_DISPLAY_ON : IDS_OSD_RS_SYNC_TO_DISPLAY_OFF));
 }
 
 void CMainFrame::OnViewSynchronizeDisplay()
@@ -8470,7 +8527,7 @@ void CMainFrame::OnViewSynchronizeDisplay()
         r.m_AdvRendSets.bVMR9AlterativeVSync = false;
     }
     m_OSD.DisplayMessage(OSD_TOPRIGHT, ResStr(r.m_AdvRendSets.bSynchronizeDisplay
-                                              ? IDS_OSD_RS_SYNC_TO_VIDEO_ON : IDS_OSD_RS_SYNC_TO_VIDEO_ON));
+                                              ? IDS_OSD_RS_SYNC_TO_VIDEO_ON : IDS_OSD_RS_SYNC_TO_VIDEO_OFF));
 }
 
 void CMainFrame::OnViewSynchronizeNearest()
@@ -10086,6 +10143,7 @@ void CMainFrame::OnPlayPlay()
     m_timerOneTime.Unsubscribe(TimerOneTimeSubscriber::DELAY_PLAYPAUSE_AFTER_AUTOCHANGE_MODE);
     m_bOpeningInAutochangedMonitorMode = false;
     m_bPausedForAutochangeMonitorMode = false;
+    m_bPausedByMinimize = false;
 
     if (!IsStateClosedOrLoaded()) {
         return;
@@ -10236,6 +10294,7 @@ void CMainFrame::OnPlayPause()
 {
     m_timerOneTime.Unsubscribe(TimerOneTimeSubscriber::DELAY_PLAYPAUSE_AFTER_AUTOCHANGE_MODE);
     m_bOpeningInAutochangedMonitorMode = false;
+    m_bPausedByMinimize = false;
 
     if (GetLoadState() != MLS::LOADED) {
         return;
@@ -10309,6 +10368,7 @@ void CMainFrame::OnPlayStop(bool is_closing)
     m_timerOneTime.Unsubscribe(TimerOneTimeSubscriber::DELAY_PLAYPAUSE_AFTER_AUTOCHANGE_MODE);
     m_bOpeningInAutochangedMonitorMode = false;
     m_bPausedForAutochangeMonitorMode = false;
+    m_bPausedByMinimize = false; // also on close, which stops through here
 
     KillTimersStop();
 
@@ -11401,30 +11461,34 @@ void CMainFrame::OnPlaySubtitles(UINT nID)
 
                     if (dlg.DoModal() == IDOK) {
                         {
-                            CAutoLock cAutoLock(&m_csSubLock);
                             bool defaultStyleChanged = false, otherStyleChanged = false;
+                            {
+                                CAutoLock cAutoLock(&m_csSubLock);
 
-                            for (size_t l = 0; l < pages.GetCount(); l++) {
-                                STSStyle tmpStyle = *styles[l];
-                                pages[l]->GetStyle(*styles[l]);
-                                if (pages[l]->GetStyleName() == L"Default") {
-                                    if (*styles[l] != s.subtitlesDefStyle) {
-                                        pRTS->m_bUsingPlayerDefaultStyle = false;
-                                        pRTS->SetDefaultStyle(*styles[l]);
-                                        defaultStyleChanged = true;
+                                for (size_t l = 0; l < pages.GetCount(); l++) {
+                                    STSStyle tmpStyle = *styles[l];
+                                    pages[l]->GetStyle(*styles[l]);
+                                    if (pages[l]->GetStyleName() == L"Default") {
+                                        if (*styles[l] != s.subtitlesDefStyle) {
+                                            pRTS->m_bUsingPlayerDefaultStyle = false;
+                                            pRTS->SetDefaultStyle(*styles[l]);
+                                            defaultStyleChanged = true;
+                                        }
+                                    } else if (tmpStyle != *styles[l]) {
+                                        otherStyleChanged = true;
                                     }
-                                } else if (tmpStyle != *styles[l]) {
-                                    otherStyleChanged = true;
+                                }
+                                if (otherStyleChanged || defaultStyleChanged) {
+                                    if (!defaultStyleChanged) { //it will already have triggered SetStyleChanged() internally
+                                        pRTS->SetStyleChanged();
+                                    }
+                                    pRTS->Deinit();
+                                    InvalidateSubtitle();
+                                    m_wndSubresyncBar.ReloadSubtitle();
                                 }
                             }
                             if (otherStyleChanged || defaultStyleChanged) {
-                                if (!defaultStyleChanged) { //it will already have triggered SetStyleChanged() internally
-                                    pRTS->SetStyleChanged();
-                                }
-                                pRTS->Deinit();
-                                InvalidateSubtitle();
                                 RepaintVideo();
-                                m_wndSubresyncBar.ReloadSubtitle();
                             }
                         }
                     }
@@ -11864,7 +11928,7 @@ void CMainFrame::OnUpdateAfterplayback(CCmdUI* pCmdUI)
             return;
     }
 
-    if (IsMenu(*pCmdUI->m_pMenu)) {
+    if (pCmdUI->m_pMenu && IsMenu(*pCmdUI->m_pMenu)) {
         MENUITEMINFO mii, cii;
         ZeroMemory(&cii, sizeof(MENUITEMINFO));
         cii.cbSize = sizeof(cii);
@@ -12949,6 +13013,15 @@ void CMainFrame::OnHelpHomepage()
 void CMainFrame::OnHelpCheckForUpdate()
 {
     UpdateChecker::CheckForUpdate();
+}
+
+LRESULT CMainFrame::OnUpdateCheckDone(WPARAM wParam, LPARAM lParam)
+{
+    std::unique_ptr<UpdateCheckResult> result(reinterpret_cast<UpdateCheckResult*>(lParam));
+    if (!m_OnClose_called && !AfxGetMyApp()->m_fClosingState) {
+        UpdateChecker::HandleCheckResult(*result, this, m_pUpdateCheckerDlg);
+    }
+    return 0;
 }
 
 void CMainFrame::OnHelpToolbarImages()
@@ -14973,15 +15046,56 @@ CWnd* CMainFrame::GetModalParent()
     return pParentWnd;
 }
 
+INT_PTR CMainFrame::DoOpeningModalDialog(CDialog& dlg)
+{
+    {
+        CAutoLock lck(&lockModalDialog);
+        // checked under the lock, CloseOpeningModalDialog runs after the flag is set
+        if (m_fOpeningAborted) {
+            return IDCANCEL;
+        }
+        openingModalDlg = &dlg;
+        openingModalDlgThread = GetCurrentThreadId();
+    }
+
+    INT_PTR ret = dlg.DoModal();
+
+    CAutoLock lck(&lockModalDialog);
+    openingModalDlg = nullptr;
+    return ret;
+}
+
+void CMainFrame::CloseOpeningModalDialog()
+{
+    bool bPosted = false;
+    for (;;) {
+        {
+            CAutoLock lck(&lockModalDialog);
+            if (!openingModalDlg) {
+                return;
+            }
+            if (!bPosted && ::IsWindow(openingModalDlg->GetSafeHwnd())) {
+                // posted, a send would wait on the dialog's thread with the lock held
+                bPosted = !!openingModalDlg->PostMessage(WM_EXTERNALCLOSE);
+            }
+            if (openingModalDlgThread == GetCurrentThreadId()) {
+                // the dialog is below us on this stack and can only end once we return
+                return;
+            }
+        }
+        // DoModal on the other thread needs this one to answer sent messages
+        MsgWaitForMultipleObjects(0, nullptr, FALSE, 10, QS_SENDMESSAGE);
+        MSG msg;
+        PeekMessage(&msg, nullptr, 0, 0, PM_NOREMOVE | PM_QS_SENDMESSAGE);
+    }
+}
+
 void CMainFrame::ShowMediaTypesDialog() {
     if (!m_fOpeningAborted) {
-        CAutoLock lck(&lockModalDialog);
         CComQIPtr<IGraphBuilderDeadEnd> pGBDE = m_pGB;
         if (pGBDE && pGBDE->GetCount()) {
-            mediaTypesErrorDlg = DEBUG_NEW CMediaTypesDlg(pGBDE, GetModalParent());
-            mediaTypesErrorDlg->DoModal();
-            delete mediaTypesErrorDlg;
-            mediaTypesErrorDlg = nullptr;
+            CMediaTypesDlg dlg(pGBDE, GetModalParent());
+            DoOpeningModalDialog(dlg);
         }
     }
 }
@@ -15204,16 +15318,13 @@ HRESULT CMainFrame::HandleMultipleEntryRar(CStringW fn, int* pEntryIndex) {
             }
         } else if (!m_fOpeningAborted) {
             // Show dialog to select entry
-            CAutoLock lck(&lockModalDialog);
-            rarEntrySelectorDlg = DEBUG_NEW RarEntrySelectorDialog(&file_list, GetModalParent());
-            if (IDOK == rarEntrySelectorDlg->DoModal()) {
-                entryName = rarEntrySelectorDlg->GetCurrentEntry();
+            RarEntrySelectorDialog dlg(&file_list, GetModalParent());
+            if (IDOK == DoOpeningModalDialog(dlg)) {
+                entryName = dlg.GetCurrentEntry();
                 if (pEntryIndex) {
-                    *pEntryIndex = rarEntrySelectorDlg->GetCurrentIndex();
+                    *pEntryIndex = dlg.GetCurrentIndex();
                 }
             }
-            delete rarEntrySelectorDlg;
-            rarEntrySelectorDlg = nullptr;
         }
 
         if (entryName.GetLength() > 0) {
@@ -16891,6 +17002,7 @@ int CMainFrame::SetupAudioStreams()
 
                 if (dwGroup != 1) {
                     ASSERT(bIsSplitter);
+                    DeleteMediaType(pmt);
                     continue;
                 }
 
@@ -16918,6 +17030,7 @@ int CMainFrame::SetupAudioStreams()
                     }
 
                     if (bSkipTrack) {
+                        DeleteMediaType(pmt);
                         id++;
                         continue;
                     }
@@ -16970,7 +17083,7 @@ int CMainFrame::SetupAudioStreams()
             if (desiredTrackIndex >= 0 && desiredTrackIndex < m_audioTrackCount) {
                 selected = desiredTrackIndex;
             }
-            return m_audioTrackCount > 1 ? selected + !bIsSplitter : -1;
+            return (m_audioTrackCount > 1 && selected >= 0) ? selected + !bIsSplitter : -1;
         } else if (cStreams == 1) {
             DWORD dwFlags, dwGroup;
             LCID lcid = 0;
@@ -19986,6 +20099,9 @@ void CMainFrame::SetSubtitle(const SubtitleInput& subInput, bool skip_lcid /* = 
             } else {
                 m_wndSubresyncBar.SetSubtitle(nullptr, m_pCAP->GetFPS(), g_bExternalSubtitle);
             }
+            // an index into the previous track's subresync list means nothing for the new one
+            m_nCurSubtitle = -1;
+            m_lSubtitleShift = 0;
         }
     }
 
@@ -21628,19 +21744,8 @@ void CMainFrame::CloseMediaInternal(bool bNextIsQueued/* = false*/, bool bPendin
             PLAYER_LOG(_T("CMainFrame::CloseMedia - Need to abort graph creation"));
         }
 
-        // close pin connection error dialog
-        if (mediaTypesErrorDlg) {
-            mediaTypesErrorDlg->SendMessage(WM_EXTERNALCLOSE, 0, 0);
-            // wait till error dialog has been closed
-            CAutoLock lck(&lockModalDialog);
-        }
-
-        // close RAR entry selector dialog
-        if (rarEntrySelectorDlg) {
-            rarEntrySelectorDlg->SendMessage(WM_EXTERNALCLOSE, 0, 0);
-            // wait till dialog has been closed
-            CAutoLock lck(&lockModalDialog);
-        }
+        // close the pin connection error or RAR entry selector dialog
+        CloseOpeningModalDialog();
 
         // abort current graph task
         if (m_pGB) {
@@ -21804,11 +21909,11 @@ void CMainFrame::CloseMediaInternal(bool bNextIsQueued/* = false*/, bool bPendin
 
         // purge possible queued OnFilePostOpenmedia()
         if (PeekMessage(&msg, m_hWnd, WM_POSTOPEN, WM_POSTOPEN, PM_REMOVE | PM_NOYIELD)) {
-            free((OpenMediaData*)msg.lParam);
+            delete (OpenMediaData*)msg.lParam;
         }
         // purge possible queued OnOpenMediaFailed()
         if (PeekMessage(&msg, m_hWnd, WM_OPENFAILED, WM_OPENFAILED, PM_REMOVE | PM_NOYIELD)) {
-            free((OpenMediaData*)msg.lParam);
+            delete (OpenMediaData*)msg.lParam;
         }
 
         // abort finished, unset the flag
@@ -24524,6 +24629,12 @@ void CMainFrame::UpdateControlState(UpdateControlTarget target)
 }
 
 void CMainFrame::ReloadMenus() {
+    // deleting the old menu frees the item data Windows hands back to MeasureItem and
+    // DrawItem, and a settings, theme or dpi change can arrive while a menu is up
+    if (DeferIfNested(DeferredActionType::Other, [this] { ReloadMenus(); })) {
+        return;
+    }
+
     //    CMenu  defaultMenu;
     CMenu* oldMenu;
 
@@ -24960,6 +25071,7 @@ bool CMainFrame::ApplySubtitleRenderingParameters(ISubStream* pSubStream, bool b
                 pRTS->SetAlignment(s.fOverridePlacement, s.nHorPos, s.nVerPos);
             }
             pRTS->SetUseFreeType(s.bUseFreeType);
+            pRTS->SetRoundedOpaqueBox(s.bSubtitleRoundedOpaqueBox);
             pRTS->SetOpenTypeLangHint(s.strOpenTypeLangHint);
             pRTS->Deinit();
         }
@@ -25271,8 +25383,11 @@ bool CMainFrame::ProcessYoutubeDLURL(CString url, bool append, bool replace)
 
     m_wndStatusBar.SetStatusMessage(ResStr(IDS_CONTROLS_YOUTUBEDL));
 
-    if (!ydl.Run(url)) {
-        return false;
+    {
+        CDeferredActionScope actionScope(*this);
+        if (!ydl.Run(url)) {
+            return false;
+        }
     }
     if (!ydl.GetHttpStreams(streams, listinfo, useragent)) {
         return false;
@@ -25418,12 +25533,13 @@ void CMainFrame::OnSettingChange(UINT uFlags, LPCTSTR lpszSection)
 {
     __super::OnSettingChange(uFlags, lpszSection);
     if (SPI_SETHIGHCONTRAST == uFlags) {
-        ApplyThemeChange(); //the modern theme steps aside while a contrast theme is on
+        AfxGetAppSettings().ReadWindowsColorSettings(); //brings back the dark flag when contrast goes off
+        ApplyThemeChange(); //a contrast theme forces the modern dark theme
     } else if (lpszSection && 0 == _tcscmp(lpszSection, _T("ImmersiveColorSet"))) {
         CAppSettings& s = AfxGetAppSettings();
         bool wasDark = s.bWindows10DarkThemeActive;
         s.ReadWindowsColorSettings();
-        if (!AppIsThemeLoaded()) {
+        if (!AppIsThemeLoaded() || CMPCTheme::IsHighContrast()) {
             s.UpdateThemeState(); //nothing on screen follows the windows colours, but a contrast theme still clears the dark flag
         } else if (s.bWindows10DarkThemeActive != wasDark && s.eModernThemeMode == CMPCTheme::ModernThemeMode::WINDOWSDEFAULT) {
             ApplyThemeChange(); //windows switched between light and dark, which the default theme mode follows

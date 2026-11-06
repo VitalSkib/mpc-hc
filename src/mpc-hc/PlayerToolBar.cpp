@@ -38,7 +38,7 @@
 #include <gdiplus.h>
 #endif
 #include "stb/stb_image.h"
-#include "stb/stb_image_resize2.h"
+#include "stb/deprecated/stb_image_resize2.h"
 
 void drawButtonBG(NMCUSTOMDRAW nmcd, COLORREF c);
 
