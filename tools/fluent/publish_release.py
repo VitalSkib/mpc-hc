@@ -15,7 +15,7 @@ def request(url, data=None, method=None, binary=False):
                  'Accept': 'application/vnd.github+json',
                  'Content-Type': 'application/octet-stream' if binary else 'application/json'})
     with urllib.request.urlopen(req, timeout=90) as response:
-        return json.load(response)
+        return None if response.status == 204 else json.load(response)
 
 def main():
     root = Path('fluent-release')

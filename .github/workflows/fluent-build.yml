@@ -2,7 +2,7 @@ name: MPC-HC Fluent x64
 
 on:
   push:
-    branches: [fluent-stable]
+    branches: [fluent-stable, 'codex/**']
   workflow_dispatch:
     inputs:
       publish:
@@ -89,7 +89,7 @@ jobs:
         run: |
           call build.user.bat
           call "%MPCHC_VS_PATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
-          cl /nologo /EHsc /std:c++17 /utf-8 /I"src\mpc-hc" /I"src\thirdparty" tests\NativeProgrammeGuideTests.cpp /Fe:"programme-guide-tests.exe"
+          cl /nologo /EHsc /std:c++17 /utf-8 /I"src\mpc-hc" /I"src\thirdparty" tools\fluent\tests\NativeProgrammeGuideTests.cpp /Fe:"programme-guide-tests.exe"
           if errorlevel 1 exit /b 1
           programme-guide-tests.exe
           if errorlevel 1 exit /b 1
@@ -100,7 +100,7 @@ jobs:
           call "%MPCHC_VS_PATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
           cl /nologo /c /TC /I"src\thirdparty\zlib" src\thirdparty\zlib\adler32.c src\thirdparty\zlib\crc32.c src\thirdparty\zlib\inflate.c src\thirdparty\zlib\inftrees.c src\thirdparty\zlib\inffast.c src\thirdparty\zlib\zutil.c
           if errorlevel 1 exit /b 1
-          cl /nologo /EHsc /std:c++17 /utf-8 /I"src\mpc-hc" /I"src\thirdparty" tests\NativeStreamEpgTests.cpp adler32.obj crc32.obj inflate.obj inftrees.obj inffast.obj zutil.obj /Fe:"stream-epg-tests.exe" /link ole32.lib
+          cl /nologo /EHsc /std:c++17 /utf-8 /I"src\mpc-hc" /I"src\thirdparty" tools\fluent\tests\NativeStreamEpgTests.cpp adler32.obj crc32.obj inflate.obj inftrees.obj inffast.obj zutil.obj /Fe:"stream-epg-tests.exe" /link ole32.lib
           if errorlevel 1 exit /b 1
           stream-epg-tests.exe
           if errorlevel 1 exit /b 1
@@ -109,7 +109,7 @@ jobs:
         run: |
           call build.user.bat
           call "%MPCHC_VS_PATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
-          cl /nologo /EHsc /std:c++17 /utf-8 /I"src\mpc-hc" /I"src\thirdparty" tests\NativeEpgLifecycleTests.cpp adler32.obj crc32.obj inflate.obj inftrees.obj inffast.obj zutil.obj /Fe:"epg-lifecycle-tests.exe" /link ole32.lib
+          cl /nologo /EHsc /std:c++17 /utf-8 /I"src\mpc-hc" /I"src\thirdparty" tools\fluent\tests\NativeEpgLifecycleTests.cpp adler32.obj crc32.obj inflate.obj inftrees.obj inffast.obj zutil.obj /Fe:"epg-lifecycle-tests.exe" /link ole32.lib
           if errorlevel 1 exit /b 1
           epg-lifecycle-tests.exe
           if errorlevel 1 exit /b 1
@@ -118,7 +118,7 @@ jobs:
         run: |
           call build.user.bat
           call "%MPCHC_VS_PATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
-          cl /nologo /EHsc /std:c++17 /utf-8 /I"src\mpc-hc" /I"src\thirdparty" tests\NativeStreamIdentityTests.cpp /Fe:"stream-identity-tests.exe"
+          cl /nologo /EHsc /std:c++17 /utf-8 /I"src\mpc-hc" /I"src\thirdparty" tools\fluent\tests\NativeStreamIdentityTests.cpp /Fe:"stream-identity-tests.exe"
           if errorlevel 1 exit /b 1
           stream-identity-tests.exe
           if errorlevel 1 exit /b 1
@@ -127,11 +127,11 @@ jobs:
         run: |
           call build.user.bat
           call "%MPCHC_VS_PATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
-          cl /nologo /EHsc /std:c++17 /utf-8 tests\NativePlaylistScrollTests.cpp /Fe:"playlist-scroll-tests.exe" /link user32.lib gdi32.lib comctl32.lib
+          cl /nologo /EHsc /std:c++17 /utf-8 tools\fluent\tests\NativePlaylistScrollTests.cpp /Fe:"playlist-scroll-tests.exe" /link user32.lib gdi32.lib comctl32.lib
           if errorlevel 1 exit /b 1
           playlist-scroll-tests.exe
           if errorlevel 1 exit /b 1
-          cl /nologo /EHsc /std:c++17 /I"src\mpc-hc" tests\NativeHeaderInputTests.cpp /Fe:"header-input-tests.exe" /link user32.lib comctl32.lib
+          cl /nologo /EHsc /std:c++17 /I"src\mpc-hc" tools\fluent\tests\NativeHeaderInputTests.cpp /Fe:"header-input-tests.exe" /link user32.lib comctl32.lib
           if errorlevel 1 exit /b 1
           header-input-tests.exe
           if errorlevel 1 exit /b 1
@@ -140,13 +140,13 @@ jobs:
         run: |
           call build.user.bat
           call "%MPCHC_VS_PATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
-          cl /nologo /EHsc /std:c++17 /I"src\mpc-hc" tests\NativePaintResourcesTests.cpp /Fe:paint-resource-tests.exe /link user32.lib gdi32.lib
+          cl /nologo /EHsc /std:c++17 /I"src\mpc-hc" tools\fluent\tests\NativePaintResourcesTests.cpp /Fe:paint-resource-tests.exe /link user32.lib gdi32.lib
           if errorlevel 1 exit /b 1
           paint-resource-tests.exe
           if errorlevel 1 exit /b 1
-          pwsh -NoProfile -File tests\FluentUpdateInstallerTests.ps1
+          pwsh -NoProfile -File tools\fluent\tests\FluentUpdateInstallerTests.ps1
           if errorlevel 1 exit /b 1
-          python -m unittest discover -s tests -p FluentReleaseTests.py
+          python -m unittest discover -s tools\fluent\tests -p FluentReleaseTests.py
           if errorlevel 1 exit /b 1
       - name: Prepare official Windows App SDK controller headers
         shell: pwsh
@@ -229,7 +229,7 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Native setup compilation failed'}
           $setup="bin/fluent-setup/$name.exe"
           if(-not(Test-Path -LiteralPath $setup)){throw 'Installer was not produced'}
-          ./tests/FluentSetupTests.ps1 -Setup $setup -Version $version
+          ./tools/fluent/tests/FluentSetupTests.ps1 -Setup $setup -Version $version
           & './distrib/FluentRuntime/FluentRuntimeCheck.exe' (Join-Path (Get-Location) 'distrib/FluentRuntime/Microsoft.WindowsAppRuntime.Bootstrap.dll')
           if($LASTEXITCODE -ne 0){throw 'Installed Acrylic runtime could not activate'}
           "path=$setup" >> $env:GITHUB_OUTPUT
@@ -262,7 +262,7 @@ jobs:
 
   publish:
     needs: build
-    if: github.event_name == 'push' || inputs.publish
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/fluent-stable') || inputs.publish
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -281,3 +281,7 @@ jobs:
           PROMOTE_BASE: ${{ inputs.promote_base }}
           CANDIDATE_REF: ${{ inputs.ref }}
         run: python tools/fluent/publish_release.py
+      - name: Remove superseded fork releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/fluent/prune_legacy.py

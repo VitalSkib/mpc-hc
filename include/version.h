@@ -52,7 +52,7 @@
 
 #define MPC_VERSION_MAJOR       2
 #define MPC_VERSION_MINOR       8
-#define MPC_VERSION_PATCH       4
+#define MPC_VERSION_PATCH       5
 
 #if defined(MPC_FLUENT_REVISION) && (!defined(MPC_FLUENT_BETA) || !MPC_FLUENT_BETA)
 #define MPC_NIGHTLY_RELEASE     0

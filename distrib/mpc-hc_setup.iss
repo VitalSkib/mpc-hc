@@ -259,7 +259,7 @@ Name: desktopicon\common; Description: {cm:tsk_AllUsers};          GroupDescript
 Name: quicklaunchicon;    Description: {cm:CreateQuickLaunchIcon}; GroupDescription: {cm:AdditionalIcons}; Flags: unchecked;             OnlyBelowVersion: 6.01
 Name: reset_settings;     Description: {cm:tsk_ResetSettings};     GroupDescription: {cm:tsk_Other};       Flags: checkedonce unchecked; Check: SettingsExist()
 #ifdef FluentBuild
-Name: fluent_style;       Description: Use Fluent appearance (Minimal view and hover controls); GroupDescription: MPC-HC Fluent; Flags: checkedonce
+Name: fluent_style;       Description: Use Fluent appearance (Minimal view and hover controls); GroupDescription: MPC-HC Fluent
 #endif
 
 
@@ -278,7 +278,7 @@ Source: {#bindir}\{#lavfiltersdir}\*.manifest;     DestDir: {app}\{#lavfiltersdi
 	#if INCLUDE_MPCVR
 Source: ..\distrib\mpcvr\{#mpcvr_ax};              DestDir: {app}\MPCVR;            Components: main;         Flags: ignoreversion
 	#endif
-Source: {#platform}\d3dcompiler_{#MPC_D3D_COMPILER_VERSION}.dll; DestDir: {app};    Components: main;         Flags: ignoreversion
+Source: {#platform}\d3dcompiler_{#MPC_D3D_COMPILER_VERSION}.dll; DestDir: {app};    Components: main;         Flags: ignoreversion; Check: NOT FileExists(ExpandConstant('{sys}\D3DCompiler_47.dll'));
 Source: {#platform}\d3dx9_{#MPC_DX_SDK_NUMBER}.dll;              DestDir: {app};    Components: main;         Flags: ignoreversion
 	#if INCLUDE_MEDIAINFO
 Source: {#platform}\mediainfo.dll;                 DestDir: {app};                  Components: main;         Flags: ignoreversion
