@@ -2022,8 +2022,6 @@ void CMainFrame::OnMoving(UINT fwSide, LPRECT pRect)
 
 void CMainFrame::OnSize(UINT nType, int cx, int cy)
 {
-    NativeResizeTiming::Scope timing(NativeResizeTiming::FrameSize);
-    timing.Bounds(cx,cy);
     if (nType == SIZE_MINIMIZED) {
         // Like locking the session (see OnSessionChange): video that nobody can see is paused,
         // audio keeps playing, since minimizing is how people listen in the background.
@@ -24161,6 +24159,14 @@ bool CMainFrame::isSafeZone(CPoint pt) {
 
 LRESULT CMainFrame::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
 {
+    // Keep optional resize timing outside OnSize so upstream size-policy changes
+    // do not overlap with this fork-only instrumentation.
+    std::optional<NativeResizeTiming::Scope> frameSizeTiming;
+    if (message == WM_SIZE) {
+        frameSizeTiming.emplace(NativeResizeTiming::FrameSize);
+        frameSizeTiming->Bounds(LOWORD(lParam), HIWORD(lParam));
+    }
+
     if (AfxGetMyApp()->m_fClosingState) {
         if (message == WM_MPC_OPENCURPLAYLIST || message == WM_ACTIVATE || message == WM_SETFOCUS || message == WM_GETMINMAXINFO) {
             TRACE(_T("Dropped WindowProc because mainframe was destroyed: message 0x%x value %d\n"), message, LOWORD(wParam));
